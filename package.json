@@ -1,0 +1,37 @@
+{
+  "name": "wingman",
+  "version": "0.1.0",
+  "description": "A desktop AI overlay copilot — sees your screen, hears your meetings, stays hidden from screen shares. Bring your own AI key.",
+  "license": "GPL-3.0-or-later",
+  "author": "",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --mac zip",
+    "dist:win": "electron-builder --win"
+  },
+  "keywords": [
+    "electron",
+    "overlay",
+    "ai",
+    "assistant",
+    "screencapturekit",
+    "macos"
+  ],
+  "devDependencies": {
+    "electron": "^43.2.0",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@google/genai": "^0.3.0",
+    "katex": "^0.18.1",
+    "lucide-static": "^0.468.0",
+    "openai": "^4.73.0"
+  },
+  "allowScripts": {
+    "electron@33.2.1": true
+  }
+}
