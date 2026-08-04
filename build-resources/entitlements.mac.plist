@@ -14,9 +14,9 @@
   <key>com.apple.security.cs.allow-dyld-environment-variables</key>
   <true/>
 
-  <!-- cue transcribes the microphone. The hardened runtime withholds audio
-       input unless this is declared, so without it the mic is refused even
-       after the user grants permission. -->
+<!-- wingman transcribes the microphone. The hardened runtime withholds audio
+        input unless this is declared, so without it the mic is refused even
+        after the user grants permission. -->
   <key>com.apple.security.device.audio-input</key>
   <true/>
 

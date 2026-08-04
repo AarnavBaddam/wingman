@@ -12,10 +12,20 @@ const { rms16 } = require('./src/wav');
 let win = null;
 let registeredAssistShortcut = null;
 
+// Lightweight diagnostic log so shortcut behavior can be verified from a file.
+function log(msg) {
+  try {
+    require('fs').appendFileSync(path.join(app.getPath('userData'), 'wingman-debug.log'),
+      new Date().toISOString() + ' ' + msg + '\n');
+  } catch (_) {}
+}
+
 const DEFAULT_ASSIST_SHORTCUT = 'CommandOrControl+Return';
+const TOGGLE_SHORTCUT = 'CommandOrControl+Option+Shift+9';
 const RESERVED_SHORTCUTS = new Set([
   'commandorcontrol+h',
-  'commandorcontrol+shift+x'
+  'commandorcontrol+shift+x',
+  'commandorcontrol+option+shift+9'
 ]);
 
 // -------- capture / transcript state --------
@@ -34,6 +44,7 @@ function send(channel, data) { if (win && !win.isDestroyed()) win.webContents.se
 function createWindow() {
   const { workArea } = screen.getPrimaryDisplay();
   const W = 700, H = 600;
+  const isMac = process.platform === 'darwin';
   win = new BrowserWindow({
     width: W,
     height: H,
@@ -46,6 +57,10 @@ function createWindow() {
     skipTaskbar: true,
     alwaysOnTop: true,
     fullscreenable: false,
+    // macOS 'panel' (NSPanel): floats over full-screen apps and appears on
+    // every Space. This is what actually makes the overlay follow the user
+    // into a fullscreen app — setVisibleOnAllWorkspaces alone is unreliable.
+    ...(isMac ? { type: 'panel' } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -54,21 +69,59 @@ function createWindow() {
     }
   });
 
-  // Invisibility + overlay behavior. Set CUE_NO_PROTECT=1 to disable for debugging.
-  win.setContentProtection(!process.env.CUE_NO_PROTECT);            // excluded from screen capture (best-effort)
-  if (process.platform === 'darwin') {
+  // Invisibility + overlay behavior. Set WINGMAN_NO_PROTECT=1 to disable for debugging.
+  win.setContentProtection(!process.env.WINGMAN_NO_PROTECT);            // excluded from screen capture (best-effort)
+  if (isMac) {
     win.setAlwaysOnTop(true, 'screen-saver', 1);
+    // 'panel' window type (above) floats over fullscreen apps. This call makes
+    // it join all Spaces; skipTransformProcessType keeps the Dock icon visible.
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
     if (typeof win.setHiddenInMissionControl === 'function') win.setHiddenInMissionControl(false);
   } else {
     win.setAlwaysOnTop(true);
   }
-  if (app.dock && process.platform === 'darwin') app.dock.show();
+  if (app.dock && isMac) app.dock.show();
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
-  win.webContents.on('did-finish-load', () => win.showInactive());
+  win.webContents.on('did-finish-load', () => {
+    if (win.isVisible()) return;
+    win.showInactive();
+    // Re-assert overlay settings each time the window appears, so it keeps
+    // following the user into fullscreen apps and across Spaces.
+    assertOverlay();
+  });
   win.webContents.on('render-process-gone', (_e, d) => console.log('[wingman] renderer gone', JSON.stringify(d)));
+}
+
+function assertOverlay() {
+  if (!win || win.isDestroyed()) return;
+  if (process.platform === 'darwin') {
+    win.setAlwaysOnTop(true, 'screen-saver', 1);
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
+  } else {
+    win.setAlwaysOnTop(true);
+  }
+}
+
+// Show or hide the overlay. Recreates the window if it was closed.
+function toggleWindow() {
+  log('toggleWindow fired. win=' + (win && !win.isDestroyed()) + ' visible=' + (win && win.isVisible()));
+  if (!win || win.isDestroyed()) { createWindow(); return; }
+  if (win.isVisible()) {
+    win.hide();
+  } else {
+    assertOverlay();
+    win.show();
+    win.focus();
+  }
+}
+
+function showWindow() {
+  if (!win || win.isDestroyed()) { createWindow(); return; }
+  assertOverlay();
+  win.show();
+  win.focus();
 }
 
 // -------- STT flushing --------
@@ -243,8 +296,11 @@ function setAssistShortcut(accelerator) {
 }
 
 function registerShortcuts() {
-  globalShortcut.register('CommandOrControl+H', () => runFeature('leetcode', ''));
-  globalShortcut.register('CommandOrControl+Shift+X', () => app.quit());
+  log('registering shortcuts. toggle=' + TOGGLE_SHORTCUT);
+  const okH = globalShortcut.register('CommandOrControl+H', () => runFeature('leetcode', ''));
+  const okX = globalShortcut.register('CommandOrControl+Shift+X', () => app.quit());
+  const okToggle = globalShortcut.register(TOGGLE_SHORTCUT, () => toggleWindow());
+  log('shortcut results H=' + okH + ' X=' + okX + ' toggle=' + okToggle);
 
   const settings = store.getSettings();
   const configured = settings.shortcuts && settings.shortcuts.assist;
@@ -277,7 +333,16 @@ app.whenReady().then(() => {
   registerShortcuts();
 
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+
+  // Keep the overlay in front of fullscreen apps: when the active app changes
+  // its fullscreen state, re-assert the window level and space settings.
+  ['enter-full-screen', 'leave-full-screen'].forEach((evt) => {
+    app.on(evt, (_e, bw) => { if (bw !== win) assertOverlay(); });
+  });
 });
 
 app.on('will-quit', () => { globalShortcut.unregisterAll(); });
-app.on('window-all-closed', () => app.quit());
+// Never quit when the overlay window is closed — wingman stays resident so the
+// Command+` toggle (and the other global shortcuts) keep working. Quit via the
+// Cmd+Shift+X shortcut or quitting the app from the Dock.
+app.on('window-all-closed', () => {});

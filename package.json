@@ -10,7 +10,9 @@
     "test": "node --test",
     "pack": "electron-builder --dir",
     "dist": "electron-builder --mac zip",
-    "dist:win": "electron-builder --win"
+    "dist:win": "electron-builder --win",
+    "build": "electron-builder --dir && codesign --force --sign \"Apple Development: cherrybaddam1981@gmail.com (M5H8PKHJ7X)\" --entitlements build-resources/entitlements.mac.plist --deep dist/mac-arm64/wingman.app",
+    "install-app": "npm run build && osascript -e 'tell application \"wingman\" to quit' 2>/dev/null; sleep 1; rm -rf /Applications/wingman.app && cp -R dist/mac-arm64/wingman.app /Applications/ && grep -c \"Option+Shift+9\" /Applications/wingman.app/Contents/Resources/app/main.js && echo 'Installed to /Applications/wingman.app' && open /Applications/wingman.app"
   },
   "keywords": [
     "electron",
