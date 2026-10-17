@@ -207,23 +207,32 @@
   // Start getDisplayMedia directly from the click so its user gesture stays valid.
   let captureStarting = false, captureCancelled = false;
   $('#stop-btn').addEventListener('click', async () => {
-    if ($('#stop-btn').classList.contains('active')) { await wingman.captureToggle(); return; }
-    if (captureStarting) { captureCancelled = true; showStatus('Listening start cancelled. Close the capture prompt if it is still open.'); return; }
+    if ($('#stop-btn').classList.contains('active')) { await wingman.captureStop(); return; }
+    if (captureStarting) { captureCancelled = true; stopMic(); stopSystemAudio(); showStatus('Listening start cancelled. Close the capture prompt if it is still open.'); return; }
     captureStarting = true;
     captureCancelled = false;
     const system = startSystemAudio();
     const mic = startMic();
-    const [hasSystem, hasMic] = await Promise.all([system, mic]);
+    const [systemReady, micReady] = await Promise.all([system, mic]);
+    const hasSystem = systemReady && (linuxSystemActive || sysStream?.getAudioTracks().some(track => track.readyState === 'live'));
+    const hasMic = micReady && micStream?.getAudioTracks().some(track => track.readyState === 'live');
     captureStarting = false;
     if (captureCancelled || (!hasSystem && !hasMic)) {
       stopMic(); stopSystemAudio();
       if (!captureCancelled) showStatus('Listening could not start. Check microphone and screen capture permissions.');
       return;
     }
-    if (!hasSystem) showStatus('Listening to your microphone only. Meeting audio is unavailable.');
+    if (!hasSystem) showStatus(wingman.platform === 'linux'
+      ? 'Listening to your microphone only. For meeting audio, install parec and check your PulseAudio/PipeWire output.'
+      : 'Listening to your microphone only. Meeting audio is unavailable.');
     if (!hasMic) showStatus('Listening to meeting audio only. Microphone is unavailable.');
     try {
       if (!await wingman.captureToggle()) throw new Error('Listening did not start');
+      if (!linuxSystemActive && !sysStream?.getAudioTracks().some(track => track.readyState === 'live') &&
+          !micStream?.getAudioTracks().some(track => track.readyState === 'live')) {
+        await wingman.captureStop();
+        showStatus('Listening stopped because audio capture ended.');
+      }
     } catch (err) {
       stopMic(); stopSystemAudio();
       showStatus('Listening could not start. Please try again.');
@@ -261,8 +270,13 @@
   }
 
   // ---- capture: system/meeting audio (getDisplayMedia loopback, in wingman's process) ----
-  let sysStream = null, sysCtx = null, sysNode = null, sysProc = null;
+  let sysStream = null, sysCtx = null, sysNode = null, sysProc = null, linuxSystemActive = false, linuxSystemEnded = false;
   async function startSystemAudio() {
+    if (wingman.platform === 'linux') {
+      linuxSystemEnded = false;
+      try { linuxSystemActive = await wingman.systemAudioStart() && !linuxSystemEnded; return linuxSystemActive; }
+      catch { linuxSystemActive = false; return false; }
+    }
     if (sysStream) return true;
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
@@ -288,16 +302,21 @@
     }
   }
   function stopSystemAudio() {
+    if (wingman.platform === 'linux') {
+      linuxSystemActive = false;
+      linuxSystemEnded = true;
+      wingman.systemAudioStop().catch(() => wingman.log('system audio stop failed'));
+    }
     if (sysProc) { sysProc.port.onmessage = null; sysProc.disconnect(); sysProc = null; }
     if (sysNode) { sysNode.disconnect(); sysNode = null; }
     if (sysCtx) { sysCtx.close(); sysCtx = null; }
     if (sysStream) { sysStream.getTracks().forEach((t) => t.stop()); sysStream = null; }
   }
   let stoppingEndedCapture = false;
-  function audioTrackEnded() {
-    const hadMic = !!micStream, hadSystem = !!sysStream;
+  function audioTrackEnded(systemEnded = false) {
+    const hadMic = !!micStream, hadSystem = !!sysStream || linuxSystemActive;
     const hasMic = hadMic && micStream.getAudioTracks().some((track) => track.readyState === 'live');
-    const hasSystem = hadSystem && sysStream.getAudioTracks().some((track) => track.readyState === 'live');
+    const hasSystem = hadSystem && (linuxSystemActive ? systemEnded !== true : sysStream.getAudioTracks().some((track) => track.readyState === 'live'));
     if (hadMic && !hasMic) stopMic();
     if (hadSystem && !hasSystem) stopSystemAudio();
     if (!$('#stop-btn').classList.contains('active')) return;
@@ -305,7 +324,7 @@
       if (!stoppingEndedCapture) {
         stoppingEndedCapture = true;
         showStatus('Listening stopped because audio capture ended.');
-        wingman.captureToggle().catch(() => showStatus('Could not stop listening automatically. Use the listening button.')).finally(() => { stoppingEndedCapture = false; });
+        wingman.captureStop().catch(() => showStatus('Could not stop listening automatically. Use the listening button.')).finally(() => { stoppingEndedCapture = false; });
       }
       return;
     }
@@ -314,6 +333,7 @@
   }
 
   // ---- events from main --------------------------------------------------
+  wingman.on('capture:system-ended', () => { linuxSystemEnded = true; audioTrackEnded(true); });
   wingman.on('capture:state', ({ active }) => {
     $('#live-dot').classList.toggle('off', !active);
     $('#stop-btn').classList.toggle('active', active);
@@ -676,7 +696,7 @@ async function saveSettings() {
   (async function boot() {
     try {
       const st = await wingman.captureState();
-      if (st.active) await wingman.captureToggle(); // media tracks do not survive a renderer reload
+      if (st.active) await wingman.captureStop(); // media tracks do not survive a renderer reload
     } catch (err) {
       wingman.log('listening state error: ' + (err && err.message));
       showStatus('Could not read listening state. Restart Aether to retry.', true);

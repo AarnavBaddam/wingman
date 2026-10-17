@@ -13,16 +13,16 @@ Last checked: 2026-10-17. Phase 5 remains open. These results apply to the `code
 
 ## Fresh checks
 
-- `npm test`: 38 passed, zero failed, including a regression that rejects narrower article titles for general-topic questions.
+- `npm test`: 45 passed, zero failed, including narrower-title rejection and Linux native-audio readiness, framing, failure, retry, and activation/lifecycle regressions.
 - `npm run pack`: exit 0. `app.asar` contains `data/library.json`, `LICENSE`, and research/settings modules.
 - Localhost Playwright with the actual renderer and a mocked Electron bridge: Research submission, source and CC BY-SA links, Claude/Codex/Ollama selection, mandatory local STT for Ollama, failed settings-save recovery, and Hide bridge invocation passed; zero page errors. Answers in this UI fixture are synthetic, not provider output.
 - The unpacked Linux app and rebuilt `dist/Aether-0.1.0.AppImage` both started through Playwright's Electron driver with separate temporary user-data directories. This was headless on the existing host, not a clean Linux installation. Neither profile contained user keys.
-- `npm run dist:linux`: exit 0; latest AppImage size 143,330,112 bytes. The AppImage runtime was checked with `--appimage-version` during the initial validation pass.
+- `npm run dist:linux`: exit 0; latest AppImage size 143,329,917 bytes. The AppImage runtime was checked with `--appimage-version` during the initial validation pass.
 - Live `qwen2.5-coder:7b` through Aether's Ollama adapter answered `Banach space` and `General relativity` using local evidence and passed citation-number validation. Manual comparison exposed factual drift: the Banach response said Banach later coined “Banach space,” whereas its source says he coined “Fréchet space.” The relativity response used “developed ... in 1916,” blending a source's May 1916 publication date with another source's 1907–1915 development period. These are quality findings, not successful factual acceptance checks.
 - `npm audit --omit=dev`: zero findings. Full audit: eight moderate findings in the builder dependency chain. The root [sprintf-js advisory](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) still lists no patched version. Audit suggests a builder downgrade; no dependency downgrade or override was applied.
 - `git diff --check`: passed before checkpoint edits; rerun before committing.
 
-The headless packaged sessions reported `safeStorage` unavailable and backend `basic_text`. This does not validate a desktop keyring. Aether must continue refusing to save nonempty keys in that environment.
+The initial headless sessions lacked desktop D-Bus variables and reported `safeStorage` unavailable with backend `basic_text`. A later check connected to the real GNOME Keyring and passed encrypted save/restart-decrypt with `--password-store=gnome-libsecret`; default backend selection on Hyprland still chose `basic_text`. Aether continues refusing keys in an insecure environment.
 
 ## Remaining acceptance checks
 
@@ -74,7 +74,7 @@ Use a fresh supported Linux VM or separate machine/user with no development chec
 
 ## Evidence still missing
 
-Live Tavily, answer faithfulness after the observed Ollama errors, real desktop key storage, native sharing/audio/permission behavior, a clean Linux installation, and macOS/Windows release validation remain open. Earlier local Claude/Codex/Whisper probes are recorded in `project.md`; they were not rerun as part of this pass.
+Live Tavily, answer faithfulness after the observed Ollama errors, recipient/recording sharing previews, full speech/meeting transcription checks, normal desktop keyring configuration, a full clean Linux desktop installation, and macOS/Windows release validation remain open. Earlier local Claude/Codex/Whisper probes are recorded in `project.md`; they were not rerun as part of this pass.
 
 ## Grounding follow-up
 
@@ -84,3 +84,16 @@ Live Tavily, answer faithfulness after the observed Ollama errors, real desktop 
 - Localhost Playwright UI checks passed with a fixture bridge. The real packaged Electron IPC path also rejected the narrower DNA article and returned the missing-Tavily error without emitting answer/source content. The headless onboarding overlay covered the panel, so this IPC check inspected the resulting DOM text rather than claiming a visible desktop interaction.
 - After the final prompt change, `npm run pack` and `npm run dist:linux` passed again. The rebuilt AppImage passed isolated startup and the same real IPC fallback check.
 - User chose to keep AI summaries, block invalid citations, and show sources. Retain that flow; do not add a source-excerpt mode. This decision does not mark semantic accuracy verified. No extra verification model or new dependency was added.
+
+## Native Linux follow-up
+
+- **Key storage:** disposable-value save, absence of plaintext in the settings file, app restart, and decrypt passed against the real GNOME Keyring with `--password-store=gnome-libsecret`. No user API key was read. Default Hyprland selection still used `basic_text`; see README setup instructions and [Electron's backend documentation](https://www.electronjs.org/docs/latest/api/safe-storage).
+- **Microphone:** a real device returned a live audio track, which was stopped immediately. An Electron permission denial returned `NotAllowedError`. No samples were read, saved, or sent. Full microphone-to-transcript behavior remains a separate check.
+- **Fresh runtime:** Ubuntu 24.04 base digest `sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac` plus native GUI/audio libraries, no development checkout or host `node_modules`. The read-only-mounted AppImage started and passed fresh-settings, secure-storage refusal, and research IPC checks. Only the AppImage was mounted; desktop, D-Bus, audio, and keyring sockets were not shared. Container used host networking for local debugging, AppImage extraction, and `--no-sandbox`. This is runtime portability evidence, not normal FUSE launch, desktop installation, sandbox validation, or capture-permission evidence. The recipe is `scripts/linux-runtime.Dockerfile`.
+- **System audio fix:** [Electron's display-media handler](https://www.electronjs.org/docs/latest/api/session#sessetdisplaymediarequesthandlerhandler-opts) documents its string loopback device for Windows. Linux now uses `parec --device=@DEFAULT_MONITOR@` for 16 kHz mono signed 16-bit PCM, without requesting a display stream. Requires PulseAudio or PipeWire's PulseAudio service and `parec` on `PATH` (`libpulse` on this CachyOS machine). Missing helper/audio service retains microphone-only fallback.
+- **Native monitor:** real output monitor produced aligned PCM; no sample content was saved or transcribed. Packaged IPC start, stop, retry, renderer reload, and app quit were verified against real capture-stream counts, which returned to baseline.
+- **Limits:** default output is chosen at capture startup; restart listening after switching outputs. This captures system output rather than one selected application. Speech content, transcription quality, real sharing previews, and behavior on other Linux desktops still need their own checks.
+- **UI:** localhost Playwright passed Linux native-audio start/stop/failure states with a fixture bridge and zero page errors. The native device/backend checks above used the real packaged app separately.
+- **Review:** independent review caught a source-ending race between readiness and activation. Added a post-activation liveness check and idempotent `capture:stop` IPC so overlapping cleanup cannot reactivate capture. Its regression failed before the fix and passes afterward; re-review found no remaining important issue.
+- **Deferred by user:** recipient/recording sharing previews will be checked later. Local commits remain authorized; work should continue between commits, and push remains deferred.
+- **Final gates:** all 45 tests, `npm run pack`, and `npm run dist:linux` passed after the activation-race fix. Localhost UI checks, real packaged native-audio lifecycle (including repeated idempotent stop), and the Ubuntu AppImage startup/missing-helper retry checks passed. Refreshed code graph: 512 nodes, 947 edges.

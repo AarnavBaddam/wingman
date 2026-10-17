@@ -12,12 +12,14 @@ Aether is an Electron desktop app. It has a main process that can call providers
 | `src/store.js` | Reads and atomically saves settings; encrypts API keys with Electron `safeStorage`. |
 | `src/llm.js` and `src/cli-provider.js` | Common streaming interface for cloud APIs, Ollama, and signed-in Claude/Codex CLIs. |
 | `src/stt.js` | Transcribes PCM audio with local `whisper-cli`, OpenAI, or Gemini. |
+| `src/linux-audio.js` | Captures the Linux default output monitor with `parec`, frames PCM samples, and stops the helper on cancellation or exit. |
 | `src/library.js`, `data/library.json` | Loads and searches the bundled, attributed reference library. |
 | `src/research.js` | Fetches Tavily results when needed, builds source evidence, and checks citations. |
 | `src/prompts.js` | Defines Assist, meeting, Ask, Research, and coding tasks. |
 | `scripts/build-library.js` | Refreshes the library from Wikipedia's API. |
 | `electron-builder.cjs` | Linux, macOS, and Windows packaging settings. |
 | `docs/release-validation.md` | Current release evidence, remaining acceptance checks, and publishing prerequisites. |
+| `scripts/linux-runtime.Dockerfile` | Pinned Ubuntu base and native libraries for a headless AppImage runtime smoke test. |
 
 ## A typed factual question
 
@@ -29,7 +31,9 @@ Aether is an Electron desktop app. It has a main process that can call providers
 
 ## Listening
 
-The renderer asks for microphone and optional system audio tracks. It reports capture active only when at least one track is usable. Audio becomes 16 kHz PCM, moves to `main.js` through IPC, and is buffered by speaker channel. `src/stt.js` transcribes non-silent chunks. Local mode writes a private temporary WAV for `whisper-cli` and removes it after each call. Transcripts stay in memory for the current session.
+The renderer asks for a microphone track. On Linux, meeting audio comes from `parec` in the main process, capturing the default PulseAudio/PipeWire output monitor as 16 kHz, mono, signed 16-bit PCM. Other platforms keep the renderer's display-media path. Capture becomes active only after a usable track or native PCM arrives; the renderer rechecks availability after pending permission requests and activation. IPC carries native readiness and unexpected-end events, while an idempotent capture-stop operation keeps overlapping cleanup from toggling capture back on. The helper stops on cancellation, renderer reload/crash, window closure, or app quit, with a bounded startup wait and forced-stop fallback.
+
+Audio is buffered in `main.js` by speaker channel. `src/stt.js` transcribes non-silent chunks. Local mode writes a private temporary WAV for `whisper-cli` and removes it after each call. Transcripts stay in memory for the current session. Linux requires `parec` on `PATH`; without it, microphone-only listening remains available. Restart listening after changing the default audio output.
 
 ## Security and platform limits
 

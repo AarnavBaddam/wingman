@@ -38,6 +38,7 @@ const FLUSH_MS = 3500;
 const MIN_BYTES = Math.floor(16000 * 2 * 0.6); // ~0.6s
 const RMS_GATE = 240;
 let flushTimer = null;
+let linuxAudio = null;
 
 function send(channel, data) { if (win && !win.isDestroyed()) win.webContents.send(channel, data); }
 
@@ -83,6 +84,8 @@ function createWindow() {
   }
   if (app.dock && isMac) app.dock.show();
 
+  win.webContents.on('did-start-loading', () => setCapturing(false));
+  win.on('closed', () => setCapturing(false));
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
   win.webContents.on('did-finish-load', () => {
@@ -92,7 +95,7 @@ function createWindow() {
     // following the user into fullscreen apps and across Spaces.
     assertOverlay();
   });
-  win.webContents.on('render-process-gone', (_e, d) => console.log('[wingman] renderer gone', JSON.stringify(d)));
+  win.webContents.on('render-process-gone', (_e, d) => { setCapturing(false); console.log('[wingman] renderer gone', JSON.stringify(d)); });
 }
 
 function assertOverlay() {
@@ -186,14 +189,18 @@ function startFlushLoop() {
 function stopFlushLoop() { if (flushTimer) { clearInterval(flushTimer); flushTimer = null; } }
 
 // -------- capture toggle --------
-// Mic + system audio are both captured in the RENDERER (getUserMedia for the mic,
-// getDisplayMedia loopback for system audio) so they run inside wingman's own process
-// and use wingman's own Screen-Recording grant — no separate helper binary to authorize.
+// Microphone capture stays in the renderer; Linux meeting audio uses parec's output monitor.
+function stopLinuxAudio() {
+  const capture = linuxAudio;
+  linuxAudio = null;
+  capture?.stop();
+}
 function setCapturing(active) {
   state.capturing = active;
   if (active) {
     startFlushLoop();
   } else {
+    stopLinuxAudio();
     stopFlushLoop();
     buffers.you = []; buffers.them = [];
   }
@@ -279,7 +286,27 @@ ipcMain.handle('settings:get', () => store.getSettings());
 ipcMain.handle('settings:set', (_e, patch) => { sttDisabled = false; return store.setSettings(patch); });
 ipcMain.handle('shortcut:assist:set', (_e, accelerator) => setAssistShortcut(accelerator));
 ipcMain.handle('capture:toggle', () => setCapturing(!state.capturing));
+ipcMain.handle('capture:stop', () => setCapturing(false));
 ipcMain.handle('capture:state', () => ({ active: state.capturing }));
+ipcMain.handle('capture:system:start', async () => {
+  if (process.platform !== 'linux') return false;
+  if (!linuxAudio) {
+    const capture = require('./src/linux-audio').startLinuxAudio(
+      chunk => { if (state.capturing) buffers.them.push(chunk); },
+      () => {
+        if (linuxAudio !== capture) return;
+        linuxAudio = null;
+        send('capture:system-ended', {});
+      }
+    );
+    linuxAudio = capture;
+  }
+  const capture = linuxAudio;
+  const ready = await capture.ready;
+  if (!ready && linuxAudio === capture) stopLinuxAudio();
+  return ready && linuxAudio === capture;
+});
+ipcMain.handle('capture:system:stop', () => stopLinuxAudio());
 ipcMain.on('ask', (_e, payload) => runFeature(payload.mode, payload.text));
 ipcMain.on('window:hide-for-sharing', () => { if (win && !win.isDestroyed()) win.hide(); });
 ipcMain.on('mic:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.you.push(Buffer.from(arrayBuffer)); });
@@ -377,7 +404,7 @@ app.whenReady().then(() => {
   });
 });
 
-app.on('will-quit', () => { globalShortcut.unregisterAll(); });
+app.on('will-quit', () => { stopLinuxAudio(); globalShortcut.unregisterAll(); });
 // Never quit when the overlay window is closed — wingman stays resident so the
 // Command+` toggle (and the other global shortcuts) keep working. Quit via the
 // Cmd+Shift+X shortcut or quitting the app from the Dock.

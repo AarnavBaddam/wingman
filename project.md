@@ -2,7 +2,7 @@
 
 ## Current phase
 
-Phase 5: platform validation and release readiness. Source audit, hardening, provider integration, and local-first research are implemented. Fresh Linux checks completed on 2026-10-17; native permissions, live Tavily, and other OS checks remain open. Work is on `codex/wingman-hardening`; the user authorized a local checkpoint commit and deferred push. See [release validation](docs/release-validation.md) for the full remaining checklist.
+Phase 5: platform validation and release readiness. Source audit, hardening, provider integration, and local-first research are implemented. Linux keyring, microphone, and fresh-container runtime checks now have concrete results; live Tavily, real sharing previews, speech-quality checks, and other OS validation remain open. Work is on `codex/wingman-hardening`; local commits are authorized, and work should continue between commits. Push is deferred. See [release validation](docs/release-validation.md) for the full remaining checklist.
 
 ## Phases
 
@@ -22,7 +22,7 @@ Phase 5: platform validation and release readiness. Source audit, hardening, pro
 
 ## Checks run
 
-- `npm test`: 37 passing tests.
+- `npm test`: latest suite has 45 passing tests.
 - `npm run dist:linux`: built `dist/Aether-0.1.0.AppImage` (137 MB); `app.asar` contains the reference library and GPL license. The AppImage responds to `--appimage-version`.
 - Headless Playwright on localhost: Research button, source and license links, provider choices, settings save/scroll, and Ollama local transcription controls worked with a mocked Electron bridge; no page errors.
 - Live local Claude and Codex CLI replies passed. Ollama answered a library-backed Banach space question with a valid citation. An earlier Whisper probe passed.
@@ -31,7 +31,7 @@ Phase 5: platform validation and release readiness. Source audit, hardening, pro
 ## Next steps
 
 1. Set up Tavily and enter a key in Aether; the user confirmed it is not configured yet. Then test live search and inspect citation quality on math, science, and current-fact prompts.
-2. Test real microphone/system capture and share previews on Linux; test capture exclusion and package signing on macOS/Windows hardware.
+2. Finish speech-to-transcript quality checks on Linux. Real microphone acquisition/denial, native output-monitor PCM, keyring round trip, and capture-process lifecycle now pass. Sharing previews are explicitly deferred by the user; macOS/Windows capture and signing require their target hardware.
 3. Smoke test the AppImage on a clean Linux user account with real desktop capture permissions and a configured model.
 4. Review the upstream builder advisory when a patched `sprintf-js` path becomes available.
 
@@ -56,3 +56,16 @@ Phase 5: platform validation and release readiness. Source audit, hardening, pro
 - Final `npm run pack` and `npm run dist:linux` passed; the rebuilt AppImage (143,330,112 bytes) passed isolated startup and the real IPC missing-Tavily check.
 - Refreshed the code graph after the retrieval/test changes (493 nodes, 916 edges). Checkpoint/docs updated; this follow-up follows the user's local-commit-only instruction, with no push.
 - User chose to keep AI summaries, block invalid citations, and show sources. Retain the existing summary flow rather than adding a source-excerpt mode. Factual-quality review remains open; Tavily setup and native/clean-install/macOS/Windows validation remain pending.
+
+## Linux runtime and native audio
+
+- User clarified that local commits remain allowed; the request was to keep working rather than end after each commit. Push remains deferred.
+- Real GNOME Keyring save/encrypted-file/restart-decrypt checks passed using a disposable value and `--password-store=gnome-libsecret`. Default Hyprland backend selected `basic_text` and was correctly refused. README now documents the explicit backend for GNOME Keyring setups.
+- Real microphone acquisition and stop passed; denying Electron media permission returned `NotAllowedError`. No audio samples were read, saved, or sent in that probe.
+- AppImage started in a fresh Ubuntu 24.04 container with only the artifact mounted read-only. Fresh settings, refusal to save keys without a keyring, and research IPC fallback passed. Headless container used extraction mode and disabled Chromium sandbox; it does not replace a full desktop/FUSE install check. Added the runtime Dockerfile for repeatability.
+- Found that the display-media loopback flag was not a Linux system-audio backend. Added `src/linux-audio.js` using installed `parec` to capture the default output monitor. Readiness waits for aligned PCM; startup/termination are bounded. Failed startup permits retry, and a source ending during microphone permission does not activate empty capture.
+- All 44 tests pass. A real monitor produced aligned PCM. Packaged native-audio IPC start/stop/restart, renderer reload, and app quit returned capture streams to baseline. No audio was saved or transcribed by those tests.
+- Localhost Playwright passed native-audio start/stop/failure UI with a fixture bridge, along with existing Research/settings/source/license/Hide checks. Actual microphone, native monitor, and packaged IPC were checked separately.
+- Independent review found and verified a fix for a source-ending race during activation. Added a post-activation liveness check and idempotent `capture:stop` IPC; the new regression failed before the fix, and all 45 tests now pass. Re-review found no remaining important issue.
+- User explicitly deferred real sharing previews until later. Continue other work across local commits; do not push.
+- Final 45-test suite, localhost UI, `npm run pack`, and `npm run dist:linux` passed. Rebuilt AppImage is 143,329,917 bytes; native IPC/lifecycle and Ubuntu missing-helper retry checks passed after the activation-race fix. Code graph refreshed to 512 nodes and 947 edges.

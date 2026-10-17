@@ -20,7 +20,7 @@ function audioStream(count = 1) {
   return { getAudioTracks: () => tracks, getVideoTracks: () => [], getTracks: () => tracks };
 }
 
-function harness({ microphone, system }) {
+function harness({ microphone, system, platform = 'win32', beforeToggle = () => {} }) {
   const listeners = {};
   const statuses = [];
   let toggles = 0;
@@ -31,8 +31,12 @@ function harness({ microphone, system }) {
   };
   const dot = { classList: { toggle() {} } };
   const wingman = {
+    platform,
+    systemAudioStart: async () => true,
+    systemAudioStop: async () => {},
     on: (name, callback) => { listeners[name] = callback; },
-    captureToggle: async () => { toggles++; const next = !active.has('active'); listeners['capture:state']({ active: next }); return next; },
+    captureToggle: async () => { toggles++; beforeToggle(); const next = !active.has('active'); listeners['capture:state']({ active: next }); return next; },
+    captureStop: async () => { listeners['capture:state']({ active: false }); return false; },
     log() {}, micPcm() {}, systemPcm() {}
   };
   class AudioContext {
@@ -50,7 +54,7 @@ function harness({ microphone, system }) {
     AudioContext, AudioWorkletNode, MediaStream: class {}, Promise
   });
   vm.runInContext(audioCode, context);
-  return { button, active, statuses, get toggles() { return toggles; } };
+  return { button, active, statuses, systemEnded: () => listeners['capture:system-ended'](), get toggles() { return toggles; } };
 }
 
 test('listening stays off when both audio permissions fail', async () => {
@@ -92,4 +96,47 @@ test('system-only listening stops when its audio track ends', async () => {
   systemAudio.getAudioTracks()[0].end();
   assert.equal(active.has('active'), false);
   assert.match(statuses.at(-1), /capture ended/i);
+});
+
+test('Linux meeting audio uses the native monitor and stops when it ends', async () => {
+  let screenRequests = 0;
+  const audio = harness({
+    platform: 'linux',
+    microphone: async () => { throw new Error('denied'); },
+    system: async () => { screenRequests++; throw new Error('must not request a screen'); }
+  });
+  await audio.button.click();
+  assert.equal(screenRequests, 0);
+  assert.equal(audio.active.has('active'), true);
+  audio.systemEnded();
+  assert.equal(audio.active.has('active'), false);
+  assert.match(audio.statuses.at(-1), /capture ended/i);
+});
+
+test('capture does not start if Linux audio ends while microphone permission is pending', async () => {
+  let denyMic;
+  const audio = harness({
+    platform: 'linux',
+    microphone: () => new Promise((_resolve, reject) => { denyMic = reject; }),
+    system: async () => { throw new Error('must not request a screen'); }
+  });
+  const starting = audio.button.click();
+  await Promise.resolve();
+  audio.systemEnded();
+  denyMic(new Error('denied'));
+  await starting;
+  assert.equal(audio.active.has('active'), false);
+  assert.equal(audio.toggles, 0);
+});
+
+test('capture stops if Linux audio ends during activation', async () => {
+  let audio;
+  audio = harness({
+    platform: 'linux', beforeToggle: () => audio.systemEnded(),
+    microphone: async () => { throw new Error('denied'); },
+    system: async () => { throw new Error('must not request a screen'); }
+  });
+  await audio.button.click();
+  assert.equal(audio.active.has('active'), false);
+  assert.match(audio.statuses.at(-1), /capture ended/i);
 });

@@ -13,3 +13,6 @@
 - Validate factual quality against retrieved passages, not citation-number checks alone: live Ollama probes have produced naming/date drift despite valid citations.
 - A narrower article title must not satisfy a general-topic local-only query; require matching normalized topic terms before skipping web fallback.
 - User preference: keep AI summaries for factual answers, block invalid citations, and show sources. Do not replace summaries with a source-excerpt mode. Citation validity still does not prove factual accuracy.
+- Local commits are authorized; keep progressing between commits. Push remains deferred until explicitly authorized with an Aether destination.
+- Linux meeting audio uses `parec` and the default output monitor; Electron's loopback flag is not the Linux backend. Keep microphone-only fallback and stop helpers on cancellation, reload/crash, and quit.
+- Hyprland's default Electron storage backend may be `basic_text` despite a running GNOME Keyring. The explicit `--password-store=gnome-libsecret` backend passed encrypted save/restart checks here; do not force that backend on other keyring setups.

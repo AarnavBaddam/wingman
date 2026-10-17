@@ -39,6 +39,18 @@ The CLI adapters invoke the installed command for each request. Claude runs with
 
 For meeting transcription, choose **Cloud key** (OpenAI Whisper or Gemini) or **Local Whisper**. Local mode needs `whisper-cli` and an absolute path to a downloaded [whisper.cpp model](https://github.com/ggml-org/whisper.cpp/blob/master/examples/cli/README.md). There is no cloud fallback from local mode. Ollama always uses local transcription even when cloud keys are saved.
 
+On Linux, meeting audio uses `parec` to capture the default output monitor through PulseAudio or PipeWire's PulseAudio service. `parec` comes from `libpulse` on Arch/CachyOS and `pulseaudio-utils` on Ubuntu/Debian. If unavailable, listening can continue with the microphone. Restart listening after changing output devices. The helper captures the default output, not one selected meeting app.
+
+If secure storage is unavailable on a Linux desktop using GNOME Keyring, unlock/configure that keyring and start Aether with the explicit backend:
+
+```bash
+./dist/Aether-0.1.0.AppImage --password-store=gnome-libsecret
+# From the development checkout:
+npm start -- --password-store=gnome-libsecret
+```
+
+This was verified against the running GNOME Keyring on Hyprland. Other keyring setups need their matching [Electron storage backend](https://www.electronjs.org/docs/latest/api/safe-storage). Aether continues refusing nonempty API keys when secure storage is unavailable.
+
 ## Research and privacy
 
 Type a factual question in the composer, or type a question and press **Research**. Aether searches its local reference library first. A local-only answer requires a matching topic title and enough text; a narrower article is not sufficient for a general topic. Otherwise, if the question concerns current information, or if the model says the local evidence is insufficient, it queries [Tavily Search](https://help.tavily.com/articles/4840311948-tavily-search-api). Add a Tavily key in Settings to enable this fallback. Without a key or usable source, the app reports that it cannot research the answer. It does not silently ask the model to guess.
