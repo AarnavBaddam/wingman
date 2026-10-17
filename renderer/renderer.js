@@ -6,6 +6,7 @@
   const cmdKey = wingman.platform === 'darwin' ? '⌘' : 'Ctrl';
   const isCmdOrCtrl = (e) => wingman.platform === 'darwin' ? e.metaKey : e.ctrlKey;
   const DEFAULT_ASSIST_SHORTCUT = 'CommandOrControl+Return';
+  const DEFAULT_TOGGLE_SHORTCUT = 'CommandOrControl+Shift+Space';
 
   // ---- paint icons -------------------------------------------------------
   $('#logo-btn').innerHTML = icon('logo', { size: 18 });
@@ -25,6 +26,7 @@
   let aiEl = null;       // current streaming <div class="ai-text">
   let caretEl = null;
   let assistShortcut = DEFAULT_ASSIST_SHORTCUT;
+  let toggleShortcut = DEFAULT_TOGGLE_SHORTCUT;
   let recordingShortcut = false;
 
   const messages = $('#messages');
@@ -51,6 +53,8 @@
   function syncAssistShortcutLabels() {
     const shortcutBtn = $('#shortcut-assist');
     if (shortcutBtn && !recordingShortcut) shortcutBtn.textContent = shortcutParts(assistShortcut).join(' + ');
+    if (!recordingShortcut) $('#shortcut-toggle').textContent = shortcutParts(toggleShortcut).join(' + ');
+    $('#share-hide-btn').title = 'Hide the entire window. Restore with ' + shortcutParts(toggleShortcut).join('+') + '. Test restoring before sharing.';
     const placeholder = $('#placeholder');
     if (placeholder) placeholder.innerHTML = 'Ask about your screen or conversation, or ' + shortcutKeycapsHtml(assistShortcut) + ' for Assist';
   }
@@ -201,7 +205,6 @@
     $('#hide-btn').classList.toggle('collapsed', collapsed);
     $('#live-dot').style.display = collapsed ? 'none' : '';
   });
-  $('#share-hide-btn').title = 'Hide the entire window. Restore with ' + (wingman.platform === 'darwin' ? '⌘⌥⇧9' : 'Ctrl+Alt+Shift+9') + '.';
   $('#share-hide-btn').addEventListener('click', () => wingman.hideForSharing());
 
   // Start getDisplayMedia directly from the click so its user gesture stays valid.
@@ -500,7 +503,7 @@ async function saveSettings() {
 
   function cancelShortcutRecording() {
     recordingShortcut = false;
-    shortcutBtn.classList.remove('recording');
+    document.querySelectorAll('.shortcut-record').forEach(button => button.classList.remove('recording'));
     syncAssistShortcutLabels();
   }
 
@@ -526,6 +529,7 @@ async function saveSettings() {
     let key = named[e.key] || punctuation[e.key] || '';
     if (!key && /^[a-z]$/i.test(e.key)) key = e.key.toUpperCase();
     if (!key && /^[0-9]$/.test(e.key)) key = e.key;
+    if (!key && /^Digit[0-9]$/.test(e.code)) key = e.code.slice(-1);
     if (!key && /^F(?:[1-9]|1[0-9]|2[0-4])$/.test(e.key)) key = e.key;
     if (!key) return { error: 'Use a letter, number, function key, arrow, or common navigation key.' };
     if (!parts.length && !/^F/.test(key)) return { error: 'Include Command/Ctrl, Alt, or Shift in the shortcut.' };
@@ -533,14 +537,15 @@ async function saveSettings() {
     return { accelerator: parts.join('+') };
   }
 
-  async function applyAssistShortcut(accelerator) {
+  async function applyShortcut(action, accelerator) {
+    const shortcutBtn = $('#shortcut-' + action);
     const wasRecording = recordingShortcut;
     recordingShortcut = false;
     shortcutBtn.classList.remove('recording');
     shortcutBtn.textContent = 'Saving…';
     let result;
     try {
-      result = await wingman.shortcutAssistSet(accelerator);
+      result = await (action === 'assist' ? wingman.shortcutAssistSet(accelerator) : wingman.shortcutToggleSet(accelerator));
     } catch (_) {
       result = { ok: false, error: 'Aether could not update the shortcut. Please try again.' };
     }
@@ -552,21 +557,27 @@ async function saveSettings() {
       else syncAssistShortcutLabels();
       return;
     }
-    assistShortcut = result.accelerator;
+    if (action === 'assist') assistShortcut = result.accelerator;
+    else toggleShortcut = result.accelerator;
+    if (action === 'toggle') $('#share-hide-btn').disabled = false;
     if (!settings.shortcuts) settings.shortcuts = {};
-    settings.shortcuts.assist = assistShortcut;
+    settings.shortcuts[action] = result.accelerator;
     cancelShortcutRecording();
-    setShortcutHint('Assist shortcut updated.', 'success');
+    setShortcutHint((action === 'assist' ? 'Assist' : 'Show / hide') + ' shortcut updated.', 'success');
   }
 
-  shortcutBtn.addEventListener('click', () => {
-    recordingShortcut = true;
-    shortcutBtn.classList.add('recording');
-    shortcutBtn.textContent = 'Press keys…';
-    setShortcutHint('Press Escape to cancel.', '');
-  });
-
-  $('#shortcut-reset').addEventListener('click', () => applyAssistShortcut(DEFAULT_ASSIST_SHORTCUT));
+  for (const action of ['assist', 'toggle']) {
+    $('#shortcut-' + action).addEventListener('click', () => {
+      cancelShortcutRecording();
+      recordingShortcut = action;
+      const button = $('#shortcut-' + action);
+      button.classList.add('recording');
+      button.textContent = 'Press keys…';
+      setShortcutHint('Press Escape to cancel.', '');
+    });
+  }
+  $('#shortcut-reset').addEventListener('click', () => applyShortcut('assist', DEFAULT_ASSIST_SHORTCUT));
+  $('#shortcut-toggle-reset').addEventListener('click', () => applyShortcut('toggle', DEFAULT_TOGGLE_SHORTCUT));
 
   document.addEventListener('keydown', (e) => {
     if (!recordingShortcut) return;
@@ -582,7 +593,7 @@ async function saveSettings() {
       setShortcutHint(captured.error, 'error');
       return;
     }
-    applyAssistShortcut(captured.accelerator);
+    applyShortcut(recordingShortcut, captured.accelerator);
   }, true);
 
   // ---- example conversation (matches the reference screenshot) ------------
@@ -649,15 +660,15 @@ async function saveSettings() {
       icon: '🫥',
       title: 'Before you share your screen',
       body: wingman.platform === 'darwin'
-        ? 'Aether asks macOS to exclude its window from captures, but some sharing apps may still show it. Click <strong>Hide for sharing</strong> before you share, then check the sharing app’s preview. Restore the window with <strong>⌘⌥⇧9</strong> after sharing.'
+        ? 'Aether asks macOS to exclude its window from captures, but some sharing apps may still show it. Configure and test your <strong>Show / hide</strong> shortcut in Settings before sharing. Check the sharing app’s preview after hiding.'
         : wingman.platform === 'win32'
-          ? 'Aether asks Windows to exclude its window from captures, but some sharing apps may still show it. Click <strong>Hide for sharing</strong> before you share, then check the sharing app’s preview. Restore the window with <strong>Ctrl+Alt+Shift+9</strong> after sharing.'
-          : 'Linux has no Aether window-exclusion support. Share only a selected window or tab when possible. Click <strong>Hide for sharing</strong> before sharing your whole display, and check the recipient preview. Restore the window with <strong>Ctrl+Alt+Shift+9</strong> after sharing.'
+          ? 'Aether asks Windows to exclude its window from captures, but some sharing apps may still show it. Configure and test your <strong>Show / hide</strong> shortcut in Settings before sharing. Check the sharing app’s preview after hiding.'
+          : 'Linux has no Aether window-exclusion support. Share only a selected window or tab when possible. Configure and test your <strong>Show / hide</strong> shortcut in Settings before sharing; Wayland may need a desktop binding. Check the recipient preview after hiding.'
     },
 {
       icon: '✨',
       title: 'You\'re all set',
-      body: () => `How to use Aether:<ul><li>${shortcutKeycapsHtml(assistShortcut, 'kbd')} — <strong>Assist</strong> with whatever's on screen or being said</li><li><span class="kbd">⌘</span> <span class="kbd">⌥</span> <span class="kbd">⇧</span> <span class="kbd">9</span> — <strong>Show / hide</strong> Aether (works even when fully hidden)</li><li><span class="kbd">${cmdKey}</span> <span class="kbd">H</span> — solve a coding problem on screen</li><li>Click <strong>▢</strong> in the top bar to start listening to a meeting</li><li>Type a question and press <span class="kbd">↵</span></li></ul>Reopen this guide anytime by clicking the <strong>Aether logo</strong>. Change Assist's shortcut in <strong>Settings</strong>. Quit with <span class="kbd">${cmdKey}</span><span class="kbd">⇧</span><span class="kbd">X</span>.`
+      body: () => `How to use Aether:<ul><li>${shortcutKeycapsHtml(assistShortcut, 'kbd')} — <strong>Assist</strong> with whatever's on screen or being said</li><li>${shortcutKeycapsHtml(toggleShortcut, 'kbd')} — <strong>Show / hide</strong> Aether (test restoring before sharing)</li><li><span class="kbd">${cmdKey}</span> <span class="kbd">H</span> — solve a coding problem on screen</li><li>Click <strong>▢</strong> in the top bar to start listening to a meeting</li><li>Type a question and press <span class="kbd">↵</span></li></ul>Reopen this guide anytime by clicking the <strong>Aether logo</strong>. Change shortcuts in <strong>Settings</strong>. Quit with <span class="kbd">${cmdKey}</span><span class="kbd">⇧</span><span class="kbd">X</span>.`
     }
   ];
   let obIndex = 0;
@@ -710,6 +721,10 @@ async function saveSettings() {
       return;
     }
     assistShortcut = (settings.shortcuts && settings.shortcuts.assist) || DEFAULT_ASSIST_SHORTCUT;
+    toggleShortcut = (settings.shortcuts && settings.shortcuts.toggle) || DEFAULT_TOGGLE_SHORTCUT;
+    const shortcuts = await wingman.shortcutStatus();
+    $('#share-hide-btn').disabled = !shortcuts.toggle;
+    if (!shortcuts.toggle) showStatus('Show / hide shortcut unavailable. Choose another in Settings before hiding.', true);
     syncAssistShortcutLabels();
     smartBtn.classList.toggle('on', !!settings.smart);
     showExample();

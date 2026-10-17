@@ -8,7 +8,7 @@ This is a fork of [Wingman by Aarnav Baddam](https://github.com/AarnavBaddam/win
 
 - API keys are encrypted through Electron's OS-backed `safeStorage`. Aether refuses to save nonempty keys if secure storage is unavailable, and migrates old plaintext settings atomically.
 - Screen capture errors stop the request and show an error. Listening starts only after an audio track is usable, and stops when the last track ends.
-- A **Hide for sharing** control hides the entire window; the global show/hide shortcut restores it. macOS and Windows also request OS capture exclusion. See [screen sharing compatibility](docs/screen-sharing.md) for the limits and a preview check.
+- A **Hide for sharing** control hides the entire window. Choose your Show / hide keys in **Settings → Keyboard shortcuts**; the default is `Ctrl+Shift+Space` (`⌘⇧Space` on macOS). Test restoring on your desktop before sharing. macOS and Windows also request OS capture exclusion. See [screen sharing compatibility](docs/screen-sharing.md) for limits and a preview check.
 - Ollama, Claude CLI, and Codex CLI are available alongside the original API providers. Local Whisper transcription is available and is mandatory when Ollama is selected.
 - Typed factual questions search a bundled 1,832-article reference library first. Current questions, library gaps, and explicit model uncertainty use Tavily web search. The app displays retrieved source links and holds a factual answer until it cites one of them or states uncertainty. Retrieval and citation checks reduce unsupported answers; they cannot prove every claim true.
 - Linux AppImage packaging is configured; macOS and Windows targets remain available.

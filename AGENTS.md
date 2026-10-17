@@ -14,5 +14,6 @@
 - A narrower article title must not satisfy a general-topic local-only query; require matching normalized topic terms before skipping web fallback.
 - User preference: keep AI summaries for factual answers, block invalid citations, and show sources. Do not replace summaries with a source-excerpt mode. Citation validity still does not prove factual accuracy.
 - Local commits are authorized; keep progressing between commits. Push remains deferred until explicitly authorized with an Aether destination.
+- User wants configurable, short Show / hide keys. Reuse the Settings recorder; preserve Assist separately. A registered shortcut boolean is not proof of Wayland dispatch. Disable sharing Hide when registration fails, and keep physical restore validation separate from recording evidence that Hide removes the window.
 - Linux meeting audio uses `parec` and the default output monitor; Electron's loopback flag is not the Linux backend. Keep microphone-only fallback and stop helpers on cancellation, reload/crash, and quit.
 - Hyprland's default Electron storage backend may be `basic_text` despite a running GNOME Keyring. The explicit `--password-store=gnome-libsecret` backend passed encrypted save/restart checks here; do not force that backend on other keyring setups.

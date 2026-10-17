@@ -6,10 +6,12 @@ Aether uses Electron's `setContentProtection` on macOS and Windows. Electron doe
 
 1. Start the sharing app and choose a specific **window** or **tab** if possible.
 2. Inspect the app's own preview or a second viewer/recording. Move Aether over the content and confirm it does not appear.
-3. If it appears, click **Hide for sharing**. This hides the whole Aether window. Restore it with `Ctrl+Alt+Shift+9`, or `⌘⌥⇧9` on macOS, after the share ends.
+3. In **Settings → Keyboard shortcuts → Show / hide**, choose and test your restore keys before sharing. The default is `Ctrl+Shift+Space` (`⌘⇧Space` on macOS). If Aether appears in the share, click **Hide for sharing**, then restore with your chosen keys after sharing.
 4. Repeat the check whenever the OS, meeting app, capture mode, or display setup changes.
 
 The restore shortcut is best effort: a desktop environment or another app can reserve it. During a locked session, another app may block it entirely.
+
+On this Hyprland desktop, a full-monitor `wf-recorder` recording confirmed that Hide removed Aether, but the previous restore keys did not bring it back. Changing a shortcut does not establish that Wayland will dispatch it. Keep the native restore check pending until a physical key press succeeds.
 
 ## Common software
 

@@ -112,7 +112,12 @@
           <button id="shortcut-reset" class="shortcut-reset" type="button">Reset</button>
         </div>
         <div class="shortcut-hint" id="shortcut-hint">Click the shortcut, then press a new key combination.</div>
-        <div class="shortcut-hint">Show / hide Aether: <b>⌘ ⌥ ⇧ 9</b> (works even when the window is hidden)</div>
+        <div class="s-shortcut">
+          <span>Show / hide</span>
+          <button id="shortcut-toggle" class="shortcut-record" type="button" aria-label="Change Show / hide shortcut"></button>
+          <button id="shortcut-toggle-reset" class="shortcut-reset" type="button">Reset</button>
+        </div>
+        <div class="shortcut-hint">On Wayland, your desktop may also require a global shortcut binding. Test restoring before sharing.</div>
 
         <div class="s-status" id="s-status"></div>
       </div>

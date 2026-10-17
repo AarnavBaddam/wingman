@@ -4,6 +4,15 @@
 
 Phase 5: platform validation and release readiness. Source audit, hardening, provider integration, and local-first research are implemented. Linux keyring, microphone, and fresh-container runtime checks now have concrete results; live Tavily, real sharing previews, speech-quality checks, and other OS validation remain open. Work is on `codex/wingman-hardening`; local commits are authorized, and work should continue between commits. Push is deferred. See [release validation](docs/release-validation.md) for the full remaining checklist.
 
+## Sharing and configurable shortcuts
+
+- User requested an actual desktop recording and shorter, user-selected restore keys. A private, audio-free full-monitor `wf-recorder` recording confirmed Hide removes the window. The user's physical old Ctrl+Alt+Shift+9 press did not restore it; the agent showed it again. Recording is ignored under `dist/validation/`.
+- Added Show / hide to the existing Settings shortcut recorder, with reset, Escape cancel, conflict errors, saved preferences, and dynamic tooltip/onboarding labels. New default is Ctrl+Shift+Space (Command+Shift+Space on macOS). Assist retains its own setting. Failed saves restore the old runtime binding.
+- Startup conflicts must not strand a user: actual registration status disables Hide when the restore binding is unavailable; the main-process Hide handler also guards it. Wayland can still report registration success without dispatching physical keys, so native restoration remains unverified.
+- Corrected Linux desktopName to `dev.prahladv.aether.desktop`, matching electron-builder's synchronized desktop entry. Explicit portal flags alone did not populate Hyprland global shortcuts. Continue native restore diagnosis; do not claim a fix from Electron's registration boolean.
+- 49 unit tests pass; review found no further important issues after the startup-conflict fix. Localhost Playwright exercised change/reset/cancel/conflict, shifted digits, tooltip updates, and unavailable-restore Hide recovery. Native AppImage custom save/reset/reload passed, and the reset preference was confirmed on disk without exposing keys. Final pack, AppImage build/startup/research IPC, and checksum checks passed. AppImage is 143,329,894 bytes, SHA-256 `5b9309a73918b3f01ad393fd594a22d948c33d6af33da49906048e6601ee4c8a`.
+- Aether is open with the shorter default. Asked user to press Ctrl+Shift+Space twice; result pending. Keep Wayland restore unverified. No recorder is currently running. Graph refreshed to 521 nodes/861 edges. Push remains deferred.
+
 ## Phases
 
 1. **Audit and target** — cloned Aarnav Baddam's Wingman, identified plaintext key storage, capture-state failures, capture exclusion limits, and platform-specific build assumptions. Complete.

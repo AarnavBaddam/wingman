@@ -11,7 +11,7 @@ const { appendResumeContext } = require('./src/profile-context');
 const { rms16 } = require('./src/wav');
 
 let win = null;
-let registeredAssistShortcut = null;
+const registeredShortcuts = {};
 
 // Lightweight diagnostic log so shortcut behavior can be verified from a file.
 function log(msg) {
@@ -22,11 +22,10 @@ function log(msg) {
 }
 
 const DEFAULT_ASSIST_SHORTCUT = 'CommandOrControl+Return';
-const TOGGLE_SHORTCUT = 'CommandOrControl+Option+Shift+9';
+const DEFAULT_TOGGLE_SHORTCUT = 'CommandOrControl+Shift+Space';
 const RESERVED_SHORTCUTS = new Set([
   'commandorcontrol+h',
-  'commandorcontrol+shift+x',
-  'commandorcontrol+option+shift+9'
+  'commandorcontrol+shift+x'
 ]);
 
 // -------- capture / transcript state --------
@@ -285,6 +284,8 @@ async function runFeature(mode, userText) {
 ipcMain.handle('settings:get', () => store.getSettings());
 ipcMain.handle('settings:set', (_e, patch) => { sttDisabled = false; return store.setSettings(patch); });
 ipcMain.handle('shortcut:assist:set', (_e, accelerator) => setAssistShortcut(accelerator));
+ipcMain.handle('shortcut:toggle:set', (_e, accelerator) => setShortcut('toggle', accelerator));
+ipcMain.handle('shortcut:status', () => ({ ...registeredShortcuts }));
 ipcMain.handle('capture:toggle', () => setCapturing(!state.capturing));
 ipcMain.handle('capture:stop', () => setCapturing(false));
 ipcMain.handle('capture:state', () => ({ active: state.capturing }));
@@ -308,7 +309,7 @@ ipcMain.handle('capture:system:start', async () => {
 });
 ipcMain.handle('capture:system:stop', () => stopLinuxAudio());
 ipcMain.on('ask', (_e, payload) => runFeature(payload.mode, payload.text));
-ipcMain.on('window:hide-for-sharing', () => { if (win && !win.isDestroyed()) win.hide(); });
+ipcMain.on('window:hide-for-sharing', () => { if (registeredShortcuts.toggle && win && !win.isDestroyed()) win.hide(); });
 ipcMain.on('mic:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.you.push(Buffer.from(arrayBuffer)); });
 ipcMain.on('system:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.them.push(Buffer.from(arrayBuffer)); });
 ipcMain.on('mouse:ignore', (_e, v) => { if (win) win.setIgnoreMouseEvents(!!v, { forward: true }); });
@@ -323,55 +324,68 @@ function normalizeShortcut(accelerator) {
   return typeof accelerator === 'string' ? accelerator.trim().replace(/\s+/g, '') : '';
 }
 
-function registerAssistShortcut(accelerator) {
-  const next = normalizeShortcut(accelerator) || DEFAULT_ASSIST_SHORTCUT;
+function registerShortcut(action, accelerator) {
+  const next = normalizeShortcut(accelerator) || (action === 'assist' ? DEFAULT_ASSIST_SHORTCUT : DEFAULT_TOGGLE_SHORTCUT);
   if (next.length > 80) return { ok: false, error: 'That shortcut is too long.' };
-  if (RESERVED_SHORTCUTS.has(next.toLowerCase())) {
+  if (RESERVED_SHORTCUTS.has(next.toLowerCase()) || Object.entries(registeredShortcuts).some(([name, key]) => name !== action && key.toLowerCase() === next.toLowerCase())) {
     return { ok: false, error: 'That shortcut is reserved by another Aether action.' };
   }
 
-  const previous = registeredAssistShortcut;
+  const callback = action === 'assist' ? () => runFeature('assist', '') : () => toggleWindow();
+  const previous = registeredShortcuts[action];
   if (previous) globalShortcut.unregister(previous);
 
   try {
-    if (!globalShortcut.register(next, () => runFeature('assist', ''))) {
-      if (previous) globalShortcut.register(previous, () => runFeature('assist', ''));
+    if (!globalShortcut.register(next, callback)) {
+      if (previous) globalShortcut.register(previous, callback);
       return { ok: false, error: 'That shortcut is already in use by another application.' };
     }
   } catch (_) {
-    if (previous) globalShortcut.register(previous, () => runFeature('assist', ''));
+    if (previous) globalShortcut.register(previous, callback);
     return { ok: false, error: 'That key combination is not a valid global shortcut.' };
   }
 
-  registeredAssistShortcut = next;
+  registeredShortcuts[action] = next;
   return { ok: true, accelerator: next };
 }
 
 function setAssistShortcut(accelerator) {
-  const result = registerAssistShortcut(accelerator);
-  if (result.ok) store.setSettings({ shortcuts: { assist: result.accelerator } });
+  return setShortcut('assist', accelerator);
+}
+
+function setShortcut(action, accelerator) {
+  const previous = registeredShortcuts[action];
+  const result = registerShortcut(action, accelerator);
+  if (result.ok) {
+    try { store.setSettings({ shortcuts: { [action]: result.accelerator } }); }
+    catch (_) {
+      globalShortcut.unregister(result.accelerator);
+      delete registeredShortcuts[action];
+      if (previous) registerShortcut(action, previous);
+      return { ok: false, error: 'Could not save the shortcut. The previous shortcut is unchanged.' };
+    }
+  }
   return result;
 }
 
 function registerShortcuts() {
-  log('registering shortcuts. toggle=' + TOGGLE_SHORTCUT);
   const okH = globalShortcut.register('CommandOrControl+H', () => runFeature('leetcode', ''));
   const okX = globalShortcut.register('CommandOrControl+Shift+X', () => app.quit());
-  const okToggle = globalShortcut.register(TOGGLE_SHORTCUT, () => toggleWindow());
-  log('shortcut results H=' + okH + ' X=' + okX + ' toggle=' + okToggle);
+  log('shortcut results H=' + okH + ' X=' + okX);
 
   let configured;
   try {
     const settings = store.getSettings();
-    configured = settings.shortcuts && settings.shortcuts.assist;
+    configured = settings.shortcuts;
   } catch (err) {
     console.error('[wingman] settings unavailable at startup:', err);
   }
-  const result = registerAssistShortcut(configured || DEFAULT_ASSIST_SHORTCUT);
-  if (!result.ok && configured && configured !== DEFAULT_ASSIST_SHORTCUT) {
-    console.log('[wingman] unable to register Assist shortcut:', result.error, 'Falling back to default.');
-    const fallback = registerAssistShortcut(DEFAULT_ASSIST_SHORTCUT);
-    if (fallback.ok) store.setSettings({ shortcuts: { assist: DEFAULT_ASSIST_SHORTCUT } });
+  for (const [action, fallback] of Object.entries({ assist: DEFAULT_ASSIST_SHORTCUT, toggle: DEFAULT_TOGGLE_SHORTCUT })) {
+    const result = registerShortcut(action, configured?.[action] || fallback);
+    if (!result.ok) {
+      console.error('[Aether] unable to register ' + action + ' shortcut:', result.error);
+      if (configured?.[action] && configured[action] !== fallback) setShortcut(action, fallback);
+    }
   }
 }
 

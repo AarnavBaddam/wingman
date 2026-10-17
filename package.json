@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "A desktop AI copilot with screen and meeting context, local models, and optional provider accounts.",
   "productName": "Aether",
-  "desktopName": "Aether",
+  "desktopName": "dev.prahladv.aether.desktop",
   "license": "GPL-3.0-or-later",
   "author": "",
   "main": "main.js",

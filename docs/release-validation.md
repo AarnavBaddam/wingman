@@ -1,5 +1,12 @@
 # Aether release validation
 
+## Latest shortcut and sharing checks
+
+- Full-monitor `wf-recorder` recording (no audio) confirmed Hide removed Aether. The user's physical Ctrl+Alt+Shift+9 press failed to restore it; the agent restored the window. Keep native restore pending.
+- Show / hide now uses the Settings recorder, default Ctrl+Shift+Space (Command+Shift+Space on macOS), independently of Assist. Changes save transactionally; failed saves restore the previous binding. Known startup registration failure disables Hide in the UI and main IPC.
+- 49 tests pass, including shortcut replacement/conflicts/save rollback/startup conflict. Localhost Playwright passed change/reset/cancel/conflict, shifted digits, tooltip updates, and unavailable-restore Hide recovery. Native AppImage custom save/reset/reload and persisted default checks passed. Final pack/AppImage build, isolated startup/research IPC and SHA-256 checks passed. Latest artifact is 143,329,894 bytes; SHA-256 `5b9309a73918b3f01ad393fd594a22d948c33d6af33da49906048e6601ee4c8a`. User's physical Ctrl+Shift+Space result remains pending.
+- Linux desktop identity now matches `dev.prahladv.aether.desktop`; explicit portal flags alone did not create a Hyprland shortcut entry. Do not mark restore fixed based on registration success.
+
 Last checked: 2026-10-17. Phase 5 remains open. These results apply to the `codex/wingman-hardening` checkpoint. The user authorized a local commit; push is deferred.
 
 ## Implemented
@@ -17,7 +24,7 @@ Last checked: 2026-10-17. Phase 5 remains open. These results apply to the `code
 - `npm run pack`: exit 0. `app.asar` contains `data/library.json`, `LICENSE`, and research/settings modules.
 - Localhost Playwright with the actual renderer and a mocked Electron bridge: Research submission, source and CC BY-SA links, Claude/Codex/Ollama selection, mandatory local STT for Ollama, failed settings-save recovery, and Hide bridge invocation passed; zero page errors. Answers in this UI fixture are synthetic, not provider output.
 - The unpacked Linux app and rebuilt `dist/Aether-0.1.0.AppImage` both started through Playwright's Electron driver with separate temporary user-data directories. This was headless on the existing host, not a clean Linux installation. Neither profile contained user keys.
-- `npm run dist:linux`: exit 0; latest AppImage size 143,329,917 bytes. The AppImage runtime was checked with `--appimage-version` during the initial validation pass.
+- `npm run dist:linux`: exit 0; latest AppImage size 143,329,894 bytes. The AppImage runtime was checked with `--appimage-version` during the initial validation pass.
 - Live `qwen2.5-coder:7b` through Aether's Ollama adapter answered `Banach space` and `General relativity` using local evidence and passed citation-number validation. Manual comparison exposed factual drift: the Banach response said Banach later coined “Banach space,” whereas its source says he coined “Fréchet space.” The relativity response used “developed ... in 1916,” blending a source's May 1916 publication date with another source's 1907–1915 development period. These are quality findings, not successful factual acceptance checks.
 - `npm audit --omit=dev`: zero findings. Full audit: eight moderate findings in the builder dependency chain. The root [sprintf-js advisory](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) still lists no patched version. Audit suggests a builder downgrade; no dependency downgrade or override was applied.
 - `git diff --check`: passed before checkpoint edits; rerun before committing.

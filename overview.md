@@ -29,6 +29,10 @@ Aether is an Electron desktop app. It has a main process that can call providers
 4. The selected provider receives the question and numbered source passages, followed by instructions to preserve factual relationships, distinguish dates/events, and cite factual sentences. For factual modes, Aether waits for a complete draft and checks that its citation numbers refer to retrieved sources before displaying it. This check cannot establish semantic accuracy; live models have still changed facts. Ollama requests have a two-minute timeout so a stalled local model does not hold the UI indefinitely.
 5. The renderer displays the answer and clickable source links. Library links credit Wikipedia contributors and CC BY-SA 4.0.
 
+## Keyboard shortcuts
+
+Settings reuses one key recorder for Assist and Show / hide. Preload sends each change to the main process, which checks conflicts, replaces the global binding, and persists the preference. A failed save restores the previous binding. The default restore combination is Ctrl+Shift+Space (Command+Shift+Space on macOS); labels follow saved settings. Startup registration status disables the sharing Hide button if no restore binding registered. This cannot prove Wayland will deliver keys; test physically before sharing. Linux packaging synchronizes `dev.prahladv.aether.desktop` with Electron's portal identity.
+
 ## Listening
 
 The renderer asks for a microphone track. On Linux, meeting audio comes from `parec` in the main process, capturing the default PulseAudio/PipeWire output monitor as 16 kHz, mono, signed 16-bit PCM. Other platforms keep the renderer's display-media path. Capture becomes active only after a usable track or native PCM arrives; the renderer rechecks availability after pending permission requests and activation. IPC carries native readiness and unexpected-end events, while an idempotent capture-stop operation keeps overlapping cleanup from toggling capture back on. The helper stops on cancellation, renderer reload/crash, window closure, or app quit, with a bounded startup wait and forced-stop fallback.

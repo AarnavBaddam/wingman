@@ -10,7 +10,7 @@ const DEFAULTS = {
   provider: 'openai',
   smart: false,
   resumeContext: '',
-  shortcuts: { assist: 'CommandOrControl+Return' },
+  shortcuts: { assist: 'CommandOrControl+Return', toggle: 'CommandOrControl+Shift+Space' },
   apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '', nvidia: '', groq: '', tavily: '' },
   models: {
     openai: { fast: 'gpt-4o-mini', smart: 'gpt-4o' },

@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('wingman', {
   settingsGet: () => ipcRenderer.invoke('settings:get'),
   settingsSet: (patch) => ipcRenderer.invoke('settings:set', patch),
   shortcutAssistSet: (accelerator) => ipcRenderer.invoke('shortcut:assist:set', accelerator),
+  shortcutToggleSet: (accelerator) => ipcRenderer.invoke('shortcut:toggle:set', accelerator),
+  shortcutStatus: () => ipcRenderer.invoke('shortcut:status'),
   ask: (payload) => ipcRenderer.send('ask', payload),
   hideForSharing: () => ipcRenderer.send('window:hide-for-sharing'),
   captureToggle: () => ipcRenderer.invoke('capture:toggle'),
