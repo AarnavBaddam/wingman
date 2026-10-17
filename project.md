@@ -55,4 +55,4 @@ Phase 5: platform validation and release readiness. Source audit, hardening, pro
 - Localhost Playwright UI checks passed. The real unpacked-app IPC path correctly rejected the narrower DNA source and returned the missing-Tavily error. This headless test does not establish desktop capture, keyring, or audio behavior.
 - Final `npm run pack` and `npm run dist:linux` passed; the rebuilt AppImage (143,330,112 bytes) passed isolated startup and the real IPC missing-Tavily check.
 - Refreshed the code graph after the retrieval/test changes (493 nodes, 916 edges). Checkpoint/docs updated; this follow-up follows the user's local-commit-only instruction, with no push.
-- Awaiting the user's preference on generated summaries versus more direct source quotations for factual answers. Tavily setup and native/clean-install/macOS/Windows validation remain pending.
+- User chose to keep AI summaries, block invalid citations, and show sources. Retain the existing summary flow rather than adding a source-excerpt mode. Factual-quality review remains open; Tavily setup and native/clean-install/macOS/Windows validation remain pending.
