@@ -24,6 +24,15 @@ npm start
 
 Build a local unpacked app with `npm run pack`, or an AppImage on Linux with `npm run dist:linux`. `npm run dist` targets macOS; `npm run dist:win` targets Windows. macOS signing and notarization need your own Apple credentials. The Linux AppImage and cross-platform capture behavior need validation on the target machine.
 
+Electron 44 requires macOS 13 or later. After building on Linux, register the AppImage's desktop identity so Wayland portals can recognize Aether:
+
+```bash
+node scripts/install-linux.js # defaults to dist/Aether-0.1.0.AppImage
+# Or pass the absolute path to your AppImage as the first argument.
+```
+
+This installs a per-user application launcher without copying the AppImage; rerun it if you move the file. On Hyprland with Lua configuration (0.55+), Aether creates its Show / hide binding at startup and updates it when you choose new keys. It refuses existing desktop key conflicts and removes its own binding on quit. Restart Aether after reloading Hyprland configuration, which clears runtime bindings. Other global actions may require desktop bindings; their buttons remain available.
+
 ## Configure providers
 
 Open **Settings** in Aether and select one provider:
@@ -61,7 +70,7 @@ Screenshots, transcripts, and your optional résumé are sent to the selected mo
 
 ## Capture and screen sharing
 
-**No app can guarantee that an overlay remains visible to you while invisible to every screen share, recorder, or locked environment.** Linux has no Electron capture exclusion for this window. On macOS and Windows, OS exclusion is best effort and capture tools may bypass it. Check the recipient or recording preview before relying on it; use **Hide for sharing** and restore with `Ctrl+Alt+Shift+9` (`⌘⌥⇧9` on macOS). Sharing a selected app window or browser tab is safer than sharing the full display when available. [Platform details and common apps](docs/screen-sharing.md).
+**No app can guarantee that an overlay remains visible to you while invisible to every screen share, recorder, or locked environment.** Linux has no Electron capture exclusion for this window. On macOS and Windows, OS exclusion is best effort and capture tools may bypass it. Check the recipient or recording preview before relying on it; use **Hide for sharing** and restore with your configured shortcut (default `Ctrl+Shift+Space`, or `⌘⇧Space` on macOS). Sharing a selected app window or browser tab is safer than sharing the full display when available. [Platform details and common apps](docs/screen-sharing.md).
 
 Proctored or locked browsers may block other applications and shortcuts. Aether does not bypass those restrictions, and operation in such modes is not supported.
 

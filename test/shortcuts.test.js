@@ -9,7 +9,7 @@ function harness() {
   const saved = [];
   let failSave = false;
   const context = vm.createContext({
-    registeredShortcuts: {}, DEFAULT_ASSIST_SHORTCUT: 'CommandOrControl+Return',
+    registeredShortcuts: {}, hyprShortcut: null, toggleBindingError: null, DEFAULT_ASSIST_SHORTCUT: 'CommandOrControl+Return',
     DEFAULT_TOGGLE_SHORTCUT: 'CommandOrControl+Shift+Space',
     RESERVED_SHORTCUTS: new Set(['commandorcontrol+h', 'commandorcontrol+shift+x']),
     globalShortcut: {
@@ -63,4 +63,45 @@ test('startup conflict does not advertise a registered Show/hide binding', () =>
   h.context.registerShortcuts();
   assert.equal(h.context.registeredShortcuts.toggle, undefined);
   assert.equal(h.context.registeredShortcuts.assist, 'CommandOrControl+Shift+Space');
+});
+
+test('failed Hyprland binding preserves the previous registered and saved shortcut', async () => {
+  const h = harness();
+  h.context.registerShortcut('toggle', 'Alt+Space');
+  h.context.hyprShortcut = { async bind(key) { if (key === 'Alt+K') throw Error('desktop conflict'); } };
+  assert.equal((await h.context.setToggleShortcut('Alt+K')).ok, false);
+  assert(h.bindings.has('Alt+Space'));
+  assert(!h.bindings.has('Alt+K'));
+  assert.equal(h.saved.length, 0);
+});
+
+test('failed save rolls back both Electron and the Hyprland binding', async () => {
+  const h = harness();
+  const nativeKeys = [];
+  h.context.registerShortcut('toggle', 'Alt+Space');
+  h.context.hyprShortcut = { async bind(key) { nativeKeys.push(key); } };
+  h.failSave = true;
+  assert.equal((await h.context.setToggleShortcut('Alt+K')).ok, false);
+  assert.deepEqual(nativeKeys, ['Alt+K', 'Alt+Space']);
+  assert(h.bindings.has('Alt+Space'));
+});
+
+test('startup registration conflict can recover with a new Hyprland shortcut', async () => {
+  const h = harness();
+  const nativeKeys = [];
+  h.context.process = { platform: 'linux', env: { HYPRLAND_INSTANCE_SIGNATURE: 'test' } };
+  h.context.require = () => ({ createHyprShortcut: () => ({ async bind(key) { nativeKeys.push(key); } }) });
+  h.context.initializeHyprShortcut();
+  assert.equal((await h.context.setToggleShortcut('Alt+K')).ok, true);
+  assert.deepEqual(nativeKeys, ['Alt+K']);
+});
+
+test('failed first shortcut save removes the new native binding', async () => {
+  const h = harness();
+  let stopped = false;
+  h.context.hyprShortcut = { async bind() {}, stop() { stopped = true; } };
+  h.failSave = true;
+  assert.equal((await h.context.setToggleShortcut('Alt+K')).ok, false);
+  assert.equal(stopped, true);
+  assert.equal(h.context.registeredShortcuts.toggle, undefined);
 });

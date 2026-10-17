@@ -2,10 +2,11 @@
 
 ## Latest shortcut and sharing checks
 
-- Full-monitor `wf-recorder` recording (no audio) confirmed Hide removed Aether. The user's physical Ctrl+Alt+Shift+9 press failed to restore it; the agent restored the window. Keep native restore pending.
+- Full-monitor `wf-recorder` recordings (no audio) confirmed Hide removed Aether. Initial restore failed. After repairing portal identity and binding, the user physically pressed Ctrl+Shift+Space twice and confirmed hide and restore worked. Portal dispatch separately toggled BrowserWindow visibility false/true. The final clip does not establish visual restoration after a workspace change; keep those evidence types distinct.
 - Show / hide now uses the Settings recorder, default Ctrl+Shift+Space (Command+Shift+Space on macOS), independently of Assist. Changes save transactionally; failed saves restore the previous binding. Known startup registration failure disables Hide in the UI and main IPC.
-- 49 tests pass, including shortcut replacement/conflicts/save rollback/startup conflict. Localhost Playwright passed change/reset/cancel/conflict, shifted digits, tooltip updates, and unavailable-restore Hide recovery. Native AppImage custom save/reset/reload and persisted default checks passed. Final pack/AppImage build, isolated startup/research IPC and SHA-256 checks passed. Latest artifact is 143,329,894 bytes; SHA-256 `5b9309a73918b3f01ad393fd594a22d948c33d6af33da49906048e6601ee4c8a`. User's physical Ctrl+Shift+Space result remains pending.
-- Linux desktop identity now matches `dev.prahladv.aether.desktop`; explicit portal flags alone did not create a Hyprland shortcut entry. Do not mark restore fixed based on registration success.
+- 59 tests pass, including native-binding conflicts, rollback, first-save cleanup, startup recovery, and stale binding replacement. Review found no further important issues. Localhost Playwright passed shortcut change/reset/cancel/conflict/shifted-digit/tooltip and unavailable-restore recovery. Native AppImage custom save/reset/reload/disk, normal FUSE launch, native audio lifecycle, and fresh Ubuntu 24.04 runtime passed on Electron 44.9.0. Final pack/build/startup/research IPC/checksum checks passed. Latest artifact is 139,434,546 bytes; SHA-256 `541522520ecce7c349a7fc9e56f91ed8da82b7aec80f31ad4f8b9d23c9794136`.
+- Portal trace proved Electron 43 omitted host registration; [upstream fixed it in Electron 44](https://github.com/electron/electron/issues/51875). `scripts/install-linux.js` registers the required matching desktop launcher. Hyprland Lua (0.55+) also requires an explicit compositor bind, now managed for Show / hide by Aether. Restart Aether after reloading Hyprland configuration. Other global actions still need compositor validation/setup. Electron 44 requires macOS 13+.
+- Headless checks now skip desktop shortcut registration. Serialize extraction-mode AppImage checks: concurrent processes can remove shared temporary resources. Normal FUSE launch worked on this host, with Chromium sandbox disabled by the automation driver; this is still not a clean desktop-install test.
 
 Last checked: 2026-10-17. Phase 5 remains open. These results apply to the `codex/wingman-hardening` checkpoint. The user authorized a local commit; push is deferred.
 
@@ -20,11 +21,11 @@ Last checked: 2026-10-17. Phase 5 remains open. These results apply to the `code
 
 ## Fresh checks
 
-- `npm test`: 45 passed, zero failed, including narrower-title rejection and Linux native-audio readiness, framing, failure, retry, and activation/lifecycle regressions.
+- `npm test`: 59 passed, zero failed, including retrieval, native-audio lifecycle, shortcut transactions, Hyprland binding ownership, and launcher regressions.
 - `npm run pack`: exit 0. `app.asar` contains `data/library.json`, `LICENSE`, and research/settings modules.
 - Localhost Playwright with the actual renderer and a mocked Electron bridge: Research submission, source and CC BY-SA links, Claude/Codex/Ollama selection, mandatory local STT for Ollama, failed settings-save recovery, and Hide bridge invocation passed; zero page errors. Answers in this UI fixture are synthetic, not provider output.
 - The unpacked Linux app and rebuilt `dist/Aether-0.1.0.AppImage` both started through Playwright's Electron driver with separate temporary user-data directories. This was headless on the existing host, not a clean Linux installation. Neither profile contained user keys.
-- `npm run dist:linux`: exit 0; latest AppImage size 143,329,894 bytes. The AppImage runtime was checked with `--appimage-version` during the initial validation pass.
+- `npm run dist:linux`: exit 0; latest AppImage size 139,434,546 bytes. The AppImage runtime was checked with `--appimage-version` during the initial validation pass.
 - Live `qwen2.5-coder:7b` through Aether's Ollama adapter answered `Banach space` and `General relativity` using local evidence and passed citation-number validation. Manual comparison exposed factual drift: the Banach response said Banach later coined “Banach space,” whereas its source says he coined “Fréchet space.” The relativity response used “developed ... in 1916,” blending a source's May 1916 publication date with another source's 1907–1915 development period. These are quality findings, not successful factual acceptance checks.
 - `npm audit --omit=dev`: zero findings. Full audit: eight moderate findings in the builder dependency chain. The root [sprintf-js advisory](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) still lists no patched version. Audit suggests a builder downgrade; no dependency downgrade or override was applied.
 - `git diff --check`: passed before checkpoint edits; rerun before committing.
@@ -53,7 +54,7 @@ Record distribution, X11/Wayland session, model, sharing app, and observed resul
 - Test microphone only, system audio only, and both. Stop a shared track; verify the remaining track continues, or listening stops when none remain.
 - Select Ollama/local Whisper and transcribe real speech. Confirm there is no cloud transcription fallback.
 - Test screen capture success and denial; denial must stop a screen-dependent request before provider submission.
-- Check a selected-window/tab share and a full-display share from a recipient or recording. Use Hide for sharing and verify the entire window disappears, then restore it with `Ctrl+Alt+Shift+9`.
+- Full-display recording disappearance and physical Hyprland Ctrl+Shift+Space hide/restore passed. Still check selected-window/tab sharing and a recipient preview. Repeat after changing OS, compositor or sharing app; no universal exclusion guarantee.
 - Test the global shortcut and overlay behavior on the target compositor. Never interpret the mocked Hide check as native exclusion evidence.
 
 ### Clean Linux installation

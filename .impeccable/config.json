@@ -7,7 +7,8 @@
         "rule": "pulsing-dot",
         "value": "*",
         "files": [
-          "renderer/index.html"
+          "renderer/index.html",
+          "wingman/renderer/index.html"
         ],
         "createdAt": "2026-10-16T18:30:53.442Z",
         "reason": "Live dot pulses only while an audio capture track is active; capture:state turns animation off when inactive."

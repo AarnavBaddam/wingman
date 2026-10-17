@@ -12,6 +12,9 @@ const { rms16 } = require('./src/wav');
 
 let win = null;
 const registeredShortcuts = {};
+let hyprShortcut = null;
+let toggleBindingError = null;
+let toggleBindingReady = Promise.resolve();
 
 // Lightweight diagnostic log so shortcut behavior can be verified from a file.
 function log(msg) {
@@ -284,8 +287,15 @@ async function runFeature(mode, userText) {
 ipcMain.handle('settings:get', () => store.getSettings());
 ipcMain.handle('settings:set', (_e, patch) => { sttDisabled = false; return store.setSettings(patch); });
 ipcMain.handle('shortcut:assist:set', (_e, accelerator) => setAssistShortcut(accelerator));
-ipcMain.handle('shortcut:toggle:set', (_e, accelerator) => setShortcut('toggle', accelerator));
-ipcMain.handle('shortcut:status', () => ({ ...registeredShortcuts }));
+ipcMain.handle('shortcut:toggle:set', (_e, accelerator) => {
+  const next = toggleBindingReady.then(() => setToggleShortcut(accelerator));
+  toggleBindingReady = next.then(() => {}, () => {});
+  return next;
+});
+ipcMain.handle('shortcut:status', async () => {
+  await toggleBindingReady;
+  return { ...registeredShortcuts, toggle: toggleBindingError ? undefined : registeredShortcuts.toggle };
+});
 ipcMain.handle('capture:toggle', () => setCapturing(!state.capturing));
 ipcMain.handle('capture:stop', () => setCapturing(false));
 ipcMain.handle('capture:state', () => ({ active: state.capturing }));
@@ -309,7 +319,10 @@ ipcMain.handle('capture:system:start', async () => {
 });
 ipcMain.handle('capture:system:stop', () => stopLinuxAudio());
 ipcMain.on('ask', (_e, payload) => runFeature(payload.mode, payload.text));
-ipcMain.on('window:hide-for-sharing', () => { if (registeredShortcuts.toggle && win && !win.isDestroyed()) win.hide(); });
+ipcMain.on('window:hide-for-sharing', async () => {
+  await toggleBindingReady;
+  if (registeredShortcuts.toggle && !toggleBindingError && win && !win.isDestroyed()) win.hide();
+});
 ipcMain.on('mic:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.you.push(Buffer.from(arrayBuffer)); });
 ipcMain.on('system:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.them.push(Buffer.from(arrayBuffer)); });
 ipcMain.on('mouse:ignore', (_e, v) => { if (win) win.setIgnoreMouseEvents(!!v, { forward: true }); });
@@ -368,6 +381,28 @@ function setShortcut(action, accelerator) {
   return result;
 }
 
+async function setToggleShortcut(accelerator) {
+  const previous = registeredShortcuts.toggle;
+  const result = registerShortcut('toggle', accelerator);
+  if (!result.ok) return result;
+  try {
+    if (hyprShortcut) await hyprShortcut.bind(result.accelerator);
+    store.setSettings({ shortcuts: { toggle: result.accelerator } });
+    toggleBindingError = null;
+    return result;
+  } catch (error) {
+    globalShortcut.unregister(result.accelerator);
+    delete registeredShortcuts.toggle;
+    try { if (hyprShortcut) hyprShortcut.stop(); } catch (cleanupError) { log('Hyprland rollback cleanup failed: ' + cleanupError.message); }
+    if (previous) {
+      registerShortcut('toggle', previous);
+      try { if (hyprShortcut) await hyprShortcut.bind(previous); toggleBindingError = null; }
+      catch (restoreError) { toggleBindingError = restoreError.message; }
+    } else toggleBindingError = error.message;
+    return { ok: false, error: 'Could not update Show / hide: ' + error.message };
+  }
+}
+
 function registerShortcuts() {
   const okH = globalShortcut.register('CommandOrControl+H', () => runFeature('leetcode', ''));
   const okX = globalShortcut.register('CommandOrControl+Shift+X', () => app.quit());
@@ -389,6 +424,17 @@ function registerShortcuts() {
   }
 }
 
+function initializeHyprShortcut() {
+  if (process.platform !== 'linux' || !process.env.HYPRLAND_INSTANCE_SIGNATURE) return;
+  hyprShortcut = require('./src/hypr-shortcut').createHyprShortcut();
+  if (registeredShortcuts.toggle) {
+    toggleBindingReady = hyprShortcut.bind(registeredShortcuts.toggle).catch(error => {
+      toggleBindingError = error.message;
+      log('Hyprland restore binding unavailable: ' + error.message);
+    });
+  }
+}
+
 // -------- lifecycle --------
 app.whenReady().then(() => {
   // if (app.dock) app.dock.hide();
@@ -407,7 +453,11 @@ app.whenReady().then(() => {
   }, { useSystemPicker: false });
 
   createWindow();
-  registerShortcuts();
+  // Headless checks must not register keys or alter the signed-in desktop's bindings.
+  if (app.commandLine.getSwitchValue('ozone-platform') !== 'headless') {
+    registerShortcuts();
+    initializeHyprShortcut();
+  }
 
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 
@@ -418,7 +468,11 @@ app.whenReady().then(() => {
   });
 });
 
-app.on('will-quit', () => { stopLinuxAudio(); globalShortcut.unregisterAll(); });
+app.on('will-quit', () => {
+  stopLinuxAudio();
+  try { if (hyprShortcut) hyprShortcut.stop(); } catch (error) { log('Hyprland binding cleanup failed: ' + error.message); }
+  globalShortcut.unregisterAll();
+});
 // Never quit when the overlay window is closed — wingman stays resident so the
 // Command+` toggle (and the other global shortcuts) keep working. Quit via the
 // Cmd+Shift+X shortcut or quitting the app from the Dock.

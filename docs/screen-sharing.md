@@ -11,7 +11,9 @@ Aether uses Electron's `setContentProtection` on macOS and Windows. Electron doe
 
 The restore shortcut is best effort: a desktop environment or another app can reserve it. During a locked session, another app may block it entirely.
 
-On this Hyprland desktop, a full-monitor `wf-recorder` recording confirmed that Hide removed Aether, but the previous restore keys did not bring it back. Changing a shortcut does not establish that Wayland will dispatch it. Keep the native restore check pending until a physical key press succeeds.
+On this Hyprland desktop, the initial restore check failed because Electron 43 omitted portal app registration and Aether had no installed desktop entry. Electron 44 plus the installed launcher now establishes the portal session. Hyprland also requires a compositor binding; Aether creates that binding for Show / hide, replaces it when you change keys, and removes it on quit. The user physically pressed Ctrl+Shift+Space twice and confirmed hide and restore both worked. A separate local full-monitor `wf-recorder` check exercises the portal action. This result applies to this desktop, not every sharing app.
+
+Run `node scripts/install-linux.js` after building or moving the AppImage. Automatic Show / hide binding targets Hyprland's Lua configuration (0.55+). Restart Aether after a Hyprland configuration reload; runtime bindings are cleared by reload. Other Wayland desktops manage their shortcut permissions separately.
 
 ## Common software
 

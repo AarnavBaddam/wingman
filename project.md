@@ -2,16 +2,18 @@
 
 ## Current phase
 
-Phase 5: platform validation and release readiness. Source audit, hardening, provider integration, and local-first research are implemented. Linux keyring, microphone, and fresh-container runtime checks now have concrete results; live Tavily, real sharing previews, speech-quality checks, and other OS validation remain open. Work is on `codex/wingman-hardening`; local commits are authorized, and work should continue between commits. Push is deferred. See [release validation](docs/release-validation.md) for the full remaining checklist.
+Phase 5: platform validation and release readiness. Linux keyring, microphone, output-monitor audio lifecycle, fresh-container runtime, normal FUSE launch, and physical Hyprland Hide/restore have concrete results. Live Tavily, selected-window/recipient sharing checks, speech quality, a fully clean desktop install, and macOS/Windows remain open. Work is on `codex/wingman-hardening`; local commits are authorized and push remains deferred. See [release validation](docs/release-validation.md).
 
 ## Sharing and configurable shortcuts
 
 - User requested an actual desktop recording and shorter, user-selected restore keys. A private, audio-free full-monitor `wf-recorder` recording confirmed Hide removes the window. The user's physical old Ctrl+Alt+Shift+9 press did not restore it; the agent showed it again. Recording is ignored under `dist/validation/`.
 - Added Show / hide to the existing Settings shortcut recorder, with reset, Escape cancel, conflict errors, saved preferences, and dynamic tooltip/onboarding labels. New default is Ctrl+Shift+Space (Command+Shift+Space on macOS). Assist retains its own setting. Failed saves restore the old runtime binding.
-- Startup conflicts must not strand a user: actual registration status disables Hide when the restore binding is unavailable; the main-process Hide handler also guards it. Wayland can still report registration success without dispatching physical keys, so native restoration remains unverified.
-- Corrected Linux desktopName to `dev.prahladv.aether.desktop`, matching electron-builder's synchronized desktop entry. Explicit portal flags alone did not populate Hyprland global shortcuts. Continue native restore diagnosis; do not claim a fix from Electron's registration boolean.
+- Startup conflicts must not strand a user: actual registration status disables Hide when the restore binding is unavailable; the main-process Hide handler also waits for native setup. Registration booleans alone do not prove Wayland delivery.
+- Portal trace found Electron 43 skipped host app registration: `CreateSession` failed with “An app id is required.” Electron 44.9.0 sends the missing registration. The portal then required the installed `dev.prahladv.aether.desktop` launcher, supplied by `scripts/install-linux.js`. Hyprland also requires a compositor binding; `src/hypr-shortcut.js` creates it, updates it for custom keys, and removes only owned bindings on quit. Headless checks skip global shortcuts to avoid altering the signed-in desktop.
 - 49 unit tests pass; review found no further important issues after the startup-conflict fix. Localhost Playwright exercised change/reset/cancel/conflict, shifted digits, tooltip updates, and unavailable-restore Hide recovery. Native AppImage custom save/reset/reload passed, and the reset preference was confirmed on disk without exposing keys. Final pack, AppImage build/startup/research IPC, and checksum checks passed. AppImage is 143,329,894 bytes, SHA-256 `5b9309a73918b3f01ad393fd594a22d948c33d6af33da49906048e6601ee4c8a`.
-- Aether is open with the shorter default. Asked user to press Ctrl+Shift+Space twice; result pending. Keep Wayland restore unverified. No recorder is currently running. Graph refreshed to 521 nodes/861 edges. Push remains deferred.
+- User physically pressed Ctrl+Shift+Space twice after the repair and confirmed hide/restore both worked. Normal FUSE AppImage launch, native custom key save/reset/reload/disk, and runtime binding cleanup passed. Portal dispatch independently toggled BrowserWindow hidden/visible; a local audio-free recording confirms disappearance but does not establish visual restoration after the workspace changed. Do not overstate recording evidence.
+- Latest: 59 tests pass; review found no further important issues after fixing startup-conflict recovery, first-save cleanup, and stale owned bindings. Localhost Playwright and final pack/build/startup/research IPC passed. Electron 44 native audio lifecycle and Ubuntu 24.04 runtime were rerun successfully. Final AppImage: 139,434,546 bytes; SHA-256 `541522520ecce7c349a7fc9e56f91ed8da82b7aec80f31ad4f8b9d23c9794136`. Graph refreshed to 554 nodes/899 edges.
+- Limits: restart Aether after a Hyprland configuration reload clears runtime bindings; automatic binding targets Lua Hyprland (0.55+), Show / hide only. Other global actions may need desktop setup. Electron 44 requires macOS 13+. Never run concurrent extraction-mode AppImage checks: they can share and remove each other's temporary resources. No recorder is running; push remains deferred.
 
 ## Phases
 
@@ -31,7 +33,7 @@ Phase 5: platform validation and release readiness. Source audit, hardening, pro
 
 ## Checks run
 
-- `npm test`: latest suite has 45 passing tests.
+- `npm test`: latest suite has 59 passing tests.
 - `npm run dist:linux`: built `dist/Aether-0.1.0.AppImage` (137 MB); `app.asar` contains the reference library and GPL license. The AppImage responds to `--appimage-version`.
 - Headless Playwright on localhost: Research button, source and license links, provider choices, settings save/scroll, and Ollama local transcription controls worked with a mocked Electron bridge; no page errors.
 - Live local Claude and Codex CLI replies passed. Ollama answered a library-backed Banach space question with a valid citation. An earlier Whisper probe passed.
@@ -40,7 +42,7 @@ Phase 5: platform validation and release readiness. Source audit, hardening, pro
 ## Next steps
 
 1. Set up Tavily and enter a key in Aether; the user confirmed it is not configured yet. Then test live search and inspect citation quality on math, science, and current-fact prompts.
-2. Finish speech-to-transcript quality checks on Linux. Real microphone acquisition/denial, native output-monitor PCM, keyring round trip, and capture-process lifecycle now pass. Sharing previews are explicitly deferred by the user; macOS/Windows capture and signing require their target hardware.
+2. Finish speech-to-transcript quality checks on Linux. Real microphone acquisition/denial, output-monitor PCM, keyring round trip, capture lifecycle and physical Hyprland Hide/restore pass. Selected-window/recipient previews and other compositor hotkeys remain to check; macOS/Windows require their hardware.
 3. Smoke test the AppImage on a clean Linux user account with real desktop capture permissions and a configured model.
 4. Review the upstream builder advisory when a patched `sprintf-js` path becomes available.
 
