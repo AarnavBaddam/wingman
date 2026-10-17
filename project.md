@@ -45,3 +45,14 @@ Phase 5: platform validation and release readiness. Source audit, hardening, pro
 - Live Ollama (`qwen2.5-coder:7b`) math/science probes passed citation-number validation but failed full source-faithfulness review: a Banach naming relationship was reversed and a relativity development date was conflated with publication. Investigate prompt/model behavior and repeat evidence-level checks before marking factual quality complete. Citation validation alone is insufficient.
 - `origin` still points at the original author's Wingman repository for fetch and push. User authorized a local commit only; push is deferred until an Aether destination and explicit push instructions are provided.
 - No application source or dependencies changed during this validation pass. Checkpoint and release checklist were updated. The temporary browser harness is `/tmp/aether-validation.cjs`, not a shipped test runner.
+
+## Continued grounding work
+
+- Local checkpoint commit: `fa61f1b` (`feat: harden Aether and add grounded research`). Push remains deferred.
+- Fixed narrower-title acceptance in `getEvidence`: normalized query/title topic terms must match, so a general DNA question cannot rely only on an article about DNA fluorescence. Added a failing-then-passing regression; all 38 tests pass.
+- Tightened and repositioned the evidence instructions for every factual claim. No provider/dependency change or extra model call was added.
+- Live `qwen2.5-coder:7b` checks remain mixed: three of four final-prompt responses passed citation-number validation, one invalid source number was correctly blocked, and date wording still drifted. Naming accuracy improved in one sample, but semantic faithfulness is not complete.
+- Localhost Playwright UI checks passed. The real unpacked-app IPC path correctly rejected the narrower DNA source and returned the missing-Tavily error. This headless test does not establish desktop capture, keyring, or audio behavior.
+- Final `npm run pack` and `npm run dist:linux` passed; the rebuilt AppImage (143,330,112 bytes) passed isolated startup and the real IPC missing-Tavily check.
+- Refreshed the code graph after the retrieval/test changes (493 nodes, 916 edges). Checkpoint/docs updated; this follow-up follows the user's local-commit-only instruction, with no push.
+- Awaiting the user's preference on generated summaries versus more direct source quotations for factual answers. Tavily setup and native/clean-install/macOS/Windows validation remain pending.

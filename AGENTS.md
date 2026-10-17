@@ -11,3 +11,4 @@
 - A fresh profile or headless packaged launch is not a clean Linux install or proof of desktop keyring/capture permissions. Track those checks separately in `docs/release-validation.md`.
 - Check the push destination before publishing: the clone's `origin` currently points to Aarnav Baddam's upstream Wingman repository, not a user-owned Aether fork.
 - Validate factual quality against retrieved passages, not citation-number checks alone: live Ollama probes have produced naming/date drift despite valid citations.
+- A narrower article title must not satisfy a general-topic local-only query; require matching normalized topic terms before skipping web fallback.

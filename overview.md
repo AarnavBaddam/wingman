@@ -23,8 +23,8 @@ Aether is an Electron desktop app. It has a main process that can call providers
 
 1. The renderer sends the question and mode through the preload bridge.
 2. `main.js` captures a screenshot for **Ask**, or skips it for **Research**.
-3. `src/research.js` asks `src/library.js` for a strong local title match with enough source text. Current questions and misses use Tavily; if the model says local evidence is insufficient, it retries once with Tavily. No usable evidence produces an error.
-4. The selected provider receives the question and numbered source passages. For factual modes, Aether waits for a complete draft and checks that its citation numbers refer to retrieved sources before displaying it. Ollama requests have a two-minute timeout so a stalled local model does not hold the UI indefinitely.
+3. `src/research.js` asks `src/library.js` for a local title match with the same normalized topic terms and enough source text. More specific titles do not satisfy a general-topic query. Current questions and misses use Tavily; if the model says local evidence is insufficient, it retries once with Tavily. No usable evidence produces an error.
+4. The selected provider receives the question and numbered source passages, followed by instructions to preserve factual relationships, distinguish dates/events, and cite factual sentences. For factual modes, Aether waits for a complete draft and checks that its citation numbers refer to retrieved sources before displaying it. This check cannot establish semantic accuracy; live models have still changed facts. Ollama requests have a two-minute timeout so a stalled local model does not hold the UI indefinitely.
 5. The renderer displays the answer and clickable source links. Library links credit Wikipedia contributors and CC BY-SA 4.0.
 
 ## Listening

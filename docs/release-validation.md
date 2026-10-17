@@ -13,11 +13,11 @@ Last checked: 2026-10-17. Phase 5 remains open. These results apply to the `code
 
 ## Fresh checks
 
-- `npm test`: 37 passed, zero failed.
+- `npm test`: 38 passed, zero failed, including a regression that rejects narrower article titles for general-topic questions.
 - `npm run pack`: exit 0. `app.asar` contains `data/library.json`, `LICENSE`, and research/settings modules.
 - Localhost Playwright with the actual renderer and a mocked Electron bridge: Research submission, source and CC BY-SA links, Claude/Codex/Ollama selection, mandatory local STT for Ollama, failed settings-save recovery, and Hide bridge invocation passed; zero page errors. Answers in this UI fixture are synthetic, not provider output.
 - The unpacked Linux app and rebuilt `dist/Aether-0.1.0.AppImage` both started through Playwright's Electron driver with separate temporary user-data directories. This was headless on the existing host, not a clean Linux installation. Neither profile contained user keys.
-- `npm run dist:linux`: exit 0; AppImage size 143,330,085 bytes. The AppImage runtime responds to `--appimage-version`.
+- `npm run dist:linux`: exit 0; latest AppImage size 143,330,112 bytes. The AppImage runtime was checked with `--appimage-version` during the initial validation pass.
 - Live `qwen2.5-coder:7b` through Aether's Ollama adapter answered `Banach space` and `General relativity` using local evidence and passed citation-number validation. Manual comparison exposed factual drift: the Banach response said Banach later coined “Banach space,” whereas its source says he coined “Fréchet space.” The relativity response used “developed ... in 1916,” blending a source's May 1916 publication date with another source's 1907–1915 development period. These are quality findings, not successful factual acceptance checks.
 - `npm audit --omit=dev`: zero findings. Full audit: eight moderate findings in the builder dependency chain. The root [sprintf-js advisory](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) still lists no patched version. Audit suggests a builder downgrade; no dependency downgrade or override was applied.
 - `git diff --check`: passed before checkpoint edits; rerun before committing.
@@ -75,3 +75,12 @@ Use a fresh supported Linux VM or separate machine/user with no development chec
 ## Evidence still missing
 
 Live Tavily, answer faithfulness after the observed Ollama errors, real desktop key storage, native sharing/audio/permission behavior, a clean Linux installation, and macOS/Windows release validation remain open. Earlier local Claude/Codex/Whisper probes are recorded in `project.md`; they were not rerun as part of this pass.
+
+## Grounding follow-up
+
+- Fixed a concrete retrieval error: `Explain DNA` previously accepted `Intrinsic DNA fluorescence` as sufficient local evidence. It now requires the matching normalized topic title, otherwise using web fallback or the missing-Tavily error. The new regression failed before the fix and passes afterward.
+- Moved concise grounding instructions after the evidence. They apply to all factual claims and tell the model to preserve names, relationships, qualifiers, and distinct events/dates.
+- Four live `qwen2.5-coder:7b` replies with the final prompt: three passed citation-number validation; one invented `[2]` when only source `[1]` existed and was correctly rejected. One Banach response preserved the previously reversed naming relationship, but relativity replies still blurred publication versus development/proposal dates. Prompt wording alone has not resolved semantic accuracy.
+- Localhost Playwright UI checks passed with a fixture bridge. The real packaged Electron IPC path also rejected the narrower DNA article and returned the missing-Tavily error without emitting answer/source content. The headless onboarding overlay covered the panel, so this IPC check inspected the resulting DOM text rather than claiming a visible desktop interaction.
+- After the final prompt change, `npm run pack` and `npm run dist:linux` passed again. The rebuilt AppImage passed isolated startup and the same real IPC fallback check.
+- The product trade-off between fluent generated summaries and more direct source quotations is open. No extra verification model or new dependency was added.

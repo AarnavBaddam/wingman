@@ -48,6 +48,17 @@ test('research answers must cite retrieved sources or state uncertainty', () => 
   assert.throws(() => validateGroundedAnswer('The result is known [2].', sources), /not retrieved/);
 });
 
+test('a narrower article is not sufficient local evidence for a general topic', async () => {
+  const collection = ['Intrinsic DNA fluorescence', 'DNA'].map(title => ({
+    title, url: `https://example.org/${encodeURIComponent(title)}`, content: 'A'.repeat(700),
+    words: new Set(title.toLowerCase().split(' ')), titleWords: new Set(title.toLowerCase().split(' ')), origin: 'library'
+  }));
+  const exact = await getEvidence('Explain DNA', '', { collection });
+  assert.deepEqual(exact.map(source => source.title), ['DNA']);
+  collection.pop();
+  await assert.rejects(getEvidence('Explain DNA', '', { collection }), /Tavily/);
+});
+
 test('explicit local uncertainty requests a single web follow-up', () => {
   assert.equal(needsWebFollowup('The supplied sources are insufficient.', [{ origin: 'library' }]), true);
   assert.equal(needsWebFollowup('The supplied sources are insufficient.', [{ origin: 'web' }]), false);
