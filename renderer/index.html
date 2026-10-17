@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; font-src 'self' data:" />
-  <title>wingman</title>
+  <title>Aether</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="katex.min.css" />
   <style>
@@ -15,9 +15,10 @@
   <div id="app">
     <!-- Top-center floating pill toolbar (drag handle) -->
     <div id="toolbar">
-      <button class="tb-logo" id="logo-btn" title="wingman"></button>
+      <button class="tb-logo" id="logo-btn" title="Aether"></button>
       <div class="tb-divider"></div>
       <button class="tb-hide" id="hide-btn"><span class="chev"></span><span>Hide</span></button>
+      <button class="tb-hide" id="share-hide-btn" title="Hide the entire Aether window before sharing">Hide for sharing</button>
       <div class="tb-divider"></div>
       <button class="tb-stop" id="stop-btn" title="Start / stop listening"></button>
     </div>
@@ -36,6 +37,8 @@
           <button class="act" data-mode="followup"><span class="ic"></span><span>Follow-up questions</span></button>
           <span class="sep">•</span>
           <button class="act" data-mode="recap"><span class="ic"></span><span>Recap</span></button>
+          <span class="sep">•</span>
+          <button class="act" data-mode="research"><span>Research</span></button>
         </div>
 
         <div id="composer">
@@ -71,17 +74,30 @@
           <button data-provider="gemini">Gemini</button>
           <button data-provider="nvidia">Nvidia</button>
           <button data-provider="groq">Groq</button>
+          <button data-provider="ollama">Ollama</button>
+          <button data-provider="claude-cli">Claude CLI</button>
+          <button data-provider="codex-cli">Codex CLI</button>
         </div>
 
-        <label class="s-label">API keys <span class="s-hint">stored locally in wingman-data.json</span></label>
+        <label class="s-label">API keys <span class="s-hint">stored securely on this device</span></label>
         <div class="s-field"><span>OpenAI</span><input id="key-openai" type="password" placeholder="sk-..." autocomplete="off" /></div>
         <div class="s-field"><span>Anthropic</span><input id="key-anthropic" type="password" placeholder="sk-ant-..." autocomplete="off" /></div>
         <div class="s-field"><span>Gemini</span><input id="key-gemini" type="password" placeholder="AIza..." autocomplete="off" /></div>
         <div class="s-field"><span>Nvidia</span><input id="key-nvidia" type="password" placeholder="nvapi-..." autocomplete="off" /></div>
         <div class="s-field"><span>Groq</span><input id="key-groq" type="password" placeholder="gsk_..." autocomplete="off" /></div>
+        <div class="s-field"><span>Tavily search</span><input id="key-tavily" type="password" placeholder="tvly-..." autocomplete="off" /></div>
+        <div class="s-hint">Questions search the bundled library first. Current questions and library misses use Tavily web search.</div>
+
+        <label class="s-label">Meeting transcription</label>
+        <div class="s-seg" id="stt-seg">
+          <button data-stt="cloud">Cloud key</button>
+          <button data-stt="local">Local Whisper</button>
+        </div>
+        <div class="s-field"><span>Whisper model</span><input id="whisper-model-path" type="text" placeholder="/absolute/path/to/ggml-model.bin" autocomplete="off" /></div>
+        <div class="s-hint">Local transcription needs whisper-cli on PATH. Ollama always uses local transcription.</div>
 
         <label class="s-label" for="resume-context">Résumé / professional background <span class="s-hint">stored locally; sent to your selected provider with each request</span></label>
-        <textarea id="resume-context" class="s-textarea" maxlength="12000" placeholder="Paste your résumé or professional background here. wingman will use it as the factual source for career-related answers."></textarea>
+        <textarea id="resume-context" class="s-textarea" maxlength="12000" placeholder="Paste your résumé or professional background here. Aether will use it as the factual source for career-related answers."></textarea>
         <div class="s-resume-actions"><span class="s-hint">Maximum 12,000 characters</span><button id="clear-resume" type="button">Clear résumé</button></div>
 
         <label class="s-label">Models <span class="s-hint">fast = Smart off · smart = Smart on</span></label>
@@ -96,7 +112,7 @@
           <button id="shortcut-reset" class="shortcut-reset" type="button">Reset</button>
         </div>
         <div class="shortcut-hint" id="shortcut-hint">Click the shortcut, then press a new key combination.</div>
-        <div class="shortcut-hint">Show / hide wingman: <b>⌘ ⌥ ⇧ 9</b> (works even when the window is hidden)</div>
+        <div class="shortcut-hint">Show / hide Aether: <b>⌘ ⌥ ⇧ 9</b> (works even when the window is hidden)</div>
 
         <div class="s-status" id="s-status"></div>
       </div>

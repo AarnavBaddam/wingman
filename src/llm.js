@@ -1,5 +1,5 @@
 const DEBUG = false; // Set to false to disable debug logging
-// LLM factory — OpenAI / Anthropic / Gemini behind one streaming interface.
+// LLM factory — API, local Ollama, and subscribed CLI providers behind one streaming interface.
 // stream({ system, turns:[{role,text}], imageDataUrl, maxTokens, onToken }) -> Promise<fullText>
 
 function stripDataUrl(dataUrl) {
@@ -11,6 +11,7 @@ async function streamOpenAI({ apiKey, model, system, turns, imageDataUrl, maxTok
   if (DEBUG) console.log('[DEBUG LLM] streamOpenAI called', { model, baseURL, hasImage: !!imageDataUrl, maxTokens });
   const OpenAI = require('openai');
   const client = new OpenAI({ apiKey, baseURL });
+  const localSignal = baseURL === 'http://127.0.0.1:11434/v1' ? AbortSignal.timeout(120000) : undefined;
   const messages = [{ role: 'system', content: system }];
   turns.forEach((t, i) => {
     const last = i === turns.length - 1;
@@ -25,7 +26,7 @@ async function streamOpenAI({ apiKey, model, system, turns, imageDataUrl, maxTok
   });
   if (DEBUG) console.log('[DEBUG LLM] streamOpenAI sending request to OpenAI SDK with messages count:', messages.length);
   try {
-    const stream = await client.chat.completions.create({ model, messages, stream: true, max_tokens: maxTokens });
+    const stream = await client.chat.completions.create({ model, messages, stream: true, max_tokens: maxTokens }, localSignal ? { signal: localSignal } : undefined);
     let full = '';
     for await (const part of stream) {
       const d = part.choices && part.choices[0] && part.choices[0].delta && part.choices[0].delta.content;
@@ -34,6 +35,7 @@ async function streamOpenAI({ apiKey, model, system, turns, imageDataUrl, maxTok
     if (DEBUG) console.log('[DEBUG LLM] streamOpenAI finished successfully, total length:', full.length);
     return full;
   } catch (err) {
+    if (localSignal?.aborted) throw new Error('Ollama timed out after two minutes');
     if (DEBUG) console.error('[DEBUG LLM] streamOpenAI error:', err);
     throw err;
   }
@@ -110,6 +112,8 @@ function createLLM(settings) {
   const apiKey = keys[provider];
   const tier = settings.smart ? 'smart' : 'fast';
   const model = (settings.models[provider] || {})[tier];
+  const isCLI = provider === 'claude-cli' || provider === 'codex-cli';
+  const isOllama = provider === 'ollama';
   
   // Set to 4096 (effectively unlimited for a single response) 
   // since some SDKs like Anthropic require a maxTokens value.
@@ -119,10 +123,12 @@ function createLLM(settings) {
 
 return {
     provider, model, apiKey,
-    ready: !!apiKey && !!model,
+    ready: isCLI || (isOllama ? !!model : !!apiKey && !!model),
     async stream(params) {
       if (DEBUG) console.log('[DEBUG LLM] stream() invoked for provider:', provider);
       const args = { apiKey, model, maxTokens, ...params };
+      if (isCLI) return require('./cli-provider').streamCLI(provider, args);
+      if (isOllama) return streamOpenAI({ ...args, apiKey: 'ollama', baseURL: 'http://127.0.0.1:11434/v1' });
       if (provider === 'openai') return streamOpenAI(args);
       if (provider === 'nvidia') return streamOpenAI({ ...args, baseURL: 'https://integrate.api.nvidia.com/v1' });
       if (provider === 'groq') return streamOpenAI({ ...args, baseURL: 'https://api.groq.com/openai/v1' });

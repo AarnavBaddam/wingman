@@ -27,11 +27,10 @@ const canNotarize =
 
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
-  appId: "com.aarnavbaddam.wingman",
-  productName: "wingman",
-  asar: false,
+  appId: "dev.prahladv.aether",
+  productName: "Aether",
   publish: null,
-  files: ["main.js", "preload.js", "src/**/*", "renderer/**/*"],
+  files: ["main.js", "preload.js", "src/**/*", "renderer/**/*", "data/**/*", "LICENSE"],
   directories: { buildResources: "build-resources" },
   mac: {
     target: [{ target: "zip", arch: ["arm64"] }],
@@ -57,5 +56,10 @@ module.exports = {
   },
   win: {
     target: [{ target: "nsis", arch: ["x64"] }],
+  },
+  linux: {
+    target: [{ target: "AppImage", arch: ["x64"] }],
+    category: "Utility",
+    syncDesktopName: true,
   },
 };

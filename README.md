@@ -1,170 +1,58 @@
-<div align="center">
+# Aether
 
-# wingman
+Aether is a desktop copilot for studying, meetings, and coding practice. It can use a screenshot and optional microphone or shared audio context, then answer through an API provider, a local Ollama model, or a signed-in Claude/Codex CLI.
 
-**An AI copilot that floats over your screen — sees what you see, hears your meetings, and stays hidden from screen shares.**
+This is a fork of [Wingman by Aarnav Baddam](https://github.com/AarnavBaddam/wingman). The original code remains under [GPL-3.0-or-later](LICENSE); changes in this fork are distributed under the same license. The bundled reference text is separately credited below.
 
-Bring your own AI key (OpenAI · Anthropic · Google Gemini · Nvidia · Groq).
+## What changed
 
-<img src="docs/tutorial.png" width="620" alt="wingman first-run tutorial" />
+- API keys are encrypted through Electron's OS-backed `safeStorage`. Aether refuses to save nonempty keys if secure storage is unavailable, and migrates old plaintext settings atomically.
+- Screen capture errors stop the request and show an error. Listening starts only after an audio track is usable, and stops when the last track ends.
+- A **Hide for sharing** control hides the entire window; the global show/hide shortcut restores it. macOS and Windows also request OS capture exclusion. See [screen sharing compatibility](docs/screen-sharing.md) for the limits and a preview check.
+- Ollama, Claude CLI, and Codex CLI are available alongside the original API providers. Local Whisper transcription is available and is mandatory when Ollama is selected.
+- Typed factual questions search a bundled 1,832-article reference library first. Current questions, library gaps, and explicit model uncertainty use Tavily web search. The app displays retrieved source links and holds a factual answer until it cites one of them or states uncertainty. Retrieval and citation checks reduce unsupported answers; they cannot prove every claim true.
+- Linux AppImage packaging is configured; macOS and Windows targets remain available.
 
-</div>
+## Install
 
----
-
-> [!IMPORTANT]
-> **Please read this first.** wingman tries to stay out of screen recordings/shares, but this is **best-effort, not guaranteed** — on macOS 15.4+ Apple can let modern capture tools see it anyway, and a phone camera always can. Using a hidden assistant during a **proctored exam, job interview, or recorded meeting** may break that platform's rules and, in some places, consent laws. wingman is built for legitimate uses — your own notes, studying, accessibility, and practice. **You are responsible for how you use it.**
->
-> On Zoom specifically, whether wingman is hidden depends on one setting — **Settings → Share Screen → Screen capture mode → "Advanced capture with window filtering."**
->
-> <img src="docs/zoom-capture-mode.png" width="560" alt="Zoom Settings → Share Screen → Screen capture mode set to Advanced capture with window filtering" />
-
----
-
-## What it does
-
-wingman floats a small glass panel on top of everything. It takes **three separate inputs** — your **screen**, your **microphone**, and your **meeting audio** (what the other person says) — and uses an AI model to help you in real time.
-
-| Feature | How to trigger | What it uses |
-|---|---|---|
-| **Assist** | `⌘` `↵` by default (configurable) or the *Assist* button | your screen + recent conversation |
-| **What should I say?** | button | meeting audio + your mic |
-| **Follow-up questions** | button | the whole conversation |
-| **Recap** | button | the whole conversation |
-| **Ask anything** | type + `↵` | your screen + conversation |
-| **Solve a coding problem** | `⌘` `H` | your screen only |
-| **Smart** toggle | pill in the box | switches to a smarter (slower) model |
-
-It's a copilot for **live meetings** ("what do I say to that?") and **coding problems** (screenshot → full solution), and it's designed to be **invisible in screen shares** so it stays your private assistant.
-
----
-
-## Install and run
-
-You need [Node.js](https://nodejs.org) 18+ installed. No Xcode required.
+Use Node.js 20 or newer. From this directory:
 
 ```bash
-npm install
+npm ci
 npm start
 ```
 
-To build a standalone app:
-```bash
-npm run pack      # creates dist/mac-arm64/wingman.app
-```
+Build a local unpacked app with `npm run pack`, or an AppImage on Linux with `npm run dist:linux`. `npm run dist` targets macOS; `npm run dist:win` targets Windows. macOS signing and notarization need your own Apple credentials. The Linux AppImage and cross-platform capture behavior need validation on the target machine.
 
-> Note: the packaged app is **ad-hoc signed** (no paid Apple certificate). macOS ties permission grants to the exact build, so **rebuilding resets the mic/screen permissions** — you'll grant them again. For everyday use, build once and keep it.
+## Configure providers
 
----
+Open **Settings** in Aether and select one provider:
 
-## First launch — the 1-minute setup
+| Provider | Setup |
+|---|---|
+| OpenAI, Anthropic, Gemini, Nvidia, Groq | Enter your own API key and model names. Use a vision model for screen features. |
+| Ollama | Start [Ollama](https://docs.ollama.com/api/openai-compatibility), install a model, and enter its exact model name. Screen features need a vision-capable model. The app connects to `127.0.0.1:11434`. |
+| Claude CLI | Install the [Claude CLI](https://code.claude.com/docs/en/headless), sign in, and make `claude` available on `PATH`. Model fields may stay blank. |
+| Codex CLI | Install the [Codex CLI](https://learn.chatgpt.com/docs/cli/reference), sign in, and make `codex` available on `PATH`. Model fields may stay blank. |
 
-When wingman opens the first time, a **built-in tutorial** walks you through everything below. You can reopen it anytime by clicking the **wingman logo** (top-left of the pill).
+The CLI adapters invoke the installed command for each request. Claude runs with tools disabled. Codex runs in its read-only sandbox, but its CLI may still read accessible local files. Keep local files and account permissions in mind when choosing a provider.
 
-### Step 1 — Grant two macOS permissions
+For meeting transcription, choose **Cloud key** (OpenAI Whisper or Gemini) or **Local Whisper**. Local mode needs `whisper-cli` and an absolute path to a downloaded [whisper.cpp model](https://github.com/ggml-org/whisper.cpp/blob/master/examples/cli/README.md). There is no cloud fallback from local mode. Ollama always uses local transcription even when cloud keys are saved.
 
-wingman can't help until macOS lets it see and hear. When you first use a feature, macOS will prompt you — click **Allow**. If a prompt doesn't appear, add wingman manually:
+## Research and privacy
 
-- **Microphone:** System Settings → **Privacy & Security** → **Microphone** → turn on **wingman**.
-- **Screen Recording:** System Settings → **Privacy & Security** → **Screen Recording** → turn on **wingman**. (This one grant covers both screenshots *and* meeting audio.) macOS may ask you to **quit & reopen** wingman — let it.
+Type a factual question in the composer, or type a question and press **Research**. Aether searches its local reference library first. If no strong title match has enough text, the question concerns current information, or the model says the local evidence is insufficient, it queries [Tavily Search](https://help.tavily.com/articles/4840311948-tavily-search-api). Add a Tavily key in Settings to enable this fallback. Without a key or usable source, the app reports that it cannot research the answer. It does not silently ask the model to guess.
 
-### Step 2 — Add your AI key (bring your own)
+The local library covers mathematics, computer science, physics, biology, chemistry, and related history. Its 1,832 English Wikipedia extracts were downloaded on 2026-10-16. Each displayed source links to its article. The text is © [Wikipedia contributors](https://en.wikipedia.org/wiki/Wikipedia:Copyrights), under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). `node scripts/build-library.js` refreshes the library; verify the resulting count and content before release. Library text is separate from Aether's GPL-licensed code.
 
-wingman uses **your own** API key, so it's free to run (you only pay your AI provider for what you use). Click the **`...`** button in the input box (or press `⌘` `,`) to open **Settings**, pick a provider, and paste your key:
+Screenshots, transcripts, and your optional résumé are sent to the selected model provider when used in a request. When web fallback runs, the typed query is sent to Tavily; screenshots and transcripts are not sent to Tavily by the app. Ollama and local Whisper keep model and transcription requests on your device, although using Tavily still sends a search query. No Aether server or telemetry is included.
 
-| Provider | Get a key | Notes |
-|---|---|---|
-| **OpenAI** | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | One key does everything — **but** for the *listening* features the key must have **Whisper / audio** access. |
-| **Anthropic (Claude)** | [console.anthropic.com](https://console.anthropic.com) | Great for screen & coding help. Add an OpenAI or Gemini key for listening. |
-| **Google Gemini** | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | One key does chat + transcription. |
-| **Nvidia** | [build.nvidia.com](https://build.nvidia.com) | Free credits for fast, vision-capable Llama models. |
-| **Groq** | [console.groq.com](https://console.groq.com) | Extremely fast Llama models, chat + vision. |
+## Capture and screen sharing
 
-Your key is stored **only on your computer** (in `wingman-data.json`) and is sent **only** to that provider. wingman has no server and collects nothing.
+**No app can guarantee that an overlay remains visible to you while invisible to every screen share, recorder, or locked environment.** Linux has no Electron capture exclusion for this window. On macOS and Windows, OS exclusion is best effort and capture tools may bypass it. Check the recipient or recording preview before relying on it; use **Hide for sharing** and restore with `Ctrl+Alt+Shift+9` (`⌘⌥⇧9` on macOS). Sharing a selected app window or browser tab is safer than sharing the full display when available. [Platform details and common apps](docs/screen-sharing.md).
 
-### Step 3 — The Zoom setting (only needed for Zoom)
+Proctored or locked browsers may block other applications and shortcuts. Aether does not bypass those restrictions, and operation in such modes is not supported.
 
-wingman is hidden from most screen-share tools automatically — **Google Meet, Microsoft Teams, and QuickTime need nothing.** **Zoom** has a specific setting that decides whether it respects wingman's "don't capture me" flag:
+## Development
 
-> **Zoom → Settings → Share Screen → Advanced → Screen capture mode → choose "Advanced capture with window filtering."**
-
-<div align="center"><img src="docs/zoom-setting.png" width="560" alt="Zoom screen capture mode setting" /></div>
-
----
-
-## How to use
-
-- **`⌘` `↵` — Assist.** The do-the-smart-thing key. On a coding problem it solves it; in a conversation it tells you what to say. Works from anywhere. Change this shortcut under **Settings → Keyboard shortcuts**.
-- **`⌘` `H` — Solve what's on screen.** Screenshots a coding problem and returns the approach, code, and complexity.
-- **The `▢` button** (top bar) — start/stop **listening** to a meeting. The green dot means it's live.
-- **Type a question** in the box and press `↵` to ask about your screen or conversation.
-- **Smart** — flip it on for a smarter, more thorough model; off for fast and cheap.
-- **Hide** collapses the panel to just the top bar. Drag wingman around by the **top pill**. Quit with `⌘` `⇧` `X`.
-
-The panel is see-through and click-through — the empty space around it never blocks the app behind it.
-
----
-
-## How it works
-
-wingman is an [Electron](https://www.electronjs.org/) app. Everything runs locally except the calls to your chosen AI provider.
-
-**The three inputs are kept completely separate:**
-- **Screen** — captured with Electron's `desktopCapturer` (full-resolution screenshots, taken only when a feature needs one).
-- **Your mic ("You")** — `getUserMedia` → downsampled to 16 kHz audio → transcribed.
-- **Meeting audio ("Them")** — `getDisplayMedia` loopback capture of your system's output audio, kept on its own channel so wingman knows *who* said what.
-
-Both audio streams are transcribed (Whisper or Gemini) and fed, with an optional screenshot, to your AI model. Responses **stream** into the panel word-by-word.
-
-**The invisibility** is a single macOS window flag: `setContentProtection(true)`, which sets `NSWindowSharingNone`. This asks the window server to exclude wingman from screen-capture streams. It's the same mechanism DRM apps and Zoom's own toolbar use. It is **not** a GPU trick or a special overlay layer — and on macOS 15.4+ Apple lets some capture tools ignore it, which is why it's best-effort (see the disclaimer at the top).
-
-```
-main process ──┬─ overlay window (frameless, transparent, always-on-top, content-protected)
-               ├─ screenshot capture (desktopCapturer)
-               ├─ speech-to-text (Whisper / Gemini)      ── "You" + "Them" channels
-               └─ LLM streaming (OpenAI / Anthropic / Gemini / Nvidia / Groq)
-renderer ──────┴ the glass UI + mic capture + system-audio loopback
-```
-
----
-
-## Troubleshooting
-
-**"It says give access, but I already gave access."**
-You probably granted an older build. Because the app is ad-hoc signed, a rebuild changes its identity and macOS stops honoring the old grant (the checkmark can linger). Toggle wingman **off and on** in System Settings → Screen Recording, or remove and re-add it.
-
-**A feature returns "403" / "no access to model."**
-- Your API key is restricted. Fix: enable the model you need on your key, or bring a different key.
-
-**Listening does nothing / no transcript.**
-- Check you need a transcription-capable key (OpenAI with Whisper, or Gemini). Also make sure Screen Recording is granted (meeting audio needs it).
-
-**wingman shows up in my Zoom share.**
-- Set Zoom's **Screen capture mode** to *"Advanced capture with window filtering"* (see Step 3).
-
----
-
-## Privacy
-
-- No accounts, no servers, no telemetry. wingman collects nothing.
-- Your API keys live in a local file (`wingman-data.json`) and are sent only to the provider you chose.
-- Screenshots and audio are sent to your AI provider only when a feature runs, and are not stored by wingman beyond the current session's transcript (kept in memory).
-
-## Contributing
-
-Issues and PRs welcome. wingman is intentionally small and readable — `main.js` (app + capture + AI), `renderer/` (the UI), `src/` (providers). No build step for the source (plain HTML/CSS/JS).
-
-### Platform Support
-- [x] **macOS** (Fully Supported)
-- [x] **Windows** (Fully Supported)
-- [ ] **Linux** (Untested)
-
-### Ideas for Contribution
-- [ ] Upgrade audio capture pipeline for zero-latency streaming
-- [ ] Add optional Deepgram support for ultrafast transcription
-- [ ] Improve the rendering pipeline for faster token updates
-- [ ] Add more provider support and model selectors
-
-## License
-
-[GPL-3.0-or-later](LICENSE).
+The source is plain Electron, HTML, CSS, and JavaScript. `main.js` owns the window, capture, and request flow; `renderer/` owns the UI and audio capture; `src/` contains settings, providers, local transcription, library retrieval, and web search. Run `npm test` for focused checks. The reference library ships in `data/library.json`.

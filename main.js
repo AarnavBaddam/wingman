@@ -5,6 +5,7 @@ const store = require('./src/store');
 const { captureScreenshot } = require('./src/screen');
 const { createSTT } = require('./src/stt');
 const { createLLM } = require('./src/llm');
+const { getEvidence, searchWeb, researchPrompt, validateGroundedAnswer, needsWebFollowup } = require('./src/research');
 const { MODES } = require('./src/prompts');
 const { appendResumeContext } = require('./src/profile-context');
 const { rms16 } = require('./src/wav');
@@ -69,8 +70,8 @@ function createWindow() {
     }
   });
 
-  // Invisibility + overlay behavior. Set WINGMAN_NO_PROTECT=1 to disable for debugging.
-  win.setContentProtection(!process.env.WINGMAN_NO_PROTECT);            // excluded from screen capture (best-effort)
+  // macOS and Windows can request capture exclusion; Linux has no equivalent here.
+  if (process.platform === 'darwin' || process.platform === 'win32') win.setContentProtection(true);
   if (isMac) {
     win.setAlwaysOnTop(true, 'screen-saver', 1);
     // 'panel' window type (above) floats over fullscreen apps. This call makes
@@ -139,7 +140,9 @@ async function flushChannel(channel) {
     const settings = store.getSettings();
     const stt = createSTT(settings);
     if (!stt.available) {
-      if (!sttDisabled) { sttDisabled = true; send('status', { message: 'No transcription key set. Add an OpenAI (Whisper) or Gemini key in Settings to enable listening. Screen/LeetCode features work without it.' }); }
+      if (!sttDisabled) { sttDisabled = true; send('status', { message: stt.providers.includes('local')
+        ? 'Local transcription is unavailable. Set a Whisper model path and install whisper-cli in Settings.'
+        : 'No transcription key set. Add an OpenAI (Whisper) or Gemini key in Settings to enable listening. Screen/LeetCode features work without it.' }); }
       return;
     }
     const res = await stt.transcribe(pcm);
@@ -165,6 +168,10 @@ function handleSttError(err, settings) {
   if (sttDisabled) return;
   const noAccess = err.status === 403 || err.status === 401 || err.code === 'model_not_found';
   sttDisabled = true; // stop hammering the API every few seconds
+  if (err.provider === 'local') {
+    send('status', { message: 'Local transcription stopped: ' + err.message + '. Check the model path and whisper-cli installation in Settings.' });
+    return;
+  }
   if (noAccess) {
     send('status', { message: 'Transcription off: your ' + err.provider + ' key has no access to a speech-to-text model (403). Screen + LeetCode still work. To enable listening: give the key Whisper/transcription access, or add a Gemini key in Settings and reopen.' });
   } else {
@@ -203,6 +210,10 @@ async function runFeature(mode, userText) {
     if (DEBUG) console.log('[DEBUG MAIN] mode not found:', mode);
     return;
   }
+  if (mode === 'research' && (!userText || !userText.trim())) {
+    send('llm:error', { message: 'Type a research question first.' });
+    return;
+  }
   state.busy = true;
   try {
     const settings = store.getSettings();
@@ -213,32 +224,48 @@ async function runFeature(mode, userText) {
 
     if (!llm.ready) {
       if (DEBUG) console.log('[DEBUG MAIN] LLM not ready (missing key or model).');
-      send('llm:error', { message: 'Add your ' + settings.provider + ' API key in Settings (gear icon) to start. Model: ' + (llm.model || 'unset') + '.' });
+      send('llm:error', { message: settings.provider === 'ollama'
+        ? 'Start Ollama and select a local model in Settings.'
+        : ['claude-cli', 'codex-cli'].includes(settings.provider)
+          ? 'Install and sign in to the selected CLI provider, then try again.'
+          : 'Add your ' + settings.provider + ' API key in Settings (gear icon) to start. Model: ' + (llm.model || 'unset') + '.' });
       return;
     }
 
     let imageDataUrl = null;
     if (def.needsScreen) {
       if (DEBUG) console.log('[DEBUG MAIN] Feature needs screen. Capturing screenshot...');
-      try { 
-        imageDataUrl = await captureScreenshot(); 
+      try {
+        imageDataUrl = await captureScreenshot();
+        if (!imageDataUrl) throw new Error('No screenshot was returned');
         if (DEBUG) console.log('[DEBUG MAIN] Screenshot captured successfully (length:', imageDataUrl.length, ')');
-      }
-      catch (e) { 
+      } catch (e) {
         if (DEBUG) console.error('[DEBUG MAIN] Screenshot capture failed:', e);
-        send('status', { message: 'Screen capture needs permission — grant Screen Recording to wingman in System Settings.' }); 
+        send('llm:error', { message: process.platform === 'darwin'
+          ? 'Screen capture failed. Check Aether’s Screen Recording permission in System Settings, then try again.'
+          : 'Screen capture failed. Check capture permissions and try again.' });
+        return;
       }
     }
 
     const built = def.build({ transcript, userText: userText || '' });
+    let sources = ['research', 'ask'].includes(mode) ? await getEvidence(userText, settings.apiKeys.tavily) : [];
     if (DEBUG) console.log('[DEBUG MAIN] Built prompt. Starting LLM stream...');
-    const fullText = await llm.stream({
+    const answer = () => llm.stream({
       system: appendResumeContext(def.system, settings.resumeContext),
-      turns: [{ role: 'user', text: built }],
+      turns: [{ role: 'user', text: built + (sources.length ? researchPrompt(sources) : '') }],
       imageDataUrl,
-      onToken: (t) => send('llm:token', { text: t })
+      onToken: (t) => { if (!sources.length) send('llm:token', { text: t }); }
     });
+    let fullText = await answer();
+    if (needsWebFollowup(fullText, sources)) {
+      send('status', { message: 'Local sources were insufficient; searching the web.' });
+      sources = await searchWeb(userText, settings.apiKeys.tavily);
+      fullText = await answer();
+    }
+    if (sources.length) send('llm:token', { text: validateGroundedAnswer(fullText, sources) });
     if (DEBUG) console.log('[DEBUG MAIN] Full LLM Output:\n', fullText);
+    if (sources.length) send('llm:sources', { sources: sources.map(({ number, title, url, origin }) => ({ number, title, url, origin })) });
     send('llm:done', {});
   } catch (e) {
     send('llm:error', { message: 'Error: ' + (e && e.message ? e.message : String(e)) });
@@ -254,10 +281,14 @@ ipcMain.handle('shortcut:assist:set', (_e, accelerator) => setAssistShortcut(acc
 ipcMain.handle('capture:toggle', () => setCapturing(!state.capturing));
 ipcMain.handle('capture:state', () => ({ active: state.capturing }));
 ipcMain.on('ask', (_e, payload) => runFeature(payload.mode, payload.text));
+ipcMain.on('window:hide-for-sharing', () => { if (win && !win.isDestroyed()) win.hide(); });
 ipcMain.on('mic:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.you.push(Buffer.from(arrayBuffer)); });
 ipcMain.on('system:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.them.push(Buffer.from(arrayBuffer)); });
 ipcMain.on('mouse:ignore', (_e, v) => { if (win) win.setIgnoreMouseEvents(!!v, { forward: true }); });
-ipcMain.on('open-pane', (_e, url) => { shell.openExternal(url).catch(() => {}); });
+ipcMain.on('open-pane', (_e, url) => {
+  if (typeof url !== 'string' || !/^(https:\/\/|x-apple\.systempreferences:)/i.test(url)) return;
+  shell.openExternal(url).catch(() => {});
+});
 ipcMain.on('log', (_e, msg) => console.log('[renderer]', msg));
 
 // -------- shortcuts --------
@@ -269,7 +300,7 @@ function registerAssistShortcut(accelerator) {
   const next = normalizeShortcut(accelerator) || DEFAULT_ASSIST_SHORTCUT;
   if (next.length > 80) return { ok: false, error: 'That shortcut is too long.' };
   if (RESERVED_SHORTCUTS.has(next.toLowerCase())) {
-    return { ok: false, error: 'That shortcut is reserved by another wingman action.' };
+    return { ok: false, error: 'That shortcut is reserved by another Aether action.' };
   }
 
   const previous = registeredAssistShortcut;
@@ -302,8 +333,13 @@ function registerShortcuts() {
   const okToggle = globalShortcut.register(TOGGLE_SHORTCUT, () => toggleWindow());
   log('shortcut results H=' + okH + ' X=' + okX + ' toggle=' + okToggle);
 
-  const settings = store.getSettings();
-  const configured = settings.shortcuts && settings.shortcuts.assist;
+  let configured;
+  try {
+    const settings = store.getSettings();
+    configured = settings.shortcuts && settings.shortcuts.assist;
+  } catch (err) {
+    console.error('[wingman] settings unavailable at startup:', err);
+  }
   const result = registerAssistShortcut(configured || DEFAULT_ASSIST_SHORTCUT);
   if (!result.ok && configured && configured !== DEFAULT_ASSIST_SHORTCUT) {
     console.log('[wingman] unable to register Assist shortcut:', result.error, 'Falling back to default.');

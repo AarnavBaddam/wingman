@@ -1,13 +1,13 @@
 /* wingman — glassmorphism overlay. */
 
 :root {
-  --accent: #3C83F5;
+  --accent: #2768c7;
   --accent-hi: #4A8DF7;
   --live: #22C55E;
 
   --tx-1: rgba(255,255,255,0.95);
   --tx-2: rgba(255,255,255,0.90);
-  --tx-mut: rgba(255,255,255,0.40);
+  --tx-mut: rgba(255,255,255,0.72);
   --ic: rgba(255,255,255,0.85);
 
   --bd-hair: rgba(255,255,255,0.12);
@@ -77,6 +77,8 @@ html, body {
 .tb-logo:hover { background: rgba(255,255,255,0.12) !important; }
 .tb-hide { gap: 6px; padding: 5px 12px 5px 10px; border-radius: var(--r-pill); font-size: 13px; font-weight: 500; }
 .tb-hide:hover { background: rgba(255,255,255,0.08); }
+#share-hide-btn { color: #d8e6ff !important; }
+#share-hide-btn:focus-visible { outline: 2px solid #d8e6ff; outline-offset: 2px; }
 .tb-hide .chev { width: 14px; height: 14px; display: inline-flex; color: rgba(255,255,255,0.9); }
 .tb-hide.collapsed .chev { transform: rotate(180deg); }
 .tb-stop { width: 28px; height: 28px; border-radius: var(--r-8); color: #fff; }
@@ -150,8 +152,8 @@ button:focus { outline: none; }
 
 /* ============================ Action row ============================ */
 #action-row {
-  display: flex; align-items: center; flex-wrap: nowrap; gap: 4px;
-  margin-top: 6px; white-space: nowrap;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
+  margin-top: 6px;
 }
 .act {
   display: inline-flex; align-items: center; gap: 6px;
@@ -238,15 +240,18 @@ button:focus { outline: none; }
   background: rgba(0,0,0,0.35); backdrop-filter: blur(4px);
 }
 #settings-scrim.hidden { display: none; }
-#settings { width: min(440px, 92vw); padding: 18px 20px; -webkit-app-region: no-drag; }
+#settings { width: min(440px, 92vw); max-height: calc(100vh - 20px); overflow-y: auto; padding: 18px 20px; -webkit-app-region: no-drag; }
 .s-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .s-title { font-size: 17px; font-weight: 600; color: var(--tx-1); }
 .s-close { border: none; background: var(--accent); color: #fff; font-weight: 600; font-size: 13px; padding: 6px 14px; border-radius: var(--r-pill); cursor: pointer; }
 .s-body { display: flex; flex-direction: column; gap: 8px; }
 .s-label { color: var(--tx-2); font-size: 13px; font-weight: 600; margin-top: 8px; }
-.s-hint { color: var(--tx-mut); font-weight: 400; font-size: 11px; margin-left: 6px; }
-.s-seg { display: flex; gap: 6px; }
-.s-seg button { flex: 1; padding: 8px; border-radius: var(--r-8); border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.04); color: var(--tx-2); font-size: 13px; font-weight: 500; cursor: pointer; transition: all 140ms ease; }
+.s-hint { color: var(--tx-mut); font-weight: 400; font-size: 12px; margin-left: 6px; }
+.s-seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.s-seg button { flex: 1 1 110px; padding: 8px; border-radius: var(--r-8); border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.04); color: var(--tx-2); font-size: 13px; font-weight: 500; cursor: pointer; transition: all 140ms ease; }
+.s-seg button:disabled { opacity: 0.45; cursor: not-allowed; }
+.source-list { margin: 12px 0 0; padding: 8px 0 0; border-top: 1px solid rgba(255,255,255,0.14); color: var(--tx-2); font-size: 12px; }
+.source-list a { display: block; padding: 3px 0; color: #9bc2ff; text-decoration: underline; overflow-wrap: anywhere; }
 .s-seg button.on { border-color: var(--accent); color: #fff; background: rgba(60,131,245,0.16); }
 .s-field { display: flex; align-items: center; gap: 10px; }
 .s-field span { width: 78px; color: var(--tx-mut); font-size: 12px; }
@@ -279,6 +284,7 @@ button:focus { outline: none; }
 .shortcut-hint.error { color: #ff9d8f; }
 .shortcut-hint.success { color: #78dba0; }
 .s-status { color: var(--tx-mut); font-size: 12px; margin-top: 10px; min-height: 16px; }
+.s-status[role="alert"] { color: #ffb0b0; }
 
 /* ============================ Onboarding / tutorial ============================ */
 #onboard-scrim { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(0,0,0,0.45); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }

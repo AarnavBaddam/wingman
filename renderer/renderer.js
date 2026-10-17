@@ -149,7 +149,12 @@
   }
 
   document.querySelectorAll('.act').forEach((btn) => {
-    btn.addEventListener('click', () => runMode(btn.dataset.mode, ''));
+    btn.addEventListener('click', () => {
+      if (btn.dataset.mode !== 'research') return runMode(btn.dataset.mode, '');
+      const question = $('#input').value.trim();
+      if (!question) return showStatus('Type a research question first.');
+      runMode('research', question);
+    });
   });
 
   const input = $('#input');
@@ -184,6 +189,7 @@
   // Smart toggle
   const smartBtn = $('#smart-toggle');
   smartBtn.addEventListener('click', async () => {
+    if (!settings) { showStatus('Settings are unavailable. Restart Aether to retry.', true); return; }
     settings.smart = !settings.smart;
     smartBtn.classList.toggle('on', settings.smart);
     await wingman.settingsSet({ smart: settings.smart });
@@ -195,21 +201,42 @@
     $('#hide-btn').classList.toggle('collapsed', collapsed);
     $('#live-dot').style.display = collapsed ? 'none' : '';
   });
+  $('#share-hide-btn').title = 'Hide the entire window. Restore with ' + (wingman.platform === 'darwin' ? '⌘⌥⇧9' : 'Ctrl+Alt+Shift+9') + '.';
+  $('#share-hide-btn').addEventListener('click', () => wingman.hideForSharing());
 
-  // Stop = start/stop listening. Kick off system-audio capture straight from the click so
-  // the user-gesture is fresh for getDisplayMedia (loopback capture needs it).
-  $('#stop-btn').addEventListener('click', () => {
-    const turningOn = !$('#stop-btn').classList.contains('active');
-    if (turningOn) startSystemAudio();
-    wingman.captureToggle();
+  // Start getDisplayMedia directly from the click so its user gesture stays valid.
+  let captureStarting = false, captureCancelled = false;
+  $('#stop-btn').addEventListener('click', async () => {
+    if ($('#stop-btn').classList.contains('active')) { await wingman.captureToggle(); return; }
+    if (captureStarting) { captureCancelled = true; showStatus('Listening start cancelled. Close the capture prompt if it is still open.'); return; }
+    captureStarting = true;
+    captureCancelled = false;
+    const system = startSystemAudio();
+    const mic = startMic();
+    const [hasSystem, hasMic] = await Promise.all([system, mic]);
+    captureStarting = false;
+    if (captureCancelled || (!hasSystem && !hasMic)) {
+      stopMic(); stopSystemAudio();
+      if (!captureCancelled) showStatus('Listening could not start. Check microphone and screen capture permissions.');
+      return;
+    }
+    if (!hasSystem) showStatus('Listening to your microphone only. Meeting audio is unavailable.');
+    if (!hasMic) showStatus('Listening to meeting audio only. Microphone is unavailable.');
+    try {
+      if (!await wingman.captureToggle()) throw new Error('Listening did not start');
+    } catch (err) {
+      stopMic(); stopSystemAudio();
+      showStatus('Listening could not start. Please try again.');
+    }
   });
 
   // ---- capture: mic (renderer side) --------------------------------------
   let audioCtx = null, micStream = null, micNode = null, micProc = null;
   async function startMic() {
-    if (micStream) return;
+    if (micStream) return true;
     try {
       micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } });
+      if (!micStream.getAudioTracks().some((track) => track.readyState === 'live')) { stopMic(); return false; }
       audioCtx = new AudioContext({ sampleRate: 16000 });
       await audioCtx.audioWorklet.addModule('./pcm-processor.js');
       micNode = audioCtx.createMediaStreamSource(micStream);
@@ -217,8 +244,13 @@
       micProc.port.onmessage = (e) => wingman.micPcm(e.data);
       const sink = audioCtx.createGain(); sink.gain.value = 0; // run processor silently
       micNode.connect(micProc); micProc.connect(sink); sink.connect(audioCtx.destination);
+      if (!micStream.getAudioTracks().some((track) => track.readyState === 'live')) { stopMic(); return false; }
+      micStream.getAudioTracks().forEach((track) => track.addEventListener('ended', audioTrackEnded, { once: true }));
+      return true;
     } catch (err) {
       wingman.log('mic error: ' + (err && err.message));
+      stopMic();
+      return false;
     }
   }
   function stopMic() {
@@ -231,12 +263,12 @@
   // ---- capture: system/meeting audio (getDisplayMedia loopback, in wingman's process) ----
   let sysStream = null, sysCtx = null, sysNode = null, sysProc = null;
   async function startSystemAudio() {
-    if (sysStream) return;
+    if (sysStream) return true;
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
       stream.getVideoTracks().forEach((t) => t.stop()); // we only want the audio
       const tracks = stream.getAudioTracks();
-      if (!tracks.length) { wingman.log('system audio: no loopback track (macOS loopback unsupported here)'); stream.getTracks().forEach((t) => t.stop()); return; }
+      if (!tracks.some((track) => track.readyState === 'live')) { wingman.log('system audio: no live loopback track'); stream.getTracks().forEach((t) => t.stop()); return false; }
       sysStream = stream;
       sysCtx = new AudioContext({ sampleRate: 16000 });
       await sysCtx.audioWorklet.addModule('./pcm-processor.js');
@@ -246,8 +278,13 @@
       const sink = sysCtx.createGain(); sink.gain.value = 0;
       sysNode.connect(sysProc); sysProc.connect(sink); sink.connect(sysCtx.destination);
       wingman.log('system audio: capturing loopback');
+      if (!sysStream.getAudioTracks().some((track) => track.readyState === 'live')) { stopSystemAudio(); return false; }
+      tracks.forEach((track) => track.addEventListener('ended', audioTrackEnded, { once: true }));
+      return true;
     } catch (err) {
       wingman.log('system audio error: ' + (err && err.message));
+      stopSystemAudio();
+      return false;
     }
   }
   function stopSystemAudio() {
@@ -256,15 +293,31 @@
     if (sysCtx) { sysCtx.close(); sysCtx = null; }
     if (sysStream) { sysStream.getTracks().forEach((t) => t.stop()); sysStream = null; }
   }
+  let stoppingEndedCapture = false;
+  function audioTrackEnded() {
+    const hadMic = !!micStream, hadSystem = !!sysStream;
+    const hasMic = hadMic && micStream.getAudioTracks().some((track) => track.readyState === 'live');
+    const hasSystem = hadSystem && sysStream.getAudioTracks().some((track) => track.readyState === 'live');
+    if (hadMic && !hasMic) stopMic();
+    if (hadSystem && !hasSystem) stopSystemAudio();
+    if (!$('#stop-btn').classList.contains('active')) return;
+    if (!hasMic && !hasSystem) {
+      if (!stoppingEndedCapture) {
+        stoppingEndedCapture = true;
+        showStatus('Listening stopped because audio capture ended.');
+        wingman.captureToggle().catch(() => showStatus('Could not stop listening automatically. Use the listening button.')).finally(() => { stoppingEndedCapture = false; });
+      }
+      return;
+    }
+    if (hadMic && !hasMic) showStatus('Microphone capture ended. Meeting audio continues.');
+    else if (hadSystem && !hasSystem) showStatus('Meeting audio ended. Microphone continues.');
+  }
 
   // ---- events from main --------------------------------------------------
   wingman.on('capture:state', ({ active }) => {
     $('#live-dot').classList.toggle('off', !active);
     $('#stop-btn').classList.toggle('active', active);
-    // System audio is started directly from the button click above so the
-    // getDisplayMedia request keeps its user gesture. Starting it here too
-    // can create a second capture request before the first one resolves.
-    if (active) startMic(); else { stopMic(); stopSystemAudio(); }
+    if (!active) { stopMic(); stopSystemAudio(); }
   });
   wingman.on('llm:start', ({ userBubble, small }) => {
     clearMessages();
@@ -274,12 +327,38 @@
   });
   wingman.on('llm:token', ({ text }) => appendToken(text));
   wingman.on('llm:done', () => { finalizeAi(); setBusy(false); });
+  wingman.on('llm:sources', ({ sources }) => {
+    const list = document.createElement('div');
+    list.className = 'source-list';
+    const label = document.createElement('div');
+    label.textContent = 'Reference sources';
+    list.appendChild(label);
+    for (const source of sources || []) {
+      if (!/^https:\/\//i.test(source.url)) continue;
+      const link = document.createElement('a');
+      link.href = source.url;
+      link.textContent = `[${source.number}] ${source.title} · ${source.origin === 'library' ? 'Local library' : 'Web'}`;
+      link.addEventListener('click', event => { event.preventDefault(); wingman.openPane(source.url); });
+      list.appendChild(link);
+    }
+    if ((sources || []).some(source => source.origin === 'library')) {
+      const attribution = document.createElement('div');
+      attribution.textContent = 'Wikipedia contributors · ';
+      const license = document.createElement('a');
+      license.href = 'https://creativecommons.org/licenses/by-sa/4.0/';
+      license.textContent = 'CC BY-SA 4.0';
+      license.addEventListener('click', event => { event.preventDefault(); wingman.openPane(license.href); });
+      attribution.appendChild(license);
+      list.appendChild(attribution);
+    }
+    messages.appendChild(list);
+  });
   wingman.on('llm:error', ({ message }) => {
     if (!aiEl) startAi(true);
     aiEl.dataset.raw = message; finalizeAi(); setBusy(false);
   });
   let statusTimer = null;
-  function showStatus(message) {
+  function showStatus(message, persistent = false) {
     let el = document.getElementById('wingman-status');
     if (!el) {
       el = document.createElement('div');
@@ -290,14 +369,24 @@
     el.textContent = message;
     el.classList.add('show');
     clearTimeout(statusTimer);
-    statusTimer = setTimeout(() => el.classList.remove('show'), 11000);
+    if (!persistent) statusTimer = setTimeout(() => el.classList.remove('show'), 11000);
   }
   wingman.on('status', ({ message }) => { wingman.log('[status] ' + message); showStatus(message); });
 
   // ---- settings ----------------------------------------------------------
   const scrim = $('#settings-scrim');
-  function openSettings() { fillSettings(); scrim.classList.remove('hidden'); }
-  function closeSettings() { cancelShortcutRecording(); saveSettings(); scrim.classList.add('hidden'); }
+  function openSettings() { if (!settings) { showStatus('Settings are unavailable. Restart Aether to retry.', true); return; } fillSettings(); scrim.classList.remove('hidden'); }
+  async function closeSettings() {
+    cancelShortcutRecording();
+    try {
+      await saveSettings();
+      scrim.classList.add('hidden');
+    } catch (err) {
+      wingman.log('settings save error: ' + (err && err.message));
+      $('#s-status').textContent = 'Could not save settings. Check access to your key storage, then try again.';
+      $('#s-status').setAttribute('role', 'alert');
+    }
+  }
   $('#more-btn').addEventListener('click', openSettings);
   $('#s-close').addEventListener('click', closeSettings);
   scrim.addEventListener('click', (e) => { if (e.target === scrim) closeSettings(); });
@@ -309,6 +398,9 @@ function fillSettings() {
     $('#key-gemini').value = settings.apiKeys.gemini || '';
     $('#key-nvidia').value = settings.apiKeys.nvidia || '';
     $('#key-groq').value = settings.apiKeys.groq || '';
+    $('#key-tavily').value = settings.apiKeys.tavily || '';
+    $('#whisper-model-path').value = settings.whisperModelPath || '';
+    updateSttControls();
     $('#resume-context').value = settings.resumeContext || '';
     const m = settings.models[settings.provider] || { fast: '', smart: '' };
     $('#model-fast').value = m.fast; $('#model-smart').value = m.smart;
@@ -323,24 +415,41 @@ function fillSettings() {
   });
 function statusText() {
     const k = settings.apiKeys;
-    const has = [k.openai && 'OpenAI', k.anthropic && 'Anthropic', k.gemini && 'Gemini', k.nvidia && 'Nvidia', k.groq && 'Groq'].filter(Boolean);
-    const stt = k.openai ? 'Whisper' : (k.gemini ? 'Gemini' : 'none');
+    const has = [k.openai && 'OpenAI', k.anthropic && 'Anthropic', k.gemini && 'Gemini', k.nvidia && 'Nvidia', k.groq && 'Groq', k.tavily && 'Tavily'].filter(Boolean);
+    const stt = settings.provider === 'ollama' || settings.sttProvider === 'local' ? 'local Whisper' : (k.openai ? 'Whisper' : (k.gemini ? 'Gemini' : 'none'));
     return 'Active: ' + settings.provider + ' · keys: ' + (has.join(', ') || 'none set') + ' · transcription: ' + stt;
   }
   function updateModelHint(provider) {
     const hint = $('#model-hint');
     if (provider === 'nvidia') {
       hint.textContent = 'Nvidia NIM: use a vision model like meta/llama-3.2-90b-vision-instruct or meta/llama-3.2-11b-vision-instruct. Text-only models (e.g. nemotron-mini) can\'t see screenshots and will refuse.';
+    } else if (provider === 'ollama') {
+      hint.textContent = 'Enter an installed Ollama model name. Screen features need a vision-capable model.';
+    } else if (provider === 'claude-cli' || provider === 'codex-cli') {
+      hint.textContent = 'Uses the installed, signed-in CLI. Leave both model fields empty to use its default model.';
     } else {
       hint.textContent = '';
     }
   }
+  function updateSttControls() {
+    if (settings.provider === 'ollama') settings.sttProvider = 'local';
+    document.querySelectorAll('#stt-seg button').forEach(button => {
+      button.classList.toggle('on', button.dataset.stt === (settings.sttProvider || 'cloud'));
+      button.disabled = settings.provider === 'ollama' && button.dataset.stt === 'cloud';
+    });
+  }
+  document.querySelectorAll('#stt-seg button').forEach(button => button.addEventListener('click', () => {
+    settings.sttProvider = button.dataset.stt;
+    updateSttControls();
+    $('#s-status').textContent = statusText();
+  }));
   document.querySelectorAll('#provider-seg button').forEach((b) => b.addEventListener('click', () => {
     settings.provider = b.dataset.provider;
     document.querySelectorAll('#provider-seg button').forEach((x) => x.classList.toggle('on', x === b));
     const m = settings.models[settings.provider] || { fast: '', smart: '' };
     $('#model-fast').value = m.fast; $('#model-smart').value = m.smart;
     updateModelHint(settings.provider);
+    updateSttControls();
     $('#s-status').textContent = statusText();
   }));
 async function saveSettings() {
@@ -349,6 +458,8 @@ async function saveSettings() {
     settings.apiKeys.gemini = $('#key-gemini').value.trim();
     settings.apiKeys.nvidia = $('#key-nvidia').value.trim();
     settings.apiKeys.groq = $('#key-groq').value.trim();
+    settings.apiKeys.tavily = $('#key-tavily').value.trim();
+    settings.whisperModelPath = $('#whisper-model-path').value.trim();
     settings.resumeContext = $('#resume-context').value.trim();
     if (!settings.models[settings.provider]) settings.models[settings.provider] = {};
     settings.models[settings.provider].fast = $('#model-fast').value.trim();
@@ -411,7 +522,7 @@ async function saveSettings() {
     try {
       result = await wingman.shortcutAssistSet(accelerator);
     } catch (_) {
-      result = { ok: false, error: 'wingman could not update the shortcut. Please try again.' };
+      result = { ok: false, error: 'Aether could not update the shortcut. Please try again.' };
     }
     if (!result.ok) {
       setShortcutHint(result.error, 'error');
@@ -496,13 +607,13 @@ async function saveSettings() {
   const OB_STEPS = [
     {
       icon: '👋',
-      title: 'Welcome to wingman',
-      body: 'wingman is a private AI copilot that floats over your screen. It can <strong>see your screen</strong>, <strong>hear your meetings</strong>, and help you answer questions or solve coding problems — while staying hidden from most screen shares.<br><br>This quick guide gets you running in about a minute.'
+      title: 'Welcome to Aether',
+      body: 'Aether is an AI copilot that floats over your screen. It can <strong>see your screen</strong>, <strong>hear your meetings</strong>, and help you answer questions or solve coding problems.<br><br>This quick guide gets you running in about a minute.'
     },
     ...(wingman.platform === 'darwin' ? [{
       icon: '🔐',
-      title: 'Allow wingman to see & hear',
-      body: 'wingman needs two macOS permissions. Click each button, turn <strong>wingman</strong> ON in the window that opens, then come back here.<ul><li><strong>Microphone</strong> — to hear you</li><li><strong>Screen Recording</strong> — to see your screen and hear meeting audio</li></ul>',
+      title: 'Allow Aether to see & hear',
+      body: 'Aether needs two macOS permissions. Click each button, turn <strong>Aether</strong> ON in the window that opens, then come back here.<ul><li><strong>Microphone</strong> — to hear you</li><li><strong>Screen Recording</strong> — to see your screen and hear meeting audio</li></ul>',
       buttons: [
         { label: 'Open Microphone settings', action: () => wingman.openPane('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone') },
         { label: 'Open Screen Recording settings', action: () => wingman.openPane('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture') }
@@ -511,20 +622,22 @@ async function saveSettings() {
     {
       icon: '🔑',
       title: 'Connect an AI provider',
-      body: 'wingman uses <strong>your own</strong> API key — pick <span class="hl">OpenAI</span>, <span class="hl">Anthropic</span>, <span class="hl">Google Gemini</span>, or <span class="hl">Nvidia</span>, <span class="hl">Groq</span>. Get a key from your provider, then paste it into wingman\'s Settings.<br><br><strong>Tip:</strong> the listening features need speech-to-text access (an OpenAI key with Whisper, or a Gemini key). A chat-only key still powers screen &amp; coding help.',
-      buttons: [{ label: 'Open wingman Settings', action: () => { finishOnboard(); openSettings(); } }]
+      body: 'Choose an AI provider in Settings: a cloud API key, local <strong>Ollama</strong>, or a signed-in <strong>Claude/Codex CLI</strong>. For factual questions, Aether searches its bundled reference library and uses Tavily web search for current topics or library gaps; web search needs a separate Tavily key.<br><br>Meeting transcription can use a local Whisper model or an OpenAI/Gemini key. Ollama always transcribes locally.',
+      buttons: [{ label: 'Open Aether Settings', action: () => { finishOnboard(); openSettings(); } }]
     },
     {
       icon: '🫥',
-      title: 'Stay hidden in Zoom',
+      title: 'Before you share your screen',
       body: wingman.platform === 'darwin'
-        ? 'wingman is hidden from most screen shares automatically (Google Meet, Teams, QuickTime — nothing to do). <strong>Zoom needs one setting:</strong><br><br>Zoom → <span class="hl">Settings</span> → <span class="hl">Share Screen</span> → <span class="hl">Advanced</span> → <strong>Screen capture mode</strong> → choose <strong>“Advanced capture with window filtering.”</strong><br><br>Avoid “<strong>without</strong> window filtering” — that mode reveals wingman.'
-        : 'wingman is hidden from screen shares automatically. <strong>For Zoom:</strong><br><br>Zoom → <span class="hl">Settings</span> → <span class="hl">Share Screen</span> → <span class="hl">Advanced</span> → <strong>Screen capture mode</strong> → choose <strong>“Advanced capture with window filtering.”</strong>'
+        ? 'Aether asks macOS to exclude its window from captures, but some sharing apps may still show it. Click <strong>Hide for sharing</strong> before you share, then check the sharing app’s preview. Restore the window with <strong>⌘⌥⇧9</strong> after sharing.'
+        : wingman.platform === 'win32'
+          ? 'Aether asks Windows to exclude its window from captures, but some sharing apps may still show it. Click <strong>Hide for sharing</strong> before you share, then check the sharing app’s preview. Restore the window with <strong>Ctrl+Alt+Shift+9</strong> after sharing.'
+          : 'Linux has no Aether window-exclusion support. Share only a selected window or tab when possible. Click <strong>Hide for sharing</strong> before sharing your whole display, and check the recipient preview. Restore the window with <strong>Ctrl+Alt+Shift+9</strong> after sharing.'
     },
 {
       icon: '✨',
       title: 'You\'re all set',
-      body: () => `How to use wingman:<ul><li>${shortcutKeycapsHtml(assistShortcut, 'kbd')} — <strong>Assist</strong> with whatever's on screen or being said</li><li><span class="kbd">⌘</span> <span class="kbd">⌥</span> <span class="kbd">⇧</span> <span class="kbd">9</span> — <strong>Show / hide</strong> wingman (works even when fully hidden)</li><li><span class="kbd">${cmdKey}</span> <span class="kbd">H</span> — solve a coding problem on screen</li><li>Click <strong>▢</strong> in the top bar to start listening to a meeting</li><li>Type a question and press <span class="kbd">↵</span></li></ul>Reopen this guide anytime by clicking the <strong>wingman logo</strong>. Change Assist's shortcut in <strong>Settings</strong>. Quit with <span class="kbd">${cmdKey}</span><span class="kbd">⇧</span><span class="kbd">X</span>.`
+      body: () => `How to use Aether:<ul><li>${shortcutKeycapsHtml(assistShortcut, 'kbd')} — <strong>Assist</strong> with whatever's on screen or being said</li><li><span class="kbd">⌘</span> <span class="kbd">⌥</span> <span class="kbd">⇧</span> <span class="kbd">9</span> — <strong>Show / hide</strong> Aether (works even when fully hidden)</li><li><span class="kbd">${cmdKey}</span> <span class="kbd">H</span> — solve a coding problem on screen</li><li>Click <strong>▢</strong> in the top bar to start listening to a meeting</li><li>Type a question and press <span class="kbd">↵</span></li></ul>Reopen this guide anytime by clicking the <strong>Aether logo</strong>. Change Assist's shortcut in <strong>Settings</strong>. Quit with <span class="kbd">${cmdKey}</span><span class="kbd">⇧</span><span class="kbd">X</span>.`
     }
   ];
   let obIndex = 0;
@@ -543,8 +656,16 @@ async function saveSettings() {
   }
   function showOnboard() { obIndex = 0; renderOnboard(); obScrim.classList.remove('hidden'); setIgnore(false); }
   async function finishOnboard() {
+    if (settings && !settings.onboarded) {
+      try {
+        await wingman.settingsSet({ onboarded: true });
+        settings.onboarded = true;
+      } catch (err) {
+        showStatus('Could not save onboarding progress. Please try again.', true);
+        return;
+      }
+    }
     obScrim.classList.add('hidden');
-    if (settings && !settings.onboarded) { settings.onboarded = true; await wingman.settingsSet({ onboarded: true }); }
   }
   $('#ob-next').addEventListener('click', () => { if (obIndex === OB_STEPS.length - 1) finishOnboard(); else { obIndex++; renderOnboard(); } });
   $('#ob-back').addEventListener('click', () => { if (obIndex > 0) { obIndex--; renderOnboard(); } });
@@ -553,15 +674,26 @@ async function saveSettings() {
 
   // ---- boot --------------------------------------------------------------
   (async function boot() {
-    settings = await wingman.settingsGet();
+    try {
+      const st = await wingman.captureState();
+      if (st.active) await wingman.captureToggle(); // media tracks do not survive a renderer reload
+    } catch (err) {
+      wingman.log('listening state error: ' + (err && err.message));
+      showStatus('Could not read listening state. Restart Aether to retry.', true);
+      return;
+    }
+    try {
+      settings = await wingman.settingsGet();
+    } catch (err) {
+      wingman.log('settings load error: ' + (err && err.message));
+      showStatus('Settings could not be loaded. Restart Aether to retry.', true);
+      return;
+    }
     assistShortcut = (settings.shortcuts && settings.shortcuts.assist) || DEFAULT_ASSIST_SHORTCUT;
     syncAssistShortcutLabels();
     smartBtn.classList.toggle('on', !!settings.smart);
     showExample();
     syncPlaceholder();
-    const st = await wingman.captureState();
-    $('#live-dot').classList.toggle('off', !st.active);
-    $('#stop-btn').classList.toggle('active', st.active);
     if (!settings.onboarded) showOnboard();
 
   })();
