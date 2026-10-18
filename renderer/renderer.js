@@ -2,6 +2,7 @@
 (function () {
   const { icon } = window.ICONS;
   const wingman = window.wingman; // exposed by preload
+  document.documentElement.classList.toggle('hyprland', !!wingman.compositorMoves);
   const $ = (s) => document.querySelector(s);
   const cmdKey = wingman.platform === 'darwin' ? '⌘' : 'Ctrl';
   const isCmdOrCtrl = (e) => wingman.platform === 'darwin' ? e.metaKey : e.ctrlKey;
@@ -627,13 +628,61 @@ async function saveSettings() {
 
   // ---- click-through: only the UI blocks the mouse; empty gaps pass to your screen ----
   let ignoring = null;
-  function setIgnore(v) { if (v !== ignoring) { ignoring = v; wingman.setIgnoreMouse(v); } }
+  function setIgnore(v) {
+    // Linux cannot forward mousemove from an ignored window to re-enable input.
+    const next = wingman.platform === 'linux' ? false : v;
+    if (next !== ignoring) { ignoring = next; wingman.setIgnoreMouse(next); }
+  }
   document.addEventListener('mousemove', (e) => {
     const el = document.elementFromPoint(e.clientX, e.clientY);
-    const overUI = !!(el && el.closest && el.closest('#toolbar, #panel-wrap, #settings-scrim, #onboard-scrim'));
+    const overUI = !!(el && el.closest && el.closest('#toolbar, #panel-wrap, #settings-scrim, #onboard-scrim, .resize-corner'));
     setIgnore(!overUI);
   });
-  setIgnore(true); // start fully click-through; hovering the panel re-enables it
+  setIgnore(true); // supported platforms re-enable input when the pointer enters UI
+
+  if (wingman.compositorMoves) {
+    const toolbar = $('#toolbar');
+    let moving = false;
+    toolbar.addEventListener('pointerdown', async event => {
+      if (event.button !== 0 || event.target.closest('button')) return;
+      event.preventDefault();
+      moving = true;
+      toolbar.setPointerCapture(event.pointerId);
+      try { if (!await wingman.moveStart()) moving = false; }
+      catch { moving = false; showStatus('Could not move the window. Try the desktop window move controls.'); }
+    });
+    toolbar.addEventListener('pointermove', () => { if (moving) wingman.moveUpdate(); });
+    for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) toolbar.addEventListener(event, () => {
+      if (!moving) return;
+      moving = false; wingman.resizeEnd({ cancel: event !== 'pointerup' });
+    });
+  }
+
+  let resizing = null;
+  for (const corner of document.querySelectorAll('.resize-corner')) {
+    const endResize = (cancel = false) => {
+      if (resizing !== corner) return;
+      resizing = null; wingman.resizeEnd({ cancel });
+    };
+    corner.addEventListener('pointerdown', async event => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      setIgnore(false);
+      resizing = corner;
+      corner.setPointerCapture(event.pointerId);
+      try {
+        const result = await wingman.resizeStart({ corner: corner.dataset.resize, x: event.screenX, y: event.screenY });
+        if (!result || result.native) {
+          resizing = null;
+          if (corner.hasPointerCapture(event.pointerId)) corner.releasePointerCapture(event.pointerId);
+        }
+      } catch { endResize(true); showStatus('Could not start window resizing. Try the desktop window resize controls.'); }
+    });
+    corner.addEventListener('pointermove', event => { if (resizing === corner) wingman.resizeMove({ x: event.screenX, y: event.screenY }); });
+    corner.addEventListener('pointerup', () => endResize());
+    corner.addEventListener('pointercancel', () => endResize(true));
+    corner.addEventListener('lostpointercapture', () => endResize(true));
+  }
 
   // ---- onboarding / first-run tutorial -----------------------------------
   const obScrim = $('#onboard-scrim');

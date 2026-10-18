@@ -46,12 +46,21 @@ function send(channel, data) { if (win && !win.isDestroyed()) win.webContents.se
 
 // -------- window --------
 function createWindow() {
+  let overlayError = null;
+  try {
+    require('./src/linux-overlay').configureLinuxOverlay({ headless: app.commandLine.getSwitchValue('ozone-platform') === 'headless' });
+  } catch (error) {
+    overlayError = error.message;
+    log(overlayError);
+  }
   const { workArea } = screen.getPrimaryDisplay();
-  const W = 700, H = 600;
+  const W = 700, H = 420;
   const isMac = process.platform === 'darwin';
   win = new BrowserWindow({
     width: W,
     height: H,
+    minWidth: 520,
+    minHeight: 300,
     x: Math.round(workArea.x + (workArea.width - W) / 2),
     y: workArea.y + 6,
     frame: false,
@@ -86,11 +95,12 @@ function createWindow() {
   }
   if (app.dock && isMac) app.dock.show();
 
-  win.webContents.on('did-start-loading', () => setCapturing(false));
-  win.on('closed', () => setCapturing(false));
+  win.webContents.on('did-start-loading', () => { stopWindowGesture(); setCapturing(false); });
+  win.on('closed', () => { stopWindowGesture(); setCapturing(false); });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
   win.webContents.on('did-finish-load', () => {
+    if (overlayError) send('status', { message: overlayError });
     if (win.isVisible()) return;
     win.showInactive();
     // Re-assert overlay settings each time the window appears, so it keeps
@@ -115,6 +125,7 @@ function toggleWindow() {
   log('toggleWindow fired. win=' + (win && !win.isDestroyed()) + ' visible=' + (win && win.isVisible()));
   if (!win || win.isDestroyed()) { createWindow(); return; }
   if (win.isVisible()) {
+    stopWindowGesture();
     win.hide();
   } else {
     assertOverlay();
@@ -325,11 +336,60 @@ ipcMain.handle('capture:system:stop', () => stopLinuxAudio());
 ipcMain.on('ask', (_e, payload) => runFeature(payload.mode, payload.text));
 ipcMain.on('window:hide-for-sharing', async () => {
   await toggleBindingReady;
-  if (registeredShortcuts.toggle && !toggleBindingError && win && !win.isDestroyed()) win.hide();
+  if (registeredShortcuts.toggle && !toggleBindingError && win && !win.isDestroyed()) { stopWindowGesture(); win.hide(); }
 });
 ipcMain.on('mic:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.you.push(Buffer.from(arrayBuffer)); });
 ipcMain.on('system:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.them.push(Buffer.from(arrayBuffer)); });
 ipcMain.on('mouse:ignore', (_e, v) => { if (win) win.setIgnoreMouseEvents(!!v, { forward: true }); });
+let nativeGesture = null;
+let finalizingGesture = null;
+function stopWindowGesture() {
+  nativeGesture?.stop(); finalizingGesture?.stop();
+  nativeGesture = null; finalizingGesture = null; resizeSession = null;
+}
+function finishWindowGesture() {
+  const gesture = nativeGesture;
+  nativeGesture = null; resizeSession = null;
+  if (!gesture) return;
+  finalizingGesture = gesture;
+  gesture.finish().catch(() => send('status', { message: 'Could not finish window movement. Try the desktop window controls.' }))
+    .finally(() => { if (finalizingGesture === gesture) finalizingGesture = null; });
+}
+function updateNativeGesture() {
+  const gesture = nativeGesture;
+  gesture?.update().catch(() => {
+    if (nativeGesture !== gesture) return;
+    stopWindowGesture(); send('status', { message: 'Window movement failed. Try the desktop window controls.' });
+  });
+}
+ipcMain.handle('window:move-start', event => {
+  if (!win || win.isDestroyed() || event.sender !== win.webContents || app.commandLine.getSwitchValue('ozone-platform') === 'headless') return false;
+  stopWindowGesture();
+  nativeGesture = require('./src/linux-overlay').createHyprGesture('move');
+  return !!nativeGesture;
+});
+ipcMain.on('window:move-update', event => { if (win && event.sender === win.webContents) updateNativeGesture(); });
+let resizeSession = null;
+const validResizePoint = point => point && Number.isFinite(point.x) && Number.isFinite(point.y);
+ipcMain.handle('window:resize-start', (event, request) => {
+  if (!win || win.isDestroyed() || event.sender !== win.webContents || !validResizePoint(request) || !['bottom-left', 'bottom-right'].includes(request.corner)) return null;
+  stopWindowGesture();
+  if (app.commandLine.getSwitchValue('ozone-platform') !== 'headless') nativeGesture = require('./src/linux-overlay').createHyprGesture(request.corner);
+  if (nativeGesture) return { native: false };
+  resizeSession = { bounds: win.getBounds(), corner: request.corner, x: request.x, y: request.y };
+  return { native: false };
+});
+ipcMain.on('window:resize-move', (event, point) => {
+  if (nativeGesture && win && event.sender === win.webContents) { updateNativeGesture(); return; }
+  if (!resizeSession || !win || win.isDestroyed() || event.sender !== win.webContents || !validResizePoint(point)) return;
+  win.setBounds(require('./src/window-resize').resizeBounds(resizeSession.bounds, resizeSession.corner, point.x - resizeSession.x, point.y - resizeSession.y));
+});
+ipcMain.on('window:resize-end', (event, request) => {
+  if (win && event.sender === win.webContents) {
+    if (request?.cancel) stopWindowGesture();
+    else finishWindowGesture();
+  }
+});
 ipcMain.on('open-pane', (_e, url) => {
   if (typeof url !== 'string' || !/^(https:\/\/|x-apple\.systempreferences:)/i.test(url)) return;
   shell.openExternal(url).catch(() => {});
@@ -473,6 +533,7 @@ app.whenReady().then(() => {
 });
 
 app.on('will-quit', () => {
+  stopWindowGesture();
   stopLinuxAudio();
   try { if (hyprShortcut) hyprShortcut.stop(); } catch (error) { log('Hyprland binding cleanup failed: ' + error.message); }
   globalShortcut.unregisterAll();

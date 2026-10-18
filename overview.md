@@ -13,6 +13,8 @@ Aether is an Electron desktop app. It has a main process that can call providers
 | `src/llm.js` and `src/cli-provider.js` | Common streaming interface for cloud APIs, Ollama, and signed-in Claude/Codex CLIs. |
 | `src/stt.js` | Transcribes PCM audio with local `whisper-cli`, OpenAI, or Gemini. |
 | `src/linux-audio.js` | Captures the Linux default output monitor with `parec`, frames PCM samples, and stops the helper on cancellation or exit. |
+| `src/linux-overlay.js` | Installs Hyprland's narrowly matched floating/pinned/no-blur rule and coalesces compositor-coordinate drag/resize updates for Aether alone. |
+| `src/window-resize.js` | Calculates bounded bottom-corner resize geometry while keeping the opposite corner anchored. |
 | `src/library.js`, `data/library.json` | Loads and searches the bundled, attributed reference library. |
 | `src/research.js` | Fetches Tavily results when needed, builds dated source evidence, and validates/normalizes numeric citation groups against retrieved source IDs. |
 | `src/prompts.js` | Defines Assist, meeting, Ask, Research, and coding tasks. |
@@ -50,6 +52,10 @@ Tavily is now configured on this Linux account. Real checks confirmed local-firs
 Electron capture exclusion applies on macOS/Windows only and is best effort. Linux selected-window or tab sharing and full-window hide are the practical controls. Locked/proctored browsers may block the app. See [screen sharing compatibility](docs/screen-sharing.md).
 
 ## Extending the app
+
+Linux placement belongs partly to the compositor. Native Hyprland ignored Electron's always-on-top hint for tiling, so `createWindow()` prepares the session rule before constructing the window. It matches only `dev.prahladv.aether`, survives app restarts in that compositor session, and needs Aether restarted after a compositor config reload. GNOME/KDE and other tiling managers need their own native verification; see README's desktop matrix.
+
+The full-width six-dot toolbar and bottom corners send narrow gesture events through preload. Hyprland updates use its actual cursor/window coordinates and target only the exact app process; repeated motion is coalesced rather than spawning an unbounded command queue. Release snapshots and flushes the final position, while cancellation and lifecycle cleanup stop motion. Other platforms use Electron's native drag region and bounded resize calculations. Opaque UI surfaces plus the Hyprland no-blur rule prevent the full transparent window from becoming a blurred square. Linux keeps mouse input enabled because ignored mousemove events cannot be forwarded back to the renderer.
 
 Research buffers model output until citation validation succeeds. Sources appear immediately after retrieval and survive rejection or provider failure; a web retry replaces the local source panel. Numeric groups/ranges are checked outside formatted math/code. This validates reference IDs, not whether each claim follows from the cited passage. The retrieval date is not a publication date or proof that results are current; live Ollama replies still need factual-quality work.
 

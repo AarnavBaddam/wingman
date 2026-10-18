@@ -33,6 +33,20 @@ node scripts/install-linux.js # defaults to dist/Aether-0.1.0.AppImage
 
 This installs a per-user application launcher without copying the AppImage; rerun it if you move the file. On Hyprland with Lua configuration (0.55+), Aether creates its Show / hide binding at startup and updates it when you choose new keys. It refuses existing desktop key conflicts and removes its own binding on quit. Restart Aether after reloading Hyprland configuration, which clears runtime bindings. Other global actions may require desktop bindings; their buttons remain available.
 
+### Linux desktop behavior
+
+Linux overlay behavior depends on the desktop/compositor, not just the operating system. Electron's always-on-top flag alone did not prevent native Wayland tiling on Hyprland.
+
+| Desktop/session | Overlay setup and validation |
+|---|---|
+| Hyprland 0.55+ with Lua | Aether uses `hyprctl` to install an exact-app-ID floating/pinned rule before its window appears. It opens at 700×420 without taking a tile; pinning follows workspaces. Native mapping, drag, bottom-corner resize and hide/restore were verified on Hyprland 0.56.2. |
+| GNOME / KDE, Wayland or X11 | Existing Electron window hints remain in use. Native placement, fullscreen stacking, workspace following and global shortcuts need desktop-specific validation. |
+| Sway / i3 / other tiling managers | No automatic rules yet. Configure a floating rule in that manager before relying on the overlay; these sessions are unverified. |
+
+The Hyprland rule is scoped to `dev.prahladv.aether`; other apps keep their normal layout. It also disables compositor blur/shadows for Aether, preventing a blurred rectangle outside the panel. It is installed in the compositor session, without rewriting your configuration. Restart Aether after a Hyprland configuration reload. Missing `hyprctl` or unsupported Lua setup produces a visible status message. Fullscreen stacking and capture exclusion are separate checks; floating does not make the window invisible in recordings. See [Hyprland's rule documentation](https://wiki.hypr.land/0.55.0/Configuring/Basics/Window-Rules/).
+
+Hold the six-dot area in the full-width toolbar to move Aether. Hover either bottom corner for the diagonal resize cursor, then drag; minimum size is 520×300. On Hyprland these controls use compositor coordinates because Wayland does not expose global window coordinates through Electron. On Linux the window keeps mouse input enabled, since ignored mousemove forwarding is unavailable; keep this in mind when collapsing the panel. Other platforms' corner controls use Electron bounds and still need native validation.
+
 ## Configure providers
 
 Open **Settings** in Aether and select one provider:

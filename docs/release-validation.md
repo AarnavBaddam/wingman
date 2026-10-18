@@ -1,5 +1,14 @@
 # Aether release validation
 
+## Latest Hyprland placement and window controls
+
+- On Hyprland 0.56.2 native Wayland, Aether was tiled despite Electron's always-on-top setting; T3 shrank to 950 pixels wide. Floating Aether restored T3 to 1,908 pixels. Startup now installs an exact-app-ID floating/pinned rule before mapping, with Aether-only compositor blur/shadows disabled.
+- Final UI uses an opaque panel and full-width toolbar with a six-dot drag area; default 700×420, minimum 520×300. Both bottom corners expose diagonal resize cursors. Native Wayland coordinates come from Hyprland; other platforms retain native toolbar dragging and bounded Electron resize handling and remain unverified natively.
+- 72 tests passed, plus `npm run pack` and `npm run dist:linux`. Localhost Playwright checked real renderer fit at three sizes, grip/corner events, cursors, Linux input and research rendering, with zero page errors. Actual mouse input against the final FUSE-mounted AppImage passed grip movement, both corner resizes, and fast press/move/release. Neighboring tiled geometry was unchanged. Private desktop screenshot is ignored under `dist/validation/`.
+- Independent review found final motion could be dropped on release; a failing regression proved it, then final-position flushing fixed it. Re-review found no further important issue. Hyprland's interactive drag dispatchers were rejected as a solution after native tests and upstream source showed they require key-binding press context.
+- Linux mouse input stays enabled because ignored mousemove forwarding is unavailable. A collapsed panel still retains the native window's input footprint. Config reload requires restarting Aether. Fullscreen stacking, other Linux desktops, and recipient sharing are separate pending checks.
+- Latest artifact: 139,438,121 bytes; SHA-256 `8067d206d2b5e1776068368b954c90fcb965d6c6f5392e8be5666535de96f110`. This supersedes earlier checksums below.
+
 ## Latest research checks
 
 - Final `npm run pack` and `npm run dist:linux` passed. The final AppImage passed normal FUSE startup and real renderer/settings IPC with an isolated profile. Artifact: 139,434,549 bytes; SHA-256 `2cd035674ee65e7c46a940e500440f8fe3b67078261cc6b39182b15246d04310`. This supersedes the older artifact checksum below.

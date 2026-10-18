@@ -13,10 +13,11 @@
 </head>
 <body>
   <div id="app">
-    <!-- Top-center floating pill toolbar (drag handle) -->
+    <!-- Full-width toolbar with a dedicated drag grip -->
     <div id="toolbar">
       <button class="tb-logo" id="logo-btn" title="Aether"></button>
       <div class="tb-divider"></div>
+      <div id="drag-handle" title="Drag to move Aether"><svg width="16" height="24" viewBox="0 0 16 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="6" r="1.5"/><circle cx="11" cy="6" r="1.5"/><circle cx="5" cy="12" r="1.5"/><circle cx="11" cy="12" r="1.5"/><circle cx="5" cy="18" r="1.5"/><circle cx="11" cy="18" r="1.5"/></svg></div>
       <button class="tb-hide" id="hide-btn"><span class="chev"></span><span>Hide</span></button>
       <button class="tb-hide" id="share-hide-btn" title="Hide the entire Aether window before sharing">Hide for sharing</button>
       <div class="tb-divider"></div>
@@ -58,6 +59,9 @@
       </div>
     </div>
   </div>
+
+  <div class="resize-corner" data-resize="bottom-left" title="Drag to resize" aria-hidden="true"></div>
+  <div class="resize-corner" data-resize="bottom-right" title="Drag to resize" aria-hidden="true"></div>
 
   <!-- Settings -->
   <div id="settings-scrim" class="hidden">
