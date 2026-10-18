@@ -23,6 +23,8 @@
 
   // ---- state -------------------------------------------------------------
   let settings = null;
+  let autoRefreshActive = false;
+  let autoRefreshSupported = !!wingman.autoRefreshSupported;
   let busy = false;
   let aiEl = null;       // current streaming <div class="ai-text">
   let caretEl = null;
@@ -130,6 +132,7 @@
 
   function appendToken(t) {
     if (!aiEl) startAi(false);
+    aiEl.querySelector('.llm-phase')?.remove();
     aiEl.dataset.raw += t;
     const span = document.createElement('span');
     span.className = 'w';
@@ -205,6 +208,7 @@
     const collapsed = $('#panel').classList.toggle('collapsed');
     $('#hide-btn').classList.toggle('collapsed', collapsed);
     $('#live-dot').style.display = collapsed ? 'none' : '';
+    syncAutoRefreshPause();
   });
   $('#share-hide-btn').addEventListener('click', () => wingman.hideForSharing());
 
@@ -350,6 +354,12 @@
     setBusy(true);
   });
   wingman.on('llm:token', ({ text }) => appendToken(text));
+  wingman.on('llm:phase', ({ message }) => {
+    if (!aiEl || aiEl.dataset.raw) return;
+    let phase = aiEl.querySelector('.llm-phase');
+    if (!phase) { phase = document.createElement('span'); phase.className = 'llm-phase'; aiEl.insertBefore(phase, caretEl); }
+    phase.textContent = message;
+  });
   wingman.on('llm:done', () => { finalizeAi(); setBusy(false); });
   wingman.on('llm:sources', ({ sources }) => {
     const list = document.createElement('div');
@@ -401,12 +411,21 @@
 
   // ---- settings ----------------------------------------------------------
   const scrim = $('#settings-scrim');
-  function openSettings() { if (!settings) { showStatus('Settings are unavailable. Restart Aether to retry.', true); return; } fillSettings(); scrim.classList.remove('hidden'); }
+  function syncAutoRefreshPause() {
+    wingman.autoRefreshPause(!$('#settings-scrim').classList.contains('hidden') || !$('#onboard-scrim').classList.contains('hidden') || $('#panel').classList.contains('collapsed'));
+  }
+  function syncAutoRefreshIndicator() { $('#auto-refresh-indicator').hidden = !autoRefreshActive; }
+  wingman.on('auto-refresh:state', ({ active, error }) => {
+    autoRefreshActive = !!active; syncAutoRefreshIndicator();
+    if (error) showStatus(error, true);
+  });
+  function openSettings() { if (!settings) { showStatus('Settings are unavailable. Restart Aether to retry.', true); return; } fillSettings(); scrim.classList.remove('hidden'); syncAutoRefreshPause(); }
   async function closeSettings() {
     cancelShortcutRecording();
     try {
       await saveSettings();
       scrim.classList.add('hidden');
+      syncAutoRefreshPause();
     } catch (err) {
       wingman.log('settings save error: ' + (err && err.message));
       $('#s-status').textContent = 'Could not save settings. Check access to your key storage, then try again.';
@@ -418,6 +437,11 @@
   scrim.addEventListener('click', (e) => { if (e.target === scrim) closeSettings(); });
 
 function fillSettings() {
+    $('#auto-refresh').checked = !!settings.autoRefresh && autoRefreshSupported;
+    $('#auto-refresh').disabled = !autoRefreshSupported;
+    $('#auto-refresh-hint').textContent = autoRefreshSupported
+      ? 'Off by default. After interaction pauses, a screenshot goes to your selected provider and uses its allowance.'
+      : 'Click/scroll refresh is currently available on Hyprland. Manual Assist works here.';
     document.querySelectorAll('#provider-seg button').forEach((b) => b.classList.toggle('on', b.dataset.provider === settings.provider));
     $('#key-openai').value = settings.apiKeys.openai || '';
     $('#key-anthropic').value = settings.apiKeys.anthropic || '';
@@ -479,6 +503,7 @@ function statusText() {
     $('#s-status').textContent = statusText();
   }));
 async function saveSettings() {
+    settings.autoRefresh = $('#auto-refresh').checked;
     settings.apiKeys.openai = $('#key-openai').value.trim();
     settings.apiKeys.anthropic = $('#key-anthropic').value.trim();
     settings.apiKeys.gemini = $('#key-gemini').value.trim();
@@ -491,6 +516,7 @@ async function saveSettings() {
     settings.models[settings.provider].fast = $('#model-fast').value.trim();
     settings.models[settings.provider].smart = $('#model-smart').value.trim();
     await wingman.settingsSet(settings);
+    syncAutoRefreshIndicator();
   }
 
   // Assist shortcut recorder. The renderer captures a key combination and the
@@ -736,7 +762,7 @@ async function saveSettings() {
     $('#ob-next').textContent = obIndex === OB_STEPS.length - 1 ? 'Done' : 'Next';
     $('#ob-skip').style.visibility = obIndex === OB_STEPS.length - 1 ? 'hidden' : 'visible';
   }
-  function showOnboard() { obIndex = 0; renderOnboard(); obScrim.classList.remove('hidden'); setIgnore(false); }
+  function showOnboard() { obIndex = 0; renderOnboard(); obScrim.classList.remove('hidden'); setIgnore(false); syncAutoRefreshPause(); }
   async function finishOnboard() {
     if (settings && !settings.onboarded) {
       try {
@@ -748,6 +774,7 @@ async function saveSettings() {
       }
     }
     obScrim.classList.add('hidden');
+    syncAutoRefreshPause();
   }
   $('#ob-next').addEventListener('click', () => { if (obIndex === OB_STEPS.length - 1) finishOnboard(); else { obIndex++; renderOnboard(); } });
   $('#ob-back').addEventListener('click', () => { if (obIndex > 0) { obIndex--; renderOnboard(); } });
@@ -778,6 +805,11 @@ async function saveSettings() {
     if (!shortcuts.toggle) showStatus('Show / hide shortcut unavailable. Choose another in Settings before hiding.', true);
     syncAssistShortcutLabels();
     smartBtn.classList.toggle('on', !!settings.smart);
+    const refreshStatus = await wingman.autoRefreshStatus();
+    autoRefreshActive = !!refreshStatus.active;
+    if (typeof refreshStatus.supported === 'boolean') autoRefreshSupported = refreshStatus.supported;
+    syncAutoRefreshIndicator();
+    syncAutoRefreshPause();
     showExample();
     syncPlaceholder();
     if (!settings.onboarded) showOnboard();

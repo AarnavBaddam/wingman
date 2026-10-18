@@ -18,6 +18,7 @@
       <button class="tb-logo" id="logo-btn" title="Aether"></button>
       <div class="tb-divider"></div>
       <div id="drag-handle" title="Drag to move Aether"><svg width="16" height="24" viewBox="0 0 16 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="6" r="1.5"/><circle cx="11" cy="6" r="1.5"/><circle cx="5" cy="12" r="1.5"/><circle cx="11" cy="12" r="1.5"/><circle cx="5" cy="18" r="1.5"/><circle cx="11" cy="18" r="1.5"/></svg></div>
+      <span id="auto-refresh-indicator" hidden title="Assist refreshes after clicks or scrolling">Auto</span>
       <button class="tb-hide" id="hide-btn"><span class="chev"></span><span>Hide</span></button>
       <button class="tb-hide" id="share-hide-btn" title="Hide the entire Aether window before sharing">Hide for sharing</button>
       <div class="tb-divider"></div>
@@ -108,6 +109,9 @@
         <div class="s-field"><span>Fast</span><input id="model-fast" type="text" autocomplete="off" /></div>
         <div class="s-field"><span>Smart</span><input id="model-smart" type="text" autocomplete="off" /></div>
         <div class="s-hint" id="model-hint"></div>
+
+        <label class="s-check"><input id="auto-refresh" type="checkbox" />Auto refresh Assist after clicks or scrolling</label>
+        <div class="s-hint" id="auto-refresh-hint">Off by default. After interaction pauses, a screenshot goes to your selected provider and uses its allowance.</div>
 
         <label class="s-label">Keyboard shortcuts</label>
         <div class="s-shortcut">

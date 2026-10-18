@@ -70,6 +70,12 @@ test('research prompt distinguishes retrieval date from evidence of currentness'
   assert.match(prompt, /newest.*retrieved.*latest overall/i);
 });
 
+test('explicit visual requests use screen context while external fact checks retain retrieval', () => {
+  const {isScreenQuestion}=require('../src/research');
+  for(const question of ["What's on my screen?",'What is on my screen right now?','Read this screenshot','Explain the error on this page','Solve this']) assert.equal(isScreenQuestion(question),true,question);
+  for(const question of ['What is a Banach space?','Search for what is on my screen','Verify the latest version on my screen','What is screen sharing?']) assert.equal(isScreenQuestion(question),false,question);
+});
+
 test('a narrower article is not sufficient local evidence for a general topic', async () => {
   const collection = ['Intrinsic DNA fluorescence', 'DNA'].map(title => ({
     title, url: `https://example.org/${encodeURIComponent(title)}`, content: 'A'.repeat(700),

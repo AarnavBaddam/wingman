@@ -15,6 +15,9 @@ Aether is an Electron desktop app. It has a main process that can call providers
 | `src/linux-audio.js` | Captures the Linux default output monitor with `parec`, frames PCM samples, and stops the helper on cancellation or exit. |
 | `src/linux-overlay.js` | Installs Hyprland's narrowly matched floating/pinned/no-blur rule and coalesces compositor-coordinate drag/resize updates for Aether alone. |
 | `src/window-resize.js` | Calculates bounded bottom-corner resize geometry while keeping the opposite corner anchored. |
+| `src/screen.js` | Captures the cursor or supplied interaction display; native Hyprland uses `grim` and monitor coordinates. |
+| `src/auto-refresh.js` | Debounces opt-in activity, retains the latest pending interaction and prevents overlapping generations. |
+| `src/hypr-activity.js` | Owns non-consuming Hyprland click/scroll bindings and a bounded event-socket listener, excluding Aether windows. |
 | `src/library.js`, `data/library.json` | Loads and searches the bundled, attributed reference library. |
 | `src/research.js` | Fetches Tavily results when needed, builds dated source evidence, and validates/normalizes numeric citation groups against retrieved source IDs. |
 | `src/prompts.js` | Defines Assist, meeting, Ask, Research, and coding tasks. |
@@ -32,6 +35,10 @@ Aether is an Electron desktop app. It has a main process that can call providers
 5. The renderer displays the answer and clickable source links. Library links credit Wikipedia contributors and CC BY-SA 4.0.
 
 ## Keyboard shortcuts
+Screen updates are manual by default. Native Hyprland users may enable click/scroll Auto refresh in Settings. External activity settles for 650 ms before Assist, and only the latest pending interaction survives a busy generation. Its display coordinates travel with the request. Main process visibility and renderer settings/onboarding/collapse state pause requests. Listener failure disables runtime Auto and reports an error; saved preference and actual running state are separate. Bindings are removed on disable/quit, without removing the user's mouse bindings; a compositor config reload requires restarting Aether.
+
+Manual screen capture uses the cursor display; automatic capture uses the triggering interaction's display. Hyprland requires `grim` on PATH, reads PNG output as binary and fails closed with setup guidance. Other platforms use Electron's nearest display and portal source where available. Explicit screen questions bypass factual retrieval and stream tokens with progress labels; factual questions retain buffered citation validation. A visible overlay may be included in a screenshot. Model latency and semantic accuracy remain separate limits.
+
 
 Settings reuses one key recorder for Assist and Show / hide. Preload sends each change to the main process, which checks conflicts, replaces the global binding, and persists the preference. A failed save restores the previous binding. The default restore combination is Ctrl+Shift+Space (Command+Shift+Space on macOS); labels follow saved settings. Startup registration status disables the sharing Hide button if no restore binding registered. This cannot prove Wayland will deliver keys; test physically before sharing. Linux packaging synchronizes `dev.prahladv.aether.desktop` with Electron's portal identity.
 

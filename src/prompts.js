@@ -25,7 +25,7 @@ const MODES = {
       'If the screen shows a coding/LeetCode problem: give a short approach, then a correct solution in a fenced code block, then time and space complexity. ' +
       'If it is a conversation: answer the current question or say exactly what the user should say next, in the first person. ' +
       'For math, use LaTeX: display math with $$...$$, inline math with $...$. ' +
-      'Be concise and confident. Never say "I can see" or describe the screenshot.',
+      'Be concise. If screen text or details are unclear, say so instead of guessing. Never say "I can see" or describe the screenshot unless the user asks.',
     build(ctx) {
       const t = formatTranscript(ctx.transcript, 12);
       return 'Recent conversation:\n' + (t || '(none)') + '\n\nRespond with what I need right now.';

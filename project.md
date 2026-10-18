@@ -4,6 +4,16 @@
 
 Phase 5: platform validation and release readiness. Linux keyring, microphone, output-monitor audio lifecycle, fresh-container runtime, normal FUSE launch, physical Hyprland Hide/restore, and live Tavily retrieval pass. Ollama is configured; factual-quality review, selected-window/recipient sharing, speech quality, a fully clean desktop install, and macOS/Windows remain open. Work is on `codex/wingman-hardening`; local commits are authorized and push remains deferred. See [release validation](docs/release-validation.md).
 
+## Screen refresh follow-up
+
+- User wants Assist to remain manual by default, with an optional click/scroll refresh. Settings now exposes that option on native Hyprland; other desktops remain manual. Activity waits 650 ms to settle, coalesces bursts and retains at most one latest pending request while a generation runs. Hidden/collapsed/settings/onboarding states pause observation. Runtime listener failure clears the Auto indicator and reports recovery guidance.
+- Explicit screen questions skip unrelated library/Tavily retrieval and stream the answer immediately. Factual Ask and Research retain their source/citation gate. Reading/searching/writing phase labels show progress. This fixes the Google Assistant search-result detour; it does not guarantee accurate model interpretation.
+- Capture now follows the cursor display for manual requests and the original interaction display for automatic requests. Native Hyprland uses `hyprctl` plus `grim` (required on PATH); missing capture support fails with setup guidance. Other platforms select the nearest Electron display. The image may include the visible overlay.
+- 93 tests, localhost Playwright, pack and Linux AppImage build pass. Native unpacked testing passed real capture on the secondary display, non-consuming physical click/scroll, burst coalescing, preserved interaction display after pointer movement, and disabling. Native scheduling tests use a controlled provider; they do not prove model quality. Review found and fixed binary PNG decoding; the regression now checks binary capture options.
+- A separate real Ollama test with a controlled fresh image took 4,838 ms to the first token and 5,310 ms total; identical-image repetition took 50 ms to first token and 384 ms total. Fresh screen understanding is not instantaneous, and one response misread a text color. No accuracy guarantee follows from the timing test.
+- Code graph refreshed: 640 nodes, 1,011 edges. The same native activity/capture checks passed against the final FUSE AppImage. Latest artifact: 139,446,618 bytes, SHA-256 `ec40a1c55759f5d9dd7b259e980463de78e4bfe77c9793da312dc91ac78ecd6f`; details in `docs/release-validation.md`.
+- Free Codex duration cannot be estimated honestly: the official pricing page publishes no fixed Free quota and describes Free desktop access, while Aether invokes `codex exec`. Free CLI eligibility must be checked before relying on it. Provider selection remains local Ollama.
+
 ## Hyprland overlay placement
 
 - User reported Aether shrinking the current app instead of overlaying it. Native inspection confirmed Aether's exact class `dev.prahladv.aether` was tiled on Hyprland 0.56.2 despite Electron `alwaysOnTop`. Manually floating it restored T3's tiled width from 950 to 1,908 pixels.
@@ -49,7 +59,7 @@ Phase 5: platform validation and release readiness. Linux keyring, microphone, o
 2. **Harden core** — OS-backed key encryption and migration, capture failure handling, audio readiness, full-window Hide for sharing. Complete in code and focused tests.
 3. **Provider choices** — Ollama, Claude CLI, Codex CLI, and local Whisper transcription. Complete in code; local CLI/model smoke checks completed on Linux.
 4. **Grounded answers** — bundled 1,832-article Wikipedia reference library, local lexical retrieval, Tavily fallback for current/weak matches or model uncertainty, source display, and citation gate. Complete in code and mocked network tests.
-5. **Platform validation and release** — Linux AppImage builds and browser UI checks pass. Native share exclusion, real audio permissions, macOS/Windows packaging, and a live Tavily request remain to verify on their target environments.
+5. **Platform validation and release** — Linux builds, native Hyprland capture/controls, keyring, audio acquisition/lifecycle and live Tavily pass on this host. Factual/speech quality, recipient sharing, clean desktop installation, other desktops and macOS/Windows remain open.
 
 ## Decisions
 
@@ -61,7 +71,7 @@ Phase 5: platform validation and release readiness. Linux keyring, microphone, o
 
 ## Checks run
 
-- `npm test`: latest suite has 59 passing tests.
+- `npm test`: latest suite has 93 passing tests.
 - `npm run dist:linux`: built `dist/Aether-0.1.0.AppImage` (137 MB); `app.asar` contains the reference library and GPL license. The AppImage responds to `--appimage-version`.
 - Headless Playwright on localhost: Research button, source and license links, provider choices, settings save/scroll, and Ollama local transcription controls worked with a mocked Electron bridge; no page errors.
 - Live local Claude and Codex CLI replies passed. Ollama answered a library-backed Banach space question with a valid citation. An earlier Whisper probe passed.

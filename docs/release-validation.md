@@ -1,5 +1,15 @@
 # Aether release validation
 
+## Latest screen updates and optional Auto
+
+- Manual remains the default. Settings can enable external click/scroll Assist on native Hyprland. A 650 ms debounce groups bursts; generations never overlap and only the latest pending interaction is retained. Hidden/collapsed/settings/onboarding states pause requests. Runtime listener state drives the Auto badge and failures report recovery guidance. Other desktops remain manual.
+- Explicit screen questions now bypass unrelated library/Tavily research and stream tokens with reading/writing feedback. Factual requests still show sources and wait for citation validation. Native Hyprland captures the cursor/interaction monitor with `grim`; PNG output uses binary encoding and missing capture support fails with actionable guidance. A visible overlay can still appear in captures.
+- 93 tests passed; localhost Playwright passed default-off/settings/runtime-failure behavior, phase-to-token rendering, existing controls and source/rejection display with zero page errors. `npm run pack` and `npm run dist:linux` passed.
+- Real native tests passed against both unpacked app and final normal FUSE AppImage: manual capture read the secondary fixture display; physical clicks and wheel events reached the target browser; a wheel burst yielded one Assist; capture retained the clicked monitor after the pointer moved away; disabling stopped requests. These checks use a controlled provider response with actual native capture, IPC, compositor bindings and input. They do not measure model quality. Review caught binary capture encoding, corrected with a regression and verified by these native runs.
+- Separate real Ollama controlled-image timing: fresh image first token 4,838 ms, total 5,310 ms; identical-image repetition first token 50 ms, total 384 ms. One response misread text color. This is a sample timing, not an accuracy pass or guarantee of instant fresh updates.
+- Latest artifact: 139,446,618 bytes; SHA-256 `ec40a1c55759f5d9dd7b259e980463de78e4bfe77c9793da312dc91ac78ecd6f`. Supersedes historical checksums below. Graph refreshed: 640 nodes, 1,011 edges. Local commit authorized; no push.
+- Free Codex CLI access and a fixed usage duration have not been established. [Official pricing](https://learn.chatgpt.com/docs/pricing) describes Free desktop access, subject to rollout, and lists CLI under Plus; Aether uses `codex exec`. Do not promise Free CLI compatibility or an hours/messages estimate. Selected provider remains local Ollama.
+
 ## Latest Hyprland placement and window controls
 
 - On Hyprland 0.56.2 native Wayland, Aether was tiled despite Electron's always-on-top setting; T3 shrank to 950 pixels wide. Floating Aether restored T3 to 1,908 pixels. Startup now installs an exact-app-ID floating/pinned rule before mapping, with Aether-only compositor blur/shadows disabled.

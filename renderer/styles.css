@@ -73,6 +73,10 @@ html, body {
 }
 #drag-handle { flex: 1; min-width: 32px; height: 28px; display: flex; align-items: center; justify-content: center; color: var(--tx-mut); cursor: grab; -webkit-app-region: drag; }
 #drag-handle:active { cursor: grabbing; }
+#auto-refresh-indicator { color: var(--tx-mut); font-size: 12px; margin-right: 4px; }
+.s-check { display: flex; align-items: center; gap: 8px; color: var(--tx-1); font-size: 13px; margin-top: 14px; }
+.s-check input { accent-color: var(--accent-hi); flex-shrink: 0; }
+.llm-phase { color: var(--tx-mut); font-size: 13px; }
 .hyprland #toolbar, .hyprland #drag-handle { -webkit-app-region: no-drag; }
 .resize-corner { position: fixed; bottom: 0; width: 24px; height: 24px; z-index: 30; pointer-events: auto; -webkit-app-region: no-drag; }
 .resize-corner[data-resize="bottom-left"] { left: 0; cursor: nesw-resize; }

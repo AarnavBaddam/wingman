@@ -5,6 +5,9 @@ contextBridge.exposeInMainWorld('wingman', {
   getZoomLevel: () => webFrame.getZoomLevel(),
   platform: process.platform,
   compositorMoves: process.platform === 'linux' && !!process.env.HYPRLAND_INSTANCE_SIGNATURE,
+  autoRefreshSupported: process.platform === 'linux' && !!process.env.HYPRLAND_INSTANCE_SIGNATURE,
+  autoRefreshPause: (paused) => ipcRenderer.send('auto-refresh:pause', paused),
+  autoRefreshStatus: () => ipcRenderer.invoke('auto-refresh:status'),
   moveStart: () => ipcRenderer.invoke('window:move-start'),
   moveUpdate: () => ipcRenderer.send('window:move-update'),
   settingsGet: () => ipcRenderer.invoke('settings:get'),
@@ -28,7 +31,7 @@ contextBridge.exposeInMainWorld('wingman', {
   openPane: (url) => ipcRenderer.send('open-pane', url),
   log: (msg) => ipcRenderer.send('log', msg),
   on: (channel, cb) => {
-    const allowed = ['capture:state', 'capture:system-ended', 'llm:start', 'llm:token', 'llm:done', 'llm:error', 'llm:sources', 'status', 'transcript'];
+    const allowed = ['capture:state', 'capture:system-ended', 'llm:start', 'llm:phase', 'llm:token', 'llm:done', 'llm:error', 'llm:sources', 'auto-refresh:state', 'status', 'transcript'];
     if (!allowed.includes(channel)) return;
     ipcRenderer.on(channel, (_e, data) => cb(data));
   }

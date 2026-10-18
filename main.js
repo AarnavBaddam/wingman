@@ -5,7 +5,7 @@ const store = require('./src/store');
 const { captureScreenshot } = require('./src/screen');
 const { createSTT } = require('./src/stt');
 const { createLLM } = require('./src/llm');
-const { getEvidence, searchWeb, researchPrompt, validateGroundedAnswer, needsWebFollowup } = require('./src/research');
+const { getEvidence, searchWeb, researchPrompt, validateGroundedAnswer, needsWebFollowup, isScreenQuestion } = require('./src/research');
 const { MODES } = require('./src/prompts');
 const { appendResumeContext } = require('./src/profile-context');
 const { rms16 } = require('./src/wav');
@@ -15,6 +15,9 @@ const registeredShortcuts = {};
 let hyprShortcut = null;
 let toggleBindingError = null;
 let toggleBindingReady = Promise.resolve();
+let autoRefresh = null, activityWatcher = null, autoRefreshPaused = false;
+let autoRefreshChange = Promise.resolve();
+let autoRefreshActive = false;
 
 // Lightweight diagnostic log so shortcut behavior can be verified from a file.
 function log(msg) {
@@ -95,7 +98,7 @@ function createWindow() {
   }
   if (app.dock && isMac) app.dock.show();
 
-  win.webContents.on('did-start-loading', () => { stopWindowGesture(); setCapturing(false); });
+  win.webContents.on('did-start-loading', () => { autoRefreshPaused = true; autoRefresh?.cancelPending(); stopWindowGesture(); setCapturing(false); });
   win.on('closed', () => { stopWindowGesture(); setCapturing(false); });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
@@ -222,7 +225,7 @@ function setCapturing(active) {
 }
 
 // -------- feature runner --------
-async function runFeature(mode, userText) {
+async function runFeature(mode, userText, capturePoint) {
   if (DEBUG) console.log('[DEBUG MAIN] runFeature called:', { mode, userText, isBusy: state.busy });
   if (state.busy) return;
   const def = MODES[mode];
@@ -254,14 +257,15 @@ async function runFeature(mode, userText) {
 
     let imageDataUrl = null;
     if (def.needsScreen) {
+      send('llm:phase', { message: 'Reading your screen…' });
       if (DEBUG) console.log('[DEBUG MAIN] Feature needs screen. Capturing screenshot...');
       try {
-        imageDataUrl = await captureScreenshot();
+        imageDataUrl = await captureScreenshot(capturePoint);
         if (!imageDataUrl) throw new Error('No screenshot was returned');
         if (DEBUG) console.log('[DEBUG MAIN] Screenshot captured successfully (length:', imageDataUrl.length, ')');
       } catch (e) {
         if (DEBUG) console.error('[DEBUG MAIN] Screenshot capture failed:', e);
-        send('llm:error', { message: process.platform === 'darwin'
+        send('llm:error', { message: e?.code === 'CAPTURE_SETUP' ? e.message : process.platform === 'darwin'
           ? 'Screen capture failed. Check Aether’s Screen Recording permission in System Settings, then try again.'
           : 'Screen capture failed. Check capture permissions and try again.' });
         return;
@@ -269,18 +273,23 @@ async function runFeature(mode, userText) {
     }
 
     const built = def.build({ transcript, userText: userText || '' });
-    let sources = ['research', 'ask'].includes(mode) ? await getEvidence(userText, settings.apiKeys.tavily) : [];
+    const needsResearch = mode === 'research' || (mode === 'ask' && !isScreenQuestion(userText));
+    if (needsResearch) send('llm:phase', { message: 'Finding sources…' });
+    let sources = needsResearch ? await getEvidence(userText, settings.apiKeys.tavily) : [];
     const publishSources = () => {
       if (sources.length) send('llm:sources', { sources: sources.map(({ number, title, url, origin }) => ({ number, title, url, origin })) });
     };
     publishSources();
     if (DEBUG) console.log('[DEBUG MAIN] Built prompt. Starting LLM stream...');
-    const answer = () => llm.stream({
+    const answer = () => {
+      send('llm:phase', { message: sources.length ? 'Writing a sourced answer…' : 'Writing an answer…' });
+      return llm.stream({
       system: appendResumeContext(def.system, settings.resumeContext),
       turns: [{ role: 'user', text: built + (sources.length ? researchPrompt(sources) : '') }],
       imageDataUrl,
       onToken: (t) => { if (!sources.length) send('llm:token', { text: t }); }
-    });
+      });
+    };
     let fullText = await answer();
     if (needsWebFollowup(fullText, sources)) {
       send('status', { message: 'Local sources were insufficient; searching the web.' });
@@ -295,12 +304,57 @@ async function runFeature(mode, userText) {
     send('llm:error', { message: 'Error: ' + (e && e.message ? e.message : String(e)) });
   } finally {
     state.busy = false;
+    void autoRefresh?.flush();
   }
+}
+
+function autoRefreshSupported() {
+  return process.platform === 'linux' && !!process.env.HYPRLAND_INSTANCE_SIGNATURE && app.commandLine.getSwitchValue('ozone-platform') !== 'headless';
+}
+async function configureAutoRefresh(enabled) {
+  if (!autoRefresh) autoRefresh = require('./src/auto-refresh').createAutoRefresh({
+    run: point => runFeature('assist', '', point), isBusy: () => state.busy,
+    canObserve: () => !!win && !win.isDestroyed() && win.isVisible() && !autoRefreshPaused
+  });
+  if (!enabled) { autoRefresh.setEnabled(false); activityWatcher?.stop(); activityWatcher = null; publishAutoRefreshState(false); return; }
+  if (!autoRefreshSupported()) throw new Error('Click/scroll auto refresh is currently available on Hyprland. Manual Assist remains available.');
+  if (!activityWatcher) {
+    const watcher = require('./src/hypr-activity').createHyprActivityWatcher({
+      onActivity: point => autoRefresh.activity(point),
+      onError: () => {
+        autoRefresh.setEnabled(false);
+        activityWatcher?.stop(); activityWatcher = null;
+        publishAutoRefreshState(false, 'Auto refresh stopped. Toggle it off and on in Settings to reconnect, or use manual Assist.');
+      }
+    });
+    activityWatcher = watcher;
+    try { await watcher.start(); if (activityWatcher !== watcher) throw new Error('Auto refresh connection stopped. Try enabling it again.'); }
+    catch (error) { watcher.stop(); if (activityWatcher === watcher) activityWatcher = null; throw error; }
+  }
+  autoRefresh.setEnabled(true);
+  publishAutoRefreshState(true);
+}
+function publishAutoRefreshState(active, error) {
+  autoRefreshActive = active;
+  send('auto-refresh:state', { active, error });
 }
 
 // -------- IPC --------
 ipcMain.handle('settings:get', () => store.getSettings());
-ipcMain.handle('settings:set', (_e, patch) => { sttDisabled = false; return store.setSettings(patch); });
+ipcMain.handle('auto-refresh:status', () => ({ supported: autoRefreshSupported(), active: autoRefreshActive }));
+ipcMain.handle('settings:set', (_e, patch) => {
+  const apply = async () => {
+    if (patch.autoRefresh !== undefined && typeof patch.autoRefresh !== 'boolean') throw new Error('Invalid auto refresh setting');
+    const previous = !!store.getSettings().autoRefresh;
+    if (patch.autoRefresh !== undefined) await configureAutoRefresh(patch.autoRefresh);
+    try { sttDisabled = false; return store.setSettings(patch); }
+    catch (error) { if (patch.autoRefresh !== undefined) await configureAutoRefresh(previous); throw error; }
+  };
+  const result = autoRefreshChange.then(apply);
+  autoRefreshChange = result.catch(() => {});
+  return result;
+});
+ipcMain.on('auto-refresh:pause', (_event, paused) => { autoRefreshPaused = !!paused; if (paused) autoRefresh?.cancelPending(); });
 ipcMain.handle('shortcut:assist:set', (_e, accelerator) => setAssistShortcut(accelerator));
 ipcMain.handle('shortcut:toggle:set', (_e, accelerator) => {
   const next = toggleBindingReady.then(() => setToggleShortcut(accelerator));
@@ -521,6 +575,8 @@ app.whenReady().then(() => {
   if (app.commandLine.getSwitchValue('ozone-platform') !== 'headless') {
     registerShortcuts();
     initializeHyprShortcut();
+    autoRefreshChange = Promise.resolve().then(() => configureAutoRefresh(!!store.getSettings().autoRefresh))
+      .catch(error => { publishAutoRefreshState(false, error.message); send('status', { message: error.message }); });
   }
 
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
@@ -533,6 +589,7 @@ app.whenReady().then(() => {
 });
 
 app.on('will-quit', () => {
+  autoRefresh?.stop(); activityWatcher?.stop();
   stopWindowGesture();
   stopLinuxAudio();
   try { if (hyprShortcut) hyprShortcut.stop(); } catch (error) { log('Hyprland binding cleanup failed: ' + error.message); }

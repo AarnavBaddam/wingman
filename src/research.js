@@ -92,4 +92,12 @@ function needsWebFollowup(answer, sources) {
   return sources[0]?.origin === 'library' && /\b(insufficient|cannot verify|can't verify|not enough evidence|sources do not|sources don't|uncertain)\b/i.test(answer);
 }
 
-module.exports = { searchWeb, researchPrompt, getEvidence, validateGroundedAnswer, needsWebFollowup };
+function isScreenQuestion(query) {
+  const text = String(query).trim().replace(/’/g, "'");
+  if (/\b(search|look up|fact.check|verify|latest|newest|up.to.date)\b/i.test(text)) return false;
+  return /\b(?:on|in)\s+(?:my|this)\s+(?:screen|screenshot|window|page|tab)\b/i.test(text) ||
+    /\b(?:look at|read|describe|summari[sz]e|explain|solve)\b.{0,40}\b(?:this|my|the)\s+(?:screen|screenshot|window|page|tab)\b/i.test(text) ||
+    /^(?:what(?:'s| is) this|solve this|read this|explain this error)\??$/i.test(text);
+}
+
+module.exports = { searchWeb, researchPrompt, getEvidence, validateGroundedAnswer, needsWebFollowup, isScreenQuestion };

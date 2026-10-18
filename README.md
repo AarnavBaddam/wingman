@@ -47,6 +47,8 @@ The Hyprland rule is scoped to `dev.prahladv.aether`; other apps keep their norm
 
 Hold the six-dot area in the full-width toolbar to move Aether. Hover either bottom corner for the diagonal resize cursor, then drag; minimum size is 520×300. On Hyprland these controls use compositor coordinates because Wayland does not expose global window coordinates through Electron. On Linux the window keeps mouse input enabled, since ignored mousemove forwarding is unavailable; keep this in mind when collapsing the panel. Other platforms' corner controls use Electron bounds and still need native validation.
 
+Screen capture on native Hyprland requires `grim` on PATH (`sudo pacman -S --needed grim` on Arch/CachyOS). Manual Assist reads the display under the pointer. Settings offers optional **Auto refresh Assist after clicks or scrolling** on Hyprland: it waits 650 ms for external activity to settle, keeps only the latest pending refresh and captures that interaction's display. It pauses while Aether is hidden/collapsed or settings/onboarding is open. Auto is off by default; other desktops use manual Assist. Enabling it sends more screenshots to the selected provider and may use more allowance. Fresh AI answers still take model processing time.
+
 ## Configure providers
 
 Open **Settings** in Aether and select one provider:
