@@ -36,7 +36,9 @@ The initial headless sessions lacked desktop D-Bus variables and reported `safeS
 
 ### Live Tavily and factual quality
 
-The user confirmed Tavily is not set up yet. Create/configure the Tavily account and enter the key in Aether Settings before live checks. No live request has been made. Never put the key in chat, logs, fixtures, or this repository.
+Tavily setup is complete using Sleipnir and the user's selected Google account. Aether saved the key encrypted; a fresh Electron process decrypted it successfully. A library-backed Banach query returned one local source, while current-release and DNA library-gap queries each returned five numbered HTTPS web sources. Those initial two advanced searches used 4 credits on the free plan. Additional current-release answer probes used Tavily as well. No key was printed or committed. User selected local Ollama: fast model `qwen25-vl-7b-16k:latest`, Smart model `qwen35-9b-64k:latest`, and the existing local Whisper model are configured. Research IPC produced real local/web-backed answers and rendered source links. Never put keys in chat, logs, fixtures, or this repository.
+
+The final fast-model current-release answer incorrectly called Electron 44.7.0 the latest despite this checkout using 44.9.0; it passed citation-number validation. The earlier plain 9B model ran with a 4K context and its uncited web answer was correctly blocked. Final larger-context aliases avoid source-packet truncation but do not establish accuracy. Smart-mode answer quality remains untested. Keep source-faithfulness and recency checks open.
 
 1. In Research, ask `Who is the current president of France?` Verify web sources appear, source links open, and the answer's date-sensitive claim is supported by the retrieved passages.
 2. Ask `Banach space` and `General relativity`. Inspect whether each answer is supported by local evidence. If the model explicitly finds local evidence insufficient, confirm one web fallback and the replacement source list.

@@ -45,6 +45,8 @@ Audio is buffered in `main.js` by speaker channel. `src/stt.js` transcribes non-
 
 API keys are encrypted in the settings file and saving fails if the OS secure-storage backend is unavailable. The renderer never receives Node access directly, but it does receive settings through the preload bridge for editing. External source links are opened through a scheme-restricted main-process handler. CLI providers start without a shell and use temporary directories for image inputs.
 
+Tavily is now configured on this Linux account. Real checks confirmed local-first library retrieval and live web fallback, with encrypted save/decrypt through GNOME Keyring. The user selected local Ollama: fast model `qwen25-vl-7b-16k:latest`, Smart model `qwen35-9b-64k:latest`, and the existing local Whisper model are configured. These installed aliases provide larger contexts for source packets. Tavily supplies evidence while Ollama writes the answer; source links and valid citation numbers still do not prove factual accuracy. This host's launcher explicitly selects GNOME Keyring so normal launches can decrypt the saved key.
+
 Electron capture exclusion applies on macOS/Windows only and is best effort. Linux selected-window or tab sharing and full-window hide are the practical controls. Locked/proctored browsers may block the app. See [screen sharing compatibility](docs/screen-sharing.md).
 
 ## Extending the app

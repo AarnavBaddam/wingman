@@ -2,7 +2,17 @@
 
 ## Current phase
 
-Phase 5: platform validation and release readiness. Linux keyring, microphone, output-monitor audio lifecycle, fresh-container runtime, normal FUSE launch, and physical Hyprland Hide/restore have concrete results. Live Tavily, selected-window/recipient sharing checks, speech quality, a fully clean desktop install, and macOS/Windows remain open. Work is on `codex/wingman-hardening`; local commits are authorized and push remains deferred. See [release validation](docs/release-validation.md).
+Phase 5: platform validation and release readiness. Linux keyring, microphone, output-monitor audio lifecycle, fresh-container runtime, normal FUSE launch, physical Hyprland Hide/restore, and live Tavily retrieval pass. Ollama is configured; factual-quality review, selected-window/recipient sharing, speech quality, a fully clean desktop install, and macOS/Windows remain open. Work is on `codex/wingman-hardening`; local commits are authorized and push remains deferred. See [release validation](docs/release-validation.md).
+
+## Live Tavily setup
+
+- Used the user's requested Sleipnir browser capabilities and their selected Google account to create/access Tavily. Kept marketing opt-in unchecked and used the free plan; no payment setup.
+- Saved the default Tavily API key through Aether's existing settings IPC using an in-memory transfer. The key was not printed, put in command arguments, or saved in source/test files. Confirmed ciphertext on disk and successful decryption by a fresh Electron process using GNOME Keyring.
+- Real retrieval checks passed: `Banach space` returned one library source without a web request; a current Electron release query and a DNA library-gap query each returned five numbered HTTPS web sources. Dashboard confirms 4 of 1,000 credits used for the two advanced searches. These checks validate retrieval, not AI answer accuracy.
+- User selected local Ollama for answers. Final models: `qwen25-vl-7b-16k:latest` for fast answers and `qwen35-9b-64k:latest` for Smart mode. Both support text and vision. The plain `qwen3.5:9b` test loaded only a 4K context, so larger-context installed aliases avoid truncating source packets. Local transcription uses the existing `ggml-base.en.bin` Whisper model. Saved configuration retains the encrypted Tavily key.
+- Actual Research IPC and rendered answer/source UI passed connectivity checks for library-backed Banach and current Electron release questions. These are integration checks, not factual-quality passes: the 4K model's uncited web answer was blocked, and the final fast model incorrectly called Electron 44.7.0 the latest even though this checkout uses 44.9.0. Its citation gate passed. Broader factual accuracy remains unresolved, including stale retrieval and unsupported current claims. Smart-mode answer quality has not been checked with the final alias.
+- Updated this machine's per-user launcher to include `--password-store=gnome-libsecret`; the default backend here is insufficient for saved encrypted keys. Regenerating the launcher must preserve this host-specific choice; do not force it for other keyring setups.
+- No application code or dependencies changed for account/provider setup. The existing graph and 59-test code checkpoint remain current. Aether reopened normally through FUSE using the explicit GNOME Keyring backend and refreshed desktop-session environment.
 
 ## Sharing and configurable shortcuts
 
@@ -41,7 +51,7 @@ Phase 5: platform validation and release readiness. Linux keyring, microphone, o
 
 ## Next steps
 
-1. Set up Tavily and enter a key in Aether; the user confirmed it is not configured yet. Then test live search and inspect citation quality on math, science, and current-fact prompts.
+1. Inspect complete Ollama source-backed answers on math, science, and current-fact prompts. Tavily setup, encrypted save/decrypt, local-first retrieval, and live web requests now pass; Ollama and local Whisper are configured.
 2. Finish speech-to-transcript quality checks on Linux. Real microphone acquisition/denial, output-monitor PCM, keyring round trip, capture lifecycle and physical Hyprland Hide/restore pass. Selected-window/recipient previews and other compositor hotkeys remain to check; macOS/Windows require their hardware.
 3. Smoke test the AppImage on a clean Linux user account with real desktop capture permissions and a configured model.
 4. Review the upstream builder advisory when a patched `sprintf-js` path becomes available.
