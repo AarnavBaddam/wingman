@@ -7,11 +7,12 @@ function stripDataUrl(dataUrl) {
   return m ? { mime: m[1], b64: m[2] } : null;
 }
 
-async function streamOpenAI({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken, baseURL }) {
+async function streamOpenAI({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken, baseURL, signal }) {
   if (DEBUG) console.log('[DEBUG LLM] streamOpenAI called', { model, baseURL, hasImage: !!imageDataUrl, maxTokens });
   const OpenAI = require('openai');
   const client = new OpenAI({ apiKey, baseURL });
   const localSignal = baseURL === 'http://127.0.0.1:11434/v1' ? AbortSignal.timeout(120000) : undefined;
+  const requestSignal = signal && localSignal ? AbortSignal.any([signal, localSignal]) : signal || localSignal;
   const messages = [{ role: 'system', content: system }];
   turns.forEach((t, i) => {
     const last = i === turns.length - 1;
@@ -26,7 +27,7 @@ async function streamOpenAI({ apiKey, model, system, turns, imageDataUrl, maxTok
   });
   if (DEBUG) console.log('[DEBUG LLM] streamOpenAI sending request to OpenAI SDK with messages count:', messages.length);
   try {
-    const stream = await client.chat.completions.create({ model, messages, stream: true, max_tokens: maxTokens }, localSignal ? { signal: localSignal } : undefined);
+    const stream = await client.chat.completions.create({ model, messages, stream: true, max_tokens: maxTokens }, requestSignal ? { signal: requestSignal } : undefined);
     let full = '';
     for await (const part of stream) {
       const d = part.choices && part.choices[0] && part.choices[0].delta && part.choices[0].delta.content;
@@ -41,7 +42,7 @@ async function streamOpenAI({ apiKey, model, system, turns, imageDataUrl, maxTok
   }
 }
 
-async function streamAnthropic({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken }) {
+async function streamAnthropic({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken, signal }) {
   if (DEBUG) console.log('[DEBUG LLM] streamAnthropic called', { model, hasImage: !!imageDataUrl, maxTokens });
   const Anthropic = require('@anthropic-ai/sdk');
   const client = new Anthropic({ apiKey });
@@ -58,7 +59,7 @@ async function streamAnthropic({ apiKey, model, system, turns, imageDataUrl, max
   });
   if (DEBUG) console.log('[DEBUG LLM] streamAnthropic sending request to Anthropic SDK with messages count:', messages.length);
   try {
-    const stream = await client.messages.create({ model, max_tokens: maxTokens, system, messages, stream: true });
+    const stream = await client.messages.create({ model, max_tokens: maxTokens, system, messages, stream: true }, signal ? { signal } : undefined);
     let full = '';
     for await (const ev of stream) {
       if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') { full += ev.delta.text; onToken(ev.delta.text); }
@@ -71,7 +72,7 @@ async function streamAnthropic({ apiKey, model, system, turns, imageDataUrl, max
   }
 }
 
-async function streamGemini({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken }) {
+async function streamGemini({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken, signal }) {
   if (DEBUG) console.log('[DEBUG LLM] streamGemini called', { model, hasImage: !!imageDataUrl, maxTokens });
   const { GoogleGenAI } = require('@google/genai');
   const ai = new GoogleGenAI({ apiKey });
@@ -87,7 +88,7 @@ async function streamGemini({ apiKey, model, system, turns, imageDataUrl, maxTok
   if (DEBUG) console.log('[DEBUG LLM] streamGemini sending request to Google SDK with contents count:', contents.length);
   try {
     const stream = await ai.models.generateContentStream({
-      model, contents, config: { systemInstruction: system }
+      model, contents, config: { systemInstruction: system, ...(signal ? { abortSignal: signal } : {}) }
     });
     let full = '';
     let lastFinishReason = 'UNKNOWN';

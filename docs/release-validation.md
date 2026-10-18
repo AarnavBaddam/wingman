@@ -1,5 +1,14 @@
 # Aether release validation
 
+## Desktop Auto mode — 2026-10-18
+
+- 145 tests pass. Real localhost Playwright checks Auto start/stop/countdown, empty-goal guidance, pointerdown/state-change cancellation and held-Enter restart prevention, alongside existing formatting, Smart, sources, settings and layout flows; zero page errors. `npm run pack` and `npm run dist:linux` pass. Focused independent review found no remaining material issue after the recorded fixes.
+- Live isolated Free Codex vision through the unpacked app completed an owned, disposable browser form in eight decisions: clicked/typed Name, selected Blue, scrolled twice, focused/typed Result42, then stopped. DOM assertions confirmed all three values and zero submissions. Physical Escape canceled the following countdown and removed the owned stop binding. Earlier runs missed focus or paused unnecessarily; these led to matching-field focus enforcement, exact pending-field recovery and offscreen-review prompt improvements. This is one successful form, not general model accuracy evidence or a Google Forms integration claim.
+- The executor uses actual native Hyprland screenshots, compositor cursor movement and ydotool input, with no DOM access in Aether. Test fixture providers use DOM only to choose deterministic QA actions. Current support is Hyprland Lua/native Wayland; typing is printable ASCII, append-only into empty fields. Other desktop/OS backends, Unicode, replacement and multiline typing remain unsupported. Final submission is left for review; model label checks cannot guarantee every dangerous/final control is recognized.
+- The latest read-only Free account usage probe reports 2 percent used in its 43,200-minute primary window, no secondary window, and no reached limit reported. This includes several development runs and does not give a fixed tasks/messages/hours estimate. Account identity and credentials are excluded.
+- Final artifact: `dist/Aether-0.1.0.AppImage`, 139,923,092 bytes; SHA-256 `c6941557567aa718a181ef40352fa323fc0d238c014ff938758d67f43ba75408`. Supersedes the checksums below. Code graph refreshed: 736 nodes / 1,146 edges.
+- The final normal-FUSE AppImage passed the same controlled form using a deterministic provider and real native capture/input: Name, Blue, Result42, zero submissions. Physical Escape canceled countdown and removed its binding. A separate uppercase typing interruption stopped before 300 characters, drained helpers, produced no late input and left Shift released (verified by typing a lowercase q afterward). This artifact check isolates executor/lifecycle correctness; the real model completion above used the unpacked build of the same source.
+
 ## Separate Free account live check — 2026-10-18
 
 - Official device-code login completed for Aether's own app-data Codex profile; development account remained separate. CLI login status reports ChatGPT and the official app-server rate-limit response reports plan `free`.

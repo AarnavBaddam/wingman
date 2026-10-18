@@ -18,7 +18,7 @@
       <button class="tb-logo" id="logo-btn" title="Aether"></button>
       <div class="tb-divider"></div>
       <div id="drag-handle" title="Drag to move Aether"><svg width="16" height="24" viewBox="0 0 16 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="6" r="1.5"/><circle cx="11" cy="6" r="1.5"/><circle cx="5" cy="12" r="1.5"/><circle cx="11" cy="12" r="1.5"/><circle cx="5" cy="18" r="1.5"/><circle cx="11" cy="18" r="1.5"/></svg></div>
-      <span id="auto-refresh-indicator" hidden title="Assist refreshes after clicks or scrolling">Auto</span>
+      <span id="auto-refresh-indicator" hidden title="Assist refreshes after clicks or scrolling">Auto refresh</span>
       <button class="tb-hide" id="hide-btn"><span class="chev"></span><span>Hide</span></button>
       <button class="tb-hide" id="share-hide-btn" title="Hide the entire Aether window before sharing">Hide for sharing</button>
       <div class="tb-divider"></div>
@@ -43,6 +43,7 @@
           <button class="act" data-mode="research"><span>Research</span></button>
         </div>
 
+        <div id="auto-mode-status" class="status-line hidden" role="status" aria-live="polite"></div>
         <div id="composer">
           <div id="input-area">
             <div id="placeholder">Ask about your screen or conversation, or <span class="keycap">⌘</span><span class="keycap">⏎</span> for Assist</div>
@@ -50,6 +51,7 @@
           </div>
           <div id="composer-bottom">
             <button id="smart-toggle" class="smart-pill"><span class="ic"></span><span>Smart</span></button>
+            <button id="auto-mode-btn" class="smart-pill" title="Move Aether clear of the fields. Type a task, click Auto, then focus the target app within 3 seconds. Escape stops. Review before submitting.">Auto</button>
             <button id="more-btn" class="more-btn" title="Settings"></button>
             <button id="zoom-out-btn" class="more-btn" title="Zoom Out" style="font-size: 18px; font-family: monospace; line-height: 1;">-</button>
             <button id="zoom-in-btn" class="more-btn" title="Zoom In" style="font-size: 16px; font-family: monospace; line-height: 1;">+</button>

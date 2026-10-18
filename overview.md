@@ -19,6 +19,10 @@ Aether is an Electron desktop app. It has a main process that can call providers
 | `src/screen.js` | Captures the cursor or supplied interaction display; native Hyprland uses `grim` and monitor coordinates. |
 | `src/auto-refresh.js` | Debounces opt-in activity, retains the latest pending interaction and prevents overlapping generations. |
 | `src/hypr-activity.js` | Owns non-consuming Hyprland click/scroll bindings and a bounded event-socket listener, excluding Aether windows. |
+| `src/auto-mode.js` | Validates one desktop action per observation, tracks evidence and field focus, and bounds decisions/time. |
+| `src/auto-session.js` | Owns countdown, selected provider, cancellation, progress and input teardown before releasing the busy lock. |
+| `src/desktop-control.js` | Locks a native Hyprland window, captures its crop, and executes bounded ydotool click/type/scroll input. |
+| `src/hypr-auto-stop.js` | Installs an owned, non-consuming Escape binding; stops Auto on disconnect or compositor reload. |
 | `src/library.js`, `data/library.json` | Loads and searches the bundled, attributed reference library. |
 | `src/research.js` | Fetches Tavily results when needed, builds dated source evidence, and validates/normalizes numeric citation groups against retrieved source IDs. |
 | `src/prompts.js` | Defines Assist, meeting, Ask, Research, and coding tasks. |
@@ -28,6 +32,10 @@ Aether is an Electron desktop app. It has a main process that can call providers
 | `scripts/linux-runtime.Dockerfile` | Pinned Ubuntu base and native libraries for a headless AppImage runtime smoke test. |
 
 ## A typed factual question
+
+Auto mode is a separate explicit task loop from Auto refresh. Main snapshots the selected provider, installs Escape, waits three seconds for target focus, then locks that exact native Hyprland window and geometry. Each model response must match a strict action schema. Every input consumes a screenshot authorization and checks target focus; typing requires a matching field-focus click. Source-based text references stable session evidence IDs. No shell or arbitrary key actions are exposed. This first version supports printable ASCII append-only typing and leaves final submission for user review; model-provided labels and intent cannot prove screen semantics.
+
+Cancellation aborts model/helper work and waits for in-flight native input to close. Failed/interrupted ydotool input releases virtual keys and buttons on the same device before another task can start. Short typing chunks recheck focus, but native focus checks and input are not atomic. Runs stop after 20 decisions or three minutes. Auto uses only the explicit goal, screenshots and retrieved evidence, without injecting the saved résumé. Each screenshot goes to the selected provider.
 
 1. The renderer sends the question and mode through the preload bridge.
 2. `main.js` captures a screenshot for **Ask**, or skips it for **Research**.

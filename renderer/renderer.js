@@ -26,6 +26,7 @@
   let autoRefreshActive = false;
   let autoRefreshSupported = !!wingman.autoRefreshSupported;
   let busy = false;
+  let autoModeActive = false, autoModeSupported = false;
   let aiEl = null;       // current streaming <div class="ai-text">
   let caretEl = null;
   let assistShortcut = DEFAULT_ASSIST_SHORTCUT;
@@ -112,6 +113,41 @@
   });
 
   function setBusy(v) { busy = v; $('#send-btn').classList.toggle('busy', v); }
+
+  function paintAutoMode(state) {
+    autoModeActive = !!state.active;
+    if (typeof state.supported === 'boolean') autoModeSupported = state.supported;
+    const button = $('#auto-mode-btn');
+    button.textContent = autoModeActive ? 'Stop Auto' : 'Auto';
+    button.classList.toggle('on', autoModeActive);
+    button.disabled = !autoModeSupported && !autoModeActive;
+    if (!autoModeSupported) button.title = 'Desktop Auto currently requires native Hyprland, grim and ydotool.';
+    const status = $('#auto-mode-status');
+    status.textContent = state.message || '';
+    status.classList.toggle('hidden', !state.message);
+    setBusy(autoModeActive);
+  }
+  wingman.on('auto-mode:state', paintAutoMode);
+  let autoClickStops = false;
+  $('#auto-mode-btn').addEventListener('pointerdown', () => { autoClickStops = autoModeActive; });
+  $('#auto-mode-btn').addEventListener('pointercancel', () => { autoClickStops = false; });
+  $('#auto-mode-btn').addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      if (event.repeat) { event.preventDefault(); return; }
+      autoClickStops = autoModeActive;
+    }
+  });
+  $('#auto-mode-btn').addEventListener('click', async () => {
+    const stops = autoClickStops || autoModeActive; autoClickStops = false;
+    if (stops) { wingman.autoModeStop(); return; }
+    const goal = $('#input').value.trim();
+    if (!goal) return showStatus('Type a task first, then click Auto.');
+    if (busy) return showStatus('Wait for the current answer first.');
+    try {
+      clearMessages();
+      await wingman.autoModeStart(goal);
+    } catch (error) { showStatus(error?.message || 'Auto could not start.', true); }
+  });
 
   // ---- actions -----------------------------------------------------------
   function runMode(mode, text) {
@@ -799,6 +835,8 @@ async function saveSettings() {
     if (typeof refreshStatus.supported === 'boolean') autoRefreshSupported = refreshStatus.supported;
     syncAutoRefreshIndicator();
     syncAutoRefreshPause();
+    const autoStatus = await wingman.autoModeStatus();
+    paintAutoMode(autoStatus);
     showExample();
     syncPlaceholder();
     if (!settings.onboarded) showOnboard();

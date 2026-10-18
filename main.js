@@ -18,6 +18,7 @@ let toggleBindingReady = Promise.resolve();
 let autoRefresh = null, activityWatcher = null, autoRefreshPaused = false;
 let autoRefreshChange = Promise.resolve();
 let autoRefreshActive = false;
+let autoSession = null;
 
 // Lightweight diagnostic log so shortcut behavior can be verified from a file.
 function log(msg) {
@@ -98,8 +99,8 @@ function createWindow() {
   }
   if (app.dock && isMac) app.dock.show();
 
-  win.webContents.on('did-start-loading', () => { autoRefreshPaused = true; autoRefresh?.cancelPending(); stopWindowGesture(); setCapturing(false); });
-  win.on('closed', () => { stopWindowGesture(); setCapturing(false); });
+  win.webContents.on('did-start-loading', () => { autoSession?.stop('Auto stopped because Aether reloaded.'); autoRefreshPaused = true; autoRefresh?.cancelPending(); stopWindowGesture(); setCapturing(false); });
+  win.on('closed', () => { autoSession?.stop('Auto stopped because Aether closed.'); stopWindowGesture(); setCapturing(false); });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
   win.webContents.on('did-finish-load', () => {
@@ -110,7 +111,7 @@ function createWindow() {
     // following the user into fullscreen apps and across Spaces.
     assertOverlay();
   });
-  win.webContents.on('render-process-gone', (_e, d) => { setCapturing(false); console.log('[wingman] renderer gone', JSON.stringify(d)); });
+  win.webContents.on('render-process-gone', (_e, d) => { autoSession?.stop('Auto stopped because the interface closed.'); setCapturing(false); console.log('[wingman] renderer gone', JSON.stringify(d)); });
 }
 
 function assertOverlay() {
@@ -128,6 +129,7 @@ function toggleWindow() {
   log('toggleWindow fired. win=' + (win && !win.isDestroyed()) + ' visible=' + (win && win.isVisible()));
   if (!win || win.isDestroyed()) { createWindow(); return; }
   if (win.isVisible()) {
+    autoSession?.stop('Auto stopped because Aether was hidden.');
     stopWindowGesture();
     win.hide();
   } else {
@@ -339,7 +341,33 @@ function publishAutoRefreshState(active, error) {
   send('auto-refresh:state', { active, error });
 }
 
+function startAutoMode(goal) {
+  if (!autoRefreshSupported()) throw new Error('Desktop Auto currently requires native Hyprland, grim and ydotool.');
+  if (state.busy) throw new Error('Wait for the current answer or stop Auto first.');
+  if (!win || win.isDestroyed() || !win.isVisible()) throw new Error('Show Aether before starting Auto.');
+  if (autoRefreshPaused) throw new Error('Close Settings/onboarding and expand Aether before starting Auto.');
+  if (!autoSession) autoSession = require('./src/auto-session').createAutoSession({
+    getSettings: () => store.getSettings(), createLLM,
+    getCodexHome: settings => settings.codexSeparateAccount ? path.join(app.getPath('userData'), 'codex-profile') : undefined,
+    createDesktopControl: () => require('./src/desktop-control').createDesktopControl(),
+    createStopWatcher: options => require('./src/hypr-auto-stop').createHyprAutoStop(options),
+    research: (query, settings) => getEvidence(query, settings.apiKeys.tavily),
+    onUpdate: update => {
+      // Never expose screenshots, typed values or source bodies through status logs.
+      send('auto-mode:state', { active: update.active, status: update.status, message: update.message, step: update.step });
+      if (update.sources?.length) send('llm:sources', { sources: update.sources.map(({ number, title, url, origin }) => ({ number, title, url, origin })) });
+    },
+    onEnd: () => { state.busy = false; autoRefresh?.cancelPending(); }
+  });
+  state.busy = true; autoRefresh?.cancelPending();
+  try { return autoSession.start(goal); }
+  catch (error) { state.busy = false; throw error; }
+}
+
 // -------- IPC --------
+ipcMain.handle('auto-mode:status', () => ({ supported: autoRefreshSupported(), ...(autoSession?.status || { active: false, status: 'idle', message: '' }) }));
+ipcMain.handle('auto-mode:start', (_event, goal) => startAutoMode(goal));
+ipcMain.on('auto-mode:stop', () => autoSession?.stop());
 ipcMain.handle('settings:get', () => store.getSettings());
 ipcMain.handle('auto-refresh:status', () => ({ supported: autoRefreshSupported(), active: autoRefreshActive }));
 ipcMain.handle('settings:set', (_e, patch) => {
@@ -356,7 +384,7 @@ ipcMain.handle('settings:set', (_e, patch) => {
   autoRefreshChange = result.catch(() => {});
   return result;
 });
-ipcMain.on('auto-refresh:pause', (_event, paused) => { autoRefreshPaused = !!paused; if (paused) autoRefresh?.cancelPending(); });
+ipcMain.on('auto-refresh:pause', (_event, paused) => { autoRefreshPaused = !!paused; if (paused) { autoRefresh?.cancelPending(); autoSession?.stop('Auto stopped while Aether is paused.'); } });
 ipcMain.handle('shortcut:assist:set', (_e, accelerator) => setAssistShortcut(accelerator));
 ipcMain.handle('shortcut:toggle:set', (_e, accelerator) => {
   const next = toggleBindingReady.then(() => setToggleShortcut(accelerator));
@@ -392,7 +420,7 @@ ipcMain.handle('capture:system:stop', () => stopLinuxAudio());
 ipcMain.on('ask', (_e, payload) => runFeature(payload.mode, payload.text));
 ipcMain.on('window:hide-for-sharing', async () => {
   await toggleBindingReady;
-  if (registeredShortcuts.toggle && !toggleBindingError && win && !win.isDestroyed()) { stopWindowGesture(); win.hide(); }
+  if (registeredShortcuts.toggle && !toggleBindingError && win && !win.isDestroyed()) { autoSession?.stop('Auto stopped because Aether was hidden.'); stopWindowGesture(); win.hide(); }
 });
 ipcMain.on('mic:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.you.push(Buffer.from(arrayBuffer)); });
 ipcMain.on('system:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.them.push(Buffer.from(arrayBuffer)); });
@@ -590,7 +618,15 @@ app.whenReady().then(() => {
   });
 });
 
+let quittingAfterAuto = false;
+app.on('before-quit', event => {
+  if (quittingAfterAuto || !autoSession?.active) return;
+  event.preventDefault();
+  autoSession.stop('Auto stopped because Aether is quitting.');
+  void autoSession.completion.finally(() => { quittingAfterAuto = true; app.quit(); });
+});
 app.on('will-quit', () => {
+  autoSession?.stop('Auto stopped because Aether is quitting.');
   autoRefresh?.stop(); activityWatcher?.stop();
   stopWindowGesture();
   stopLinuxAudio();
