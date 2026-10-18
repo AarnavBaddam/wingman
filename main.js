@@ -259,6 +259,10 @@ async function runFeature(mode, userText) {
 
     const built = def.build({ transcript, userText: userText || '' });
     let sources = ['research', 'ask'].includes(mode) ? await getEvidence(userText, settings.apiKeys.tavily) : [];
+    const publishSources = () => {
+      if (sources.length) send('llm:sources', { sources: sources.map(({ number, title, url, origin }) => ({ number, title, url, origin })) });
+    };
+    publishSources();
     if (DEBUG) console.log('[DEBUG MAIN] Built prompt. Starting LLM stream...');
     const answer = () => llm.stream({
       system: appendResumeContext(def.system, settings.resumeContext),
@@ -270,11 +274,11 @@ async function runFeature(mode, userText) {
     if (needsWebFollowup(fullText, sources)) {
       send('status', { message: 'Local sources were insufficient; searching the web.' });
       sources = await searchWeb(userText, settings.apiKeys.tavily);
+      publishSources();
       fullText = await answer();
     }
     if (sources.length) send('llm:token', { text: validateGroundedAnswer(fullText, sources) });
     if (DEBUG) console.log('[DEBUG MAIN] Full LLM Output:\n', fullText);
-    if (sources.length) send('llm:sources', { sources: sources.map(({ number, title, url, origin }) => ({ number, title, url, origin })) });
     send('llm:done', {});
   } catch (e) {
     send('llm:error', { message: 'Error: ' + (e && e.message ? e.message : String(e)) });

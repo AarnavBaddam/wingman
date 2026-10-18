@@ -13,6 +13,7 @@
 - Validate factual quality against retrieved passages, not citation-number checks alone: live Ollama probes have produced naming/date drift despite valid citations.
 - A narrower article title must not satisfy a general-topic local-only query; require matching normalized topic terms before skipping web fallback.
 - User preference: keep AI summaries for factual answers, block invalid citations, and show sources. Do not replace summaries with a source-excerpt mode. Citation validity still does not prove factual accuracy.
+- Publish retrieved sources before generation and retain them on rejection/failure; replace the panel when web fallback changes evidence. Validate numeric citation groups/ranges against actual IDs while preserving formatted math/code literals. Retrieval time does not establish source freshness.
 - Local commits are authorized; keep progressing between commits. Push remains deferred until explicitly authorized with an Aether destination.
 - User selected local Ollama for answers. Tavily is configured in this Linux user's encrypted settings; never copy credentials or account identifiers into the repository. Keep model context large enough for retrieved sources, and distinguish live integration success from factual accuracy.
 - User wants configurable, short Show / hide keys. Reuse the Settings recorder; preserve Assist separately. A registered shortcut boolean is not proof of Wayland dispatch. Disable sharing Hide when registration fails, and keep physical restore validation separate from recording evidence that Hide removes the window.

@@ -374,7 +374,9 @@
       attribution.appendChild(license);
       list.appendChild(attribution);
     }
-    messages.appendChild(list);
+    const previous = messages.querySelector('.source-list');
+    if (previous) previous.replaceWith(list);
+    else messages.appendChild(list);
   });
   wingman.on('llm:error', ({ message }) => {
     if (!aiEl) startAi(true);

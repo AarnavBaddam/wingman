@@ -48,6 +48,28 @@ test('research answers must cite retrieved sources or state uncertainty', () => 
   assert.throws(() => validateGroundedAnswer('The result is known [2].', sources), /not retrieved/);
 });
 
+test('grouped and ranged citations validate every referenced source and normalize markers', () => {
+  const sources = [1, 2, 3, 4, 5].map(number => ({ number }));
+  assert.equal(validateGroundedAnswer('Supported [3, 2-4, 5].', sources), 'Supported [3][2][4][5].');
+  for (const citation of ['[1, 99]', '[2–99]', '[1—99]', '[1, 99 and 2]', '[0, 1]', '[1-999999999999]', '[1,,2]', '[3-1]', '[-1]']) {
+    assert.throws(() => validateGroundedAnswer('One claim [1]. Another claim ' + citation + '.', sources), /citation|not retrieved/);
+  }
+});
+
+test('citation validation preserves math and code literals and uses actual source numbers', () => {
+  const answer = 'The interval $[0,1]$, equation \\[x \\in [0,1]\\], and `[99]` are literals [1].';
+  assert.equal(validateGroundedAnswer(answer, [{ number: 1 }]), answer);
+  assert.throws(() => validateGroundedAnswer('Unsupported [2].', [{ number: 1 }, { number: 3 }]), /not retrieved/);
+  assert.equal(validateGroundedAnswer('Supported [3].', [{ number: 1 }, { number: 3 }]), 'Supported [3].');
+});
+
+test('research prompt distinguishes retrieval date from evidence of currentness', () => {
+  const prompt = researchPrompt([{ number: 1, title: 'Dated release', url: 'https://example.org/releases', content: 'A release from last month.' }]);
+  assert.match(prompt, /retrieved on \d{4}-\d{2}-\d{2} UTC/);
+  assert.match(prompt, /retrieval date does not establish/i);
+  assert.match(prompt, /newest.*retrieved.*latest overall/i);
+});
+
 test('a narrower article is not sufficient local evidence for a general topic', async () => {
   const collection = ['Intrinsic DNA fluorescence', 'DNA'].map(title => ({
     title, url: `https://example.org/${encodeURIComponent(title)}`, content: 'A'.repeat(700),

@@ -14,7 +14,7 @@ Aether is an Electron desktop app. It has a main process that can call providers
 | `src/stt.js` | Transcribes PCM audio with local `whisper-cli`, OpenAI, or Gemini. |
 | `src/linux-audio.js` | Captures the Linux default output monitor with `parec`, frames PCM samples, and stops the helper on cancellation or exit. |
 | `src/library.js`, `data/library.json` | Loads and searches the bundled, attributed reference library. |
-| `src/research.js` | Fetches Tavily results when needed, builds source evidence, and checks citations. |
+| `src/research.js` | Fetches Tavily results when needed, builds dated source evidence, and validates/normalizes numeric citation groups against retrieved source IDs. |
 | `src/prompts.js` | Defines Assist, meeting, Ask, Research, and coding tasks. |
 | `scripts/build-library.js` | Refreshes the library from Wikipedia's API. |
 | `electron-builder.cjs` | Linux, macOS, and Windows packaging settings. |
@@ -50,6 +50,8 @@ Tavily is now configured on this Linux account. Real checks confirmed local-firs
 Electron capture exclusion applies on macOS/Windows only and is best effort. Linux selected-window or tab sharing and full-window hide are the practical controls. Locked/proctored browsers may block the app. See [screen sharing compatibility](docs/screen-sharing.md).
 
 ## Extending the app
+
+Research buffers model output until citation validation succeeds. Sources appear immediately after retrieval and survive rejection or provider failure; a web retry replaces the local source panel. Numeric groups/ranges are checked outside formatted math/code. This validates reference IDs, not whether each claim follows from the cited passage. The retrieval date is not a publication date or proof that results are current; live Ollama replies still need factual-quality work.
 
 Release verification separates renderer checks with a mocked Electron bridge from actual packaged startup and native desktop tests. An isolated user-data directory checks first-run defaults without changing existing settings; it does not reproduce a clean operating system, secure desktop keyring, or microphone/share permissions. Use the [release checklist](docs/release-validation.md) before claiming support for an environment.
 

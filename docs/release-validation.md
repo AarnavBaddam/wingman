@@ -1,5 +1,13 @@
 # Aether release validation
 
+## Latest research checks
+
+- Final `npm run pack` and `npm run dist:linux` passed. The final AppImage passed normal FUSE startup and real renderer/settings IPC with an isolated profile. Artifact: 139,434,549 bytes; SHA-256 `2cd035674ee65e7c46a940e500440f8fe3b67078261cc6b39182b15246d04310`. This supersedes the older artifact checksum below.
+- 64 tests passed. Grouped/ranged citations now normalize to individual markers and reject missing IDs or malformed numeric groups, while formatted math/code stay intact. New regressions failed before the fixes. Independent review found a punctuation bypass, corrected and re-reviewed with no further important finding.
+- Localhost Playwright used the actual renderer and a fixture bridge: a real send-button click, source links surviving rejection, web evidence replacing local evidence, normal cited answers and library attribution passed with zero page errors.
+- Actual packaged IPC with the saved encrypted profile copied to a temporary directory confirmed sources arrive before the live Ollama answer completes. Real Tavily returned five sources. The answer still mixed versions and contradicted itself about the latest Electron release. Citation checks passed; factual quality did not. No credentials were printed or stored in the repository.
+- Prompt now includes a UTC retrieval date and currentness guidance. This does not verify freshness or guarantee factual accuracy. Keep AI summaries as requested, with citation rejection and source links.
+
 ## Latest shortcut and sharing checks
 
 - Full-monitor `wf-recorder` recordings (no audio) confirmed Hide removed Aether. Initial restore failed. After repairing portal identity and binding, the user physically pressed Ctrl+Shift+Space twice and confirmed hide and restore worked. Portal dispatch separately toggled BrowserWindow visibility false/true. The final clip does not establish visual restoration after a workspace change; keep those evidence types distinct.
@@ -84,7 +92,7 @@ Use a fresh supported Linux VM or separate machine/user with no development chec
 
 ## Evidence still missing
 
-Live Tavily, answer faithfulness after the observed Ollama errors, recipient/recording sharing previews, full speech/meeting transcription checks, normal desktop keyring configuration, a full clean Linux desktop installation, and macOS/Windows release validation remain open. Earlier local Claude/Codex/Whisper probes are recorded in `project.md`; they were not rerun as part of this pass.
+Answer faithfulness after the observed Ollama errors, selected-window/tab and recipient sharing previews, full speech/meeting transcription checks, a full clean Linux desktop installation, and macOS/Windows release validation remain open. Live Tavily, this host's GNOME Keyring configuration, full-monitor Hide recording, and physical Hide/restore have since passed; see the latest checkpoints above and `project.md`. Earlier local Claude/Codex/Whisper probes were not rerun as part of this pass.
 
 ## Grounding follow-up
 

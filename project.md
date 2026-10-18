@@ -4,6 +4,15 @@
 
 Phase 5: platform validation and release readiness. Linux keyring, microphone, output-monitor audio lifecycle, fresh-container runtime, normal FUSE launch, physical Hyprland Hide/restore, and live Tavily retrieval pass. Ollama is configured; factual-quality review, selected-window/recipient sharing, speech quality, a fully clean desktop install, and macOS/Windows remain open. Work is on `codex/wingman-hardening`; local commits are authorized and push remains deferred. See [release validation](docs/release-validation.md).
 
+## Research validation follow-up
+
+- Citation validation now expands numeric groups/ranges, checks actual retrieved source IDs, and rejects invalid or unsupported numeric reference groups. Formatted math/code literals are preserved. Regression cases include missing IDs, zero/negative IDs, reversed or huge ranges, em dashes, and mixed text.
+- Retrieved sources are published before model generation. Rejected drafts and provider failures retain source links; web fallback replaces the local source panel. Invalid drafts remain buffered and are not displayed.
+- Prompt records the UTC retrieval date and distinguishes the newest retrieved item from the latest overall. This is guidance, not proof of freshness or factual correctness.
+- 64 tests and localhost Playwright passed, including real renderer click, source replacement, rejection, normal answer and attribution. Independent review caught a malformed-group bypass; its regression failed before the correction and passed afterward. Re-review found no further important issue.
+- A real packaged Ollama/Tavily probe confirmed early source display, but still mixed Electron release versions and made contradictory latest-version claims. The prompt change has not resolved semantic accuracy. User preference remains AI summaries with invalid citations blocked and sources shown.
+- Code graph refreshed (556 nodes, 903 edges). Release build/checksum status is recorded in `docs/release-validation.md`.
+
 ## Live Tavily setup
 
 - Used the user's requested Sleipnir browser capabilities and their selected Google account to create/access Tavily. Kept marketing opt-in unchecked and used the free plan; no payment setup.
