@@ -1,12 +1,20 @@
 # Aether release validation
 
+## Separate Free account live check — 2026-10-18
+
+- Official device-code login completed for Aether's own app-data Codex profile; development account remained separate. CLI login status reports ChatGPT and the official app-server rate-limit response reports plan `free`.
+- Actual `streamCLI` text request returned AETHER_OK: first response 3,820 ms, total 4,527 ms. Controlled screenshot request returned correct number 42: first response 2,063 ms, total 2,369 ms. Only the fixture image and test prompts were sent; these are connectivity checks, not broad answer-quality passes.
+- Playwright against the normal FUSE AppImage used the real Settings controls to select Codex CLI and its separate-account checkbox, clear model overrides to CLI defaults, save and reload. Provider/account/model preferences persisted, Auto stayed off and the encrypted Tavily key remained available. Aether reopened normally with that configuration. Local Whisper remains configured.
+- Post-check usage baseline: bucket codex, plan free, primary usedPercent 0, windowDurationMins 43200 (30 days), resetsAt 1794933024, secondary null and no reached limit. Only two model requests were made. A displayed 0 percent does not establish a message count or hours estimate; compare after representative normal use. Read-only endpoint is documented in [Codex App Server](https://learn.chatgpt.com/docs/app-server).
+- No source/dependency/build/graph change in this setup pass. Prior 104 tests and final AppImage checksum remain current. No credentials, account identifiers or device codes are recorded here; no push.
+
 ## Latest formatting and Smart depth — 2026-10-18
 
 - 104 tests pass. Reproduced the former streaming failure in localhost Playwright before replacing the parser. Real renderer checks now pass formatted streaming/final agreement, code spacing, ordered lists, raw-symbol math, unsafe HTML/URL removal, Smart single/double-click, keyboard Deep access and reload persistence. Existing capture controls, source links and rejected-answer behavior also pass, with zero page errors.
 - Marked/DOMPurify/KaTeX share one formatting path for streamed and completed text; code preserves spaces and avoids math interpretation. Separate Codex agent messages now have paragraph boundaries. This preserves provider text; it cannot reconstruct spaces the model never emitted. Incomplete markup can settle when closing syntax arrives.
 - Smart Answer/Work/Deep policies are applied before generation, preserve Fast/Smart model tiers, and retain factual citations/uncertainty. These prompt policies are covered by tests, not live compliance checks for every model. Meeting formats remain intact.
 - `npm run pack` and AppImage build pass. Normal FUSE AppImage checks with an isolated profile passed real settings IPC and Smart Work/Deep save/reload, separate-account preference persistence and fixture-driven streamed/final Markdown/math/code spacing. No provider call or usage allowance was consumed by these packaged checks. Production audit: zero findings. Independent review: no material findings.
-- Separate Aether Codex login support is implemented and tested with fake binaries, including parent/default/Claude authentication preservation. Official browser OAuth sign-in was started for the app-data codex-profile. User completion is pending; no Free account request, allowance baseline or usage-duration measurement has been made. Real Aether remains on Ollama with Auto off until login succeeds.
+- Separate Aether Codex login support was first checked with fake binaries, including parent/default/Claude authentication preservation. The later device-code login, actual Free text/image requests, usage baseline and real provider selection now pass; see the account checkpoint above. Duration under normal use remains unmeasured.
 - Final AppImage: 139,913,796 bytes; SHA-256 `c1c89ab8f87ff35567d7ac78357d535a723550a2b15b58df1d6561f094c8a9ef`. Supersedes all earlier artifacts below. Code graph: 662 nodes / 1,039 edges.
 
 ## Latest screen updates and optional Auto
