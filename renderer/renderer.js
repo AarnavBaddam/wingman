@@ -62,56 +62,15 @@
     if (placeholder) placeholder.innerHTML = 'Ask about your screen or conversation, or ' + shortcutKeycapsHtml(assistShortcut) + ' for Assist';
   }
 
-  function renderMath(expr, displayMode) {
-    try { return katex.renderToString(expr, { throwOnError: false, displayMode }); }
-    catch { return null; }
+  const renderMarkdown = window.createAnswerFormatter({ Marked: marked.Marked, DOMPurify, katex });
+  let renderFrame = null;
+  function paintAnswer() {
+    if (!aiEl) return;
+    aiEl.innerHTML = renderMarkdown(aiEl.dataset.raw || '');
+    if (caretEl) aiEl.appendChild(caretEl);
   }
 
-  function renderMarkdown(text) {
-    const lines = text.split('\n');
-    let html = '', inCode = false, inList = false, inMath = false, mathBuf = [], buf = [];
-    const flushP = () => { if (buf.length) { html += '<p>' + inline(buf.join(' ')) + '</p>'; buf = []; } };
-    const inline = (s) => {
-      s = esc(s)
-        .replace(/`([^`]+)`/g, '<code>$1</code>')
-        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-      return s.replace(/\$([^$\n]+?)\$/g, (_, m) => {
-        const r = renderMath(m, false);
-        return r ? r : ('$' + m + '$');
-      });
-    };
-    for (const raw of lines) {
-      const line = raw;
-      const t = line.trim();
-      if (/^\$\$$/.test(t)) {
-        if (!inMath) {
-          flushP(); if (inList) { html += '</ul>'; inList = false; }
-          inMath = true; mathBuf = [];
-        } else {
-          const expr = mathBuf.join('\n');
-          const r = renderMath(expr, true);
-          html += r ? r : ('<pre><code>' + esc(expr) + '</code></pre>');
-          inMath = false;
-        }
-        continue;
-      }
-      if (inMath) { mathBuf.push(line); continue; }
-      if (/^```/.test(t)) {
-        if (!inCode) { flushP(); if (inList) { html += '</ul>'; inList = false; } html += '<pre><code>'; inCode = true; }
-        else { html += '</code></pre>'; inCode = false; }
-        continue;
-      }
-      if (inCode) { html += esc(line) + '\n'; continue; }
-      if (/^\s*[-*]\s+/.test(line)) { flushP(); if (!inList) { html += '<ul>'; inList = true; } html += '<li>' + inline(line.replace(/^\s*[-*]\s+/, '')) + '</li>'; continue; }
-      if (t === '') { flushP(); if (inList) { html += '</ul>'; inList = false; } continue; }
-      buf.push(line.trim());
-    }
-    flushP(); if (inList) html += '</ul>'; if (inCode) html += '</code></pre>';
-    if (inMath) { const expr = mathBuf.join('\n'); html += '<pre><code>' + esc(expr) + '</code></pre>'; }
-    return html;
-  }
-
-  function clearMessages() { messages.innerHTML = ''; aiEl = null; caretEl = null; }
+  function clearMessages() { cancelAnimationFrame(renderFrame); renderFrame = null; messages.innerHTML = ''; aiEl = null; caretEl = null; }
 
   function addUserBubble(text) {
     const b = document.createElement('div');
@@ -134,18 +93,23 @@
     if (!aiEl) startAi(false);
     aiEl.querySelector('.llm-phase')?.remove();
     aiEl.dataset.raw += t;
-    const span = document.createElement('span');
-    span.className = 'w';
-    span.textContent = t;
-    aiEl.insertBefore(span, caretEl);
+    if (renderFrame === null) renderFrame = requestAnimationFrame(() => { renderFrame = null; paintAnswer(); });
   }
 
   function finalizeAi() {
     if (!aiEl) return;
+    cancelAnimationFrame(renderFrame); renderFrame = null;
     const raw = aiEl.dataset.raw || '';
     aiEl.innerHTML = renderMarkdown(raw);
     aiEl = null; caretEl = null;
   }
+
+  messages.addEventListener('click', event => {
+    const link = event.target.closest('.ai-text a');
+    if (!link) return;
+    event.preventDefault();
+    if (/^https:\/\//i.test(link.getAttribute('href') || '')) wingman.openPane(link.href);
+  });
 
   function setBusy(v) { busy = v; $('#send-btn').classList.toggle('busy', v); }
 
@@ -196,11 +160,32 @@
 
   // Smart toggle
   const smartBtn = $('#smart-toggle');
-  smartBtn.addEventListener('click', async () => {
-    if (!settings) { showStatus('Settings are unavailable. Restart Aether to retry.', true); return; }
-    settings.smart = !settings.smart;
-    smartBtn.classList.toggle('on', settings.smart);
-    await wingman.settingsSet({ smart: settings.smart });
+  let smartSave = Promise.resolve(), smartRevision = 0;
+  function syncSmart() {
+    const value = settings?.smart;
+    const label = value === 'deep' ? 'Smart: Deep' : value ? 'Smart: Work' : 'Smart: Answer';
+    smartBtn.querySelector('span:last-child').textContent = label;
+    smartBtn.classList.toggle('on', !!value);
+    smartBtn.setAttribute('aria-pressed', value === 'deep' ? 'mixed' : String(!!value));
+    smartBtn.title = label + '. Click: answer/work. Double-click: in-depth explanation. Alt+Enter: deep.';
+  }
+  function selectSmart(value) {
+    if (!settings) return showStatus('Settings are unavailable. Restart Aether to retry.', true);
+    const revision = ++smartRevision;
+    settings.smart = value; syncSmart();
+    smartSave = smartSave.catch(() => {}).then(() => wingman.settingsSet({ smart: value })).catch(async () => {
+      if (revision === smartRevision) {
+        try { settings.smart = (await wingman.settingsGet()).smart; } catch { settings.smart = false; }
+        syncSmart(); showStatus('Could not save response depth. Try again.', true);
+      }
+    });
+  }
+  smartBtn.addEventListener('click', event => {
+    if (event.detail < 2) selectSmart(!settings?.smart);
+  });
+  smartBtn.addEventListener('dblclick', () => selectSmart('deep'));
+  smartBtn.addEventListener('keydown', event => {
+    if (event.altKey && event.key === 'Enter') { event.preventDefault(); selectSmart('deep'); }
   });
 
   // Hide / collapse
@@ -470,6 +455,9 @@ function statusText() {
     return 'Active: ' + settings.provider + ' · keys: ' + (has.join(', ') || 'none set') + ' · transcription: ' + stt;
   }
   function updateModelHint(provider) {
+    $('#codex-account-row').classList.toggle('hidden', provider !== 'codex-cli');
+    $('#codex-account-hint').classList.toggle('hidden', provider !== 'codex-cli');
+    $('#codex-separate-account').checked = !!settings.codexSeparateAccount;
     const hint = $('#model-hint');
     if (provider === 'nvidia') {
       hint.textContent = 'Nvidia NIM: use a vision model like meta/llama-3.2-90b-vision-instruct or meta/llama-3.2-11b-vision-instruct. Text-only models (e.g. nemotron-mini) can\'t see screenshots and will refuse.';
@@ -503,6 +491,7 @@ function statusText() {
     $('#s-status').textContent = statusText();
   }));
 async function saveSettings() {
+    settings.codexSeparateAccount = $('#codex-separate-account').checked;
     settings.autoRefresh = $('#auto-refresh').checked;
     settings.apiKeys.openai = $('#key-openai').value.trim();
     settings.apiKeys.anthropic = $('#key-anthropic').value.trim();
@@ -804,7 +793,7 @@ async function saveSettings() {
     $('#share-hide-btn').disabled = !shortcuts.toggle;
     if (!shortcuts.toggle) showStatus('Show / hide shortcut unavailable. Choose another in Settings before hiding.', true);
     syncAssistShortcutLabels();
-    smartBtn.classList.toggle('on', !!settings.smart);
+    syncSmart();
     const refreshStatus = await wingman.autoRefreshStatus();
     autoRefreshActive = !!refreshStatus.active;
     if (typeof refreshStatus.supported === 'boolean') autoRefreshSupported = refreshStatus.supported;

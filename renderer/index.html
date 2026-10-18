@@ -105,10 +105,12 @@
         <textarea id="resume-context" class="s-textarea" maxlength="12000" placeholder="Paste your résumé or professional background here. Aether will use it as the factual source for career-related answers."></textarea>
         <div class="s-resume-actions"><span class="s-hint">Maximum 12,000 characters</span><button id="clear-resume" type="button">Clear résumé</button></div>
 
-        <label class="s-label">Models <span class="s-hint">fast = Smart off · smart = Smart on</span></label>
+        <label class="s-label">Models <span class="s-hint">Fast = answer only · Smart = work or deep explanation</span></label>
         <div class="s-field"><span>Fast</span><input id="model-fast" type="text" autocomplete="off" /></div>
         <div class="s-field"><span>Smart</span><input id="model-smart" type="text" autocomplete="off" /></div>
         <div class="s-hint" id="model-hint"></div>
+        <label class="s-check hidden" id="codex-account-row"><input type="checkbox" id="codex-separate-account" />Use a separate Aether ChatGPT login</label>
+        <div class="s-hint hidden" id="codex-account-hint">Uses Aether’s own Codex profile. Sign in to that profile before selecting it; your development login stays separate.</div>
 
         <label class="s-check"><input id="auto-refresh" type="checkbox" />Auto refresh Assist after clicks or scrolling</label>
         <div class="s-hint" id="auto-refresh-hint">Off by default. After interaction pauses, a screenshot goes to your selected provider and uses its allowance.</div>
@@ -151,6 +153,9 @@
 
   <script src="icons.js"></script>
   <script src="katex.min.js"></script>
+  <script src="../node_modules/marked/lib/marked.umd.js"></script>
+  <script src="../node_modules/dompurify/dist/purify.min.js"></script>
+  <script src="answer-format.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

@@ -9,6 +9,7 @@ Aether is an Electron desktop app. It has a main process that can call providers
 | `main.js` | Creates the overlay, registers shortcuts, captures screenshots, manages audio buffers, and sends requests/results over IPC. |
 | `preload.js` | Lists the methods and events the renderer may use. |
 | `renderer/` | HTML/CSS/JS UI, settings, Markdown display, mic and system audio capture. |
+| `renderer/answer-format.js` | Shared streamed/final Markdown, sanitized HTML and KaTeX rendering; preserves code and token spacing. |
 | `src/store.js` | Reads and atomically saves settings; encrypts API keys with Electron `safeStorage`. |
 | `src/llm.js` and `src/cli-provider.js` | Common streaming interface for cloud APIs, Ollama, and signed-in Claude/Codex CLIs. |
 | `src/stt.js` | Transcribes PCM audio with local `whisper-cli`, OpenAI, or Gemini. |
@@ -35,6 +36,10 @@ Aether is an Electron desktop app. It has a main process that can call providers
 5. The renderer displays the answer and clickable source links. Library links credit Wikipedia contributors and CC BY-SA 4.0.
 
 ## Keyboard shortcuts
+Smart controls response depth as well as the model tier. Answer mode (`false`) uses Fast and requests only the answer/code; Work (`true`) uses Smart and requests brief supporting work/evidence; Deep (`'deep'`) uses Smart and requests a worked answer with an in-depth explanation. One click toggles Answer/Work, double-click or Alt+Enter selects Deep. `responseSystem()` appends the shared depth/evidence policy to each task before résumé context. All factual levels retain required citations/uncertainty, and meeting modes keep their specific formats.
+
+The renderer retains raw token text without trimming and batches formatting to animation frames. Both partial and finished output run through the same Marked/KaTeX parser and DOMPurify sanitizer. Code bypasses math parsing; model HTML is sanitized and remote images are omitted. Partial Markdown can settle as closing syntax arrives. Model-generated missing spaces cannot safely be guessed; transport and rendering preserve the supplied text.
+
 Screen updates are manual by default. Native Hyprland users may enable click/scroll Auto refresh in Settings. External activity settles for 650 ms before Assist, and only the latest pending interaction survives a busy generation. Its display coordinates travel with the request. Main process visibility and renderer settings/onboarding/collapse state pause requests. Listener failure disables runtime Auto and reports an error; saved preference and actual running state are separate. Bindings are removed on disable/quit, without removing the user's mouse bindings; a compositor config reload requires restarting Aether.
 
 Manual screen capture uses the cursor display; automatic capture uses the triggering interaction's display. Hyprland requires `grim` on PATH, reads PNG output as binary and fails closed with setup guidance. Other platforms use Electron's nearest display and portal source where available. Explicit screen questions bypass factual retrieval and stream tokens with progress labels; factual questions retain buffered citation validation. A visible overlay may be included in a screenshot. Model latency and semantic accuracy remain separate limits.
@@ -53,6 +58,8 @@ Audio is buffered in `main.js` by speaker channel. `src/stt.js` transcribes non-
 ## Security and platform limits
 
 API keys are encrypted in the settings file and saving fails if the OS secure-storage backend is unavailable. The renderer never receives Node access directly, but it does receive settings through the preload bridge for editing. External source links are opened through a scheme-restricted main-process handler. CLI providers start without a shell and use temporary directories for image inputs.
+
+The optional separate Aether ChatGPT login uses a `codex-profile` folder under Electron userData. Main resolves that location; the Codex child receives its own CODEX_HOME, explicit file/ChatGPT authentication and no inherited API/access-token variables. This does not change the parent or Claude login. Treat the profile's auth cache as a password. The checkbox selects that profile but does not perform login; complete official `codex login` for that CODEX_HOME first. Free-account CLI eligibility and usage must be measured after successful sign-in rather than assumed from desktop access.
 
 Tavily is now configured on this Linux account. Real checks confirmed local-first library retrieval and live web fallback, with encrypted save/decrypt through GNOME Keyring. The user selected local Ollama: fast model `qwen25-vl-7b-16k:latest`, Smart model `qwen35-9b-64k:latest`, and the existing local Whisper model are configured. These installed aliases provide larger contexts for source packets. Tavily supplies evidence while Ollama writes the answer; source links and valid citation numbers still do not prove factual accuracy. This host's launcher explicitly selects GNOME Keyring so normal launches can decrypt the saved key.
 

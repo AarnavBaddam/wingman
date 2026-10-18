@@ -9,6 +9,7 @@ const FILE = path.join(app.getPath('userData'), 'wingman-data.json');
 const DEFAULTS = {
   provider: 'openai',
   smart: false,
+  codexSeparateAccount: false,
   autoRefresh: false,
   resumeContext: '',
   shortcuts: { assist: 'CommandOrControl+Return', toggle: 'CommandOrControl+Shift+Space' },

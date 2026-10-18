@@ -34,6 +34,7 @@ const args = process.argv.slice(2);
 const image = args[args.indexOf('--image') + 1];
 if (!args.includes('read-only') || !args.includes('--ephemeral') || !fs.existsSync(image)) process.exit(2);
 console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'seen'}}));
+console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'  next message  '}}));
 console.log(JSON.stringify({type:'turn.completed'}));
 `;
     fs.writeFileSync(path.join(bin, 'claude'), claude, { mode: 0o755 });
@@ -42,10 +43,56 @@ console.log(JSON.stringify({type:'turn.completed'}));
     const tokens = [];
     assert.equal(await streamCLI('claude-cli', { system: 'private résumé', turns: [{ role: 'user', text: 'Hi' }], imageDataUrl: png, onToken: (t) => tokens.push(t) }), 'hello');
     assert.deepEqual(tokens, ['hel', 'lo']);
-    assert.equal(await streamCLI('codex-cli', { system: 'Answer briefly', turns: [{ role: 'user', text: 'Hi' }], imageDataUrl: png, onToken: (t) => tokens.push(t) }), 'seen');
-    assert.equal(tokens.at(-1), 'seen');
+    assert.equal(await streamCLI('codex-cli', { system: 'Answer briefly', turns: [{ role: 'user', text: 'Hi' }], imageDataUrl: png, onToken: (t) => tokens.push(t) }), 'seen\n\n  next message  ');
+    assert.equal(tokens.slice(2).join(''), 'seen\n\n  next message  ');
   } finally {
     process.env.PATH = originalPath;
+    fs.rmSync(bin, { recursive: true, force: true });
+  }
+});
+
+test('isolated Codex forwards its account home without changing default or Claude authentication', async () => {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'wingman-cli-account-test-'));
+  const names = ['PATH', 'CODEX_HOME', 'OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN'];
+  const original = Object.fromEntries(names.map(name => [name, process.env[name]]));
+  const inherited = { CODEX_HOME: path.join(bin, 'default-profile'), OPENAI_API_KEY: 'fake-openai', CODEX_API_KEY: 'fake-codex', CODEX_ACCESS_TOKEN: 'fake-token' };
+  try {
+    const script = `#!/usr/bin/env node
+const fs = require('node:fs');
+fs.readFileSync(0, 'utf8');
+const text = JSON.stringify({ args: process.argv.slice(2), env: Object.fromEntries(['CODEX_HOME', 'OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN'].map(name => [name, process.env[name] ?? null])) });
+if (process.argv[1].endsWith('claude')) {
+  console.log(JSON.stringify({type:'result',subtype:'success',result:text}));
+} else {
+  console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text}}));
+  console.log(JSON.stringify({type:'turn.completed'}));
+}
+`;
+    for (const binary of ['codex', 'claude']) fs.writeFileSync(path.join(bin, binary), script, { mode: 0o755 });
+    Object.assign(process.env, inherited, { PATH: bin + path.delimiter + original.PATH });
+    const settings = { provider: 'codex-cli', models: { 'codex-cli': {} }, apiKeys: {}, smart: false };
+    const params = { system: 'Answer briefly', turns: [{ role: 'user', text: 'Hi' }] };
+    const defaultResult = JSON.parse(await createLLM(settings).stream(params));
+    assert.deepEqual(defaultResult.env, inherited);
+    assert.ok(!defaultResult.args.includes('cli_auth_credentials_store="file"'));
+    assert.ok(!defaultResult.args.includes('forced_login_method="chatgpt"'));
+
+    const codexHome = path.join(bin, 'separate-profile');
+    const isolated = JSON.parse(await createLLM({ ...settings, codexHome }).stream(params));
+    assert.deepEqual(isolated.env, { CODEX_HOME: codexHome, OPENAI_API_KEY: null, CODEX_API_KEY: null, CODEX_ACCESS_TOKEN: null });
+    for (const flag of ['cli_auth_credentials_store="file"', 'forced_login_method="chatgpt"']) {
+      assert.equal(isolated.args[isolated.args.indexOf(flag) - 1], '-c');
+    }
+    assert.deepEqual(Object.fromEntries(Object.keys(inherited).map(name => [name, process.env[name]])), inherited);
+
+    const claude = JSON.parse(await streamCLI('claude-cli', { ...params, codexHome }));
+    assert.deepEqual(claude.env, inherited);
+    assert.ok(!claude.args.includes('forced_login_method="chatgpt"'));
+  } finally {
+    for (const name of names) {
+      if (original[name] === undefined) delete process.env[name];
+      else process.env[name] = original[name];
+    }
     fs.rmSync(bin, { recursive: true, force: true });
   }
 });

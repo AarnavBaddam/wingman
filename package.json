@@ -31,8 +31,10 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
     "@google/genai": "^1.52.0",
+    "dompurify": "^3.4.17",
     "katex": "^0.18.2",
     "lucide-static": "^0.468.0",
+    "marked": "^18.1.1",
     "openai": "^4.73.0"
   }
 }

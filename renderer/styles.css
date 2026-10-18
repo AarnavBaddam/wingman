@@ -139,8 +139,13 @@ button:focus { outline: none; }
   -webkit-user-select: text; user-select: text;
 }
 .ai-text.small { font-size: calc(14px * var(--text-zoom)); line-height: 1.55; }
-.ai-text .w { display: inline; opacity: 0; animation: fadeUp 180ms ease forwards; }
-.ai-text ul { margin: 8px 0; padding-left: 20px; }
+.ai-text ul, .ai-text ol { margin: 8px 0; padding-left: 24px; }
+.ai-text p { margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ai-text h1, .ai-text h2, .ai-text h3 { font-size: 1.1em; margin: 12px 0 6px; }
+.ai-text table { border-collapse: collapse; display: block; overflow-x: auto; margin: 10px 0; }
+.ai-text th, .ai-text td { border: 1px solid var(--bd-hair); padding: 6px 10px; }
+.ai-text blockquote { margin: 8px 0; padding-left: 12px; border-left: 2px solid var(--tx-mut); }
+.ai-text a { color: var(--accent); text-decoration: underline; }
 .ai-text li { margin: 4px 0; }
 .ai-text pre {
   background: rgba(0,0,0,0.35);
@@ -329,6 +334,6 @@ button:focus { outline: none; }
 .hidden { display: none !important; }
 
 @media (prefers-reduced-motion: reduce) {
-  #panel, .user-bubble, .ai-text .w { animation: none !important; opacity: 1 !important; transform: none !important; }
+  #panel, .user-bubble { animation: none !important; opacity: 1 !important; transform: none !important; }
   #live-dot { animation: none !important; }
 }

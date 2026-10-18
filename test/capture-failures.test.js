@@ -15,7 +15,7 @@ async function runWithCapture(captureScreenshot) {
     './src/stt': { createSTT: () => ({}) },
     './src/llm': { createLLM: () => ({ ready: true, stream: async (args) => { streams.push(args); return 'ok'; } }) },
     './src/research': { getEvidence: async () => [], searchWeb: async () => [], researchPrompt: () => '', validateGroundedAnswer: text => text, needsWebFollowup: () => false },
-    './src/prompts': { MODES: { assist: { needsScreen: true, userBubble: null, system: '', build: () => '' } } },
+    './src/prompts': { ...require('../src/prompts'), MODES: { assist: { needsScreen: true, userBubble: null, system: '', build: () => '' } } },
     './src/profile-context': { appendResumeContext: (system) => system },
     './src/wav': { rms16: () => 0 }
   };

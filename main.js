@@ -6,7 +6,7 @@ const { captureScreenshot } = require('./src/screen');
 const { createSTT } = require('./src/stt');
 const { createLLM } = require('./src/llm');
 const { getEvidence, searchWeb, researchPrompt, validateGroundedAnswer, needsWebFollowup, isScreenQuestion } = require('./src/research');
-const { MODES } = require('./src/prompts');
+const { MODES, responseSystem } = require('./src/prompts');
 const { appendResumeContext } = require('./src/profile-context');
 const { rms16 } = require('./src/wav');
 
@@ -240,7 +240,7 @@ async function runFeature(mode, userText, capturePoint) {
   state.busy = true;
   try {
     const settings = store.getSettings();
-    const llm = createLLM(settings);
+    const llm = createLLM({ ...settings, codexHome: settings.codexSeparateAccount ? path.join(app.getPath('userData'), 'codex-profile') : undefined });
     const userBubble = def.userBubble !== null ? def.userBubble : (mode === 'ask' ? userText : null);
     if (DEBUG) console.log('[DEBUG MAIN] LLM settings loaded:', { provider: settings.provider, smart: settings.smart });
     send('llm:start', { userBubble, small: !!def.small });
@@ -284,7 +284,7 @@ async function runFeature(mode, userText, capturePoint) {
     const answer = () => {
       send('llm:phase', { message: sources.length ? 'Writing a sourced answer…' : 'Writing an answer…' });
       return llm.stream({
-      system: appendResumeContext(def.system, settings.resumeContext),
+      system: appendResumeContext(responseSystem(def.system, settings.smart), settings.resumeContext),
       turns: [{ role: 'user', text: built + (sources.length ? researchPrompt(sources) : '') }],
       imageDataUrl,
       onToken: (t) => { if (!sources.length) send('llm:token', { text: t }); }
@@ -344,6 +344,8 @@ ipcMain.handle('settings:get', () => store.getSettings());
 ipcMain.handle('auto-refresh:status', () => ({ supported: autoRefreshSupported(), active: autoRefreshActive }));
 ipcMain.handle('settings:set', (_e, patch) => {
   const apply = async () => {
+    if (patch.smart !== undefined && ![false, true, 'deep'].includes(patch.smart)) throw new Error('Invalid response depth');
+    if (patch.codexSeparateAccount !== undefined && typeof patch.codexSeparateAccount !== 'boolean') throw new Error('Invalid Codex account setting');
     if (patch.autoRefresh !== undefined && typeof patch.autoRefresh !== 'boolean') throw new Error('Invalid auto refresh setting');
     const previous = !!store.getSettings().autoRefresh;
     if (patch.autoRefresh !== undefined) await configureAutoRefresh(patch.autoRefresh);

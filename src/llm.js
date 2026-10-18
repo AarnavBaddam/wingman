@@ -127,7 +127,7 @@ return {
     async stream(params) {
       if (DEBUG) console.log('[DEBUG LLM] stream() invoked for provider:', provider);
       const args = { apiKey, model, maxTokens, ...params };
-      if (isCLI) return require('./cli-provider').streamCLI(provider, args);
+      if (isCLI) return require('./cli-provider').streamCLI(provider, { ...args, codexHome: settings.codexHome });
       if (isOllama) return streamOpenAI({ ...args, apiKey: 'ollama', baseURL: 'http://127.0.0.1:11434/v1' });
       if (provider === 'openai') return streamOpenAI(args);
       if (provider === 'nvidia') return streamOpenAI({ ...args, baseURL: 'https://integrate.api.nvidia.com/v1' });

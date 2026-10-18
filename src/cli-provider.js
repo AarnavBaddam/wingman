@@ -14,10 +14,10 @@ function imageParts(dataUrl) {
   return { mime: match[1], bytes };
 }
 
-function run(binary, args, input, cwd, provider, onToken, signal) {
+function run(binary, args, input, cwd, provider, onToken, signal, env) {
   if (signal?.aborted) return Promise.reject(new Error('Request cancelled'));
   return new Promise((resolve, reject) => {
-    const child = spawn(binary, args, { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(binary, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
     let output = '';
     let full = '';
     let final = '';
@@ -47,8 +47,9 @@ function run(binary, args, input, cwd, provider, onToken, signal) {
         }
       } else {
         if (item.type === 'item.completed' && item.item?.type === 'agent_message' && item.item.text) {
-          full += item.item.text;
-          onToken(item.item.text);
+          const text = (full ? '\n\n' : '') + item.item.text;
+          full += text;
+          onToken(text);
         }
         if (item.type === 'turn.completed') completed = true;
         if (item.type === 'turn.failed' || item.type === 'error') failure = new Error('Codex CLI request failed');
@@ -84,7 +85,7 @@ function run(binary, args, input, cwd, provider, onToken, signal) {
   });
 }
 
-async function streamCLI(provider, { model, system, turns, imageDataUrl, onToken = () => {}, signal }) {
+async function streamCLI(provider, { model, system, turns, imageDataUrl, onToken = () => {}, signal, codexHome }) {
   const prompt = turns.map((turn) => `${turn.role}: ${turn.text}`).join('\n\n');
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'wingman-llm-'));
   try {
@@ -103,6 +104,14 @@ async function streamCLI(provider, { model, system, turns, imageDataUrl, onToken
     }
     if (provider === 'codex-cli') {
       const args = ['exec', '--json', '--ephemeral', '--ignore-user-config', '--sandbox', 'read-only', '--skip-git-repo-check', '-C', directory];
+      let env;
+      if (codexHome) {
+        env = { ...process.env, CODEX_HOME: codexHome };
+        delete env.OPENAI_API_KEY;
+        delete env.CODEX_API_KEY;
+        delete env.CODEX_ACCESS_TOKEN;
+        args.push('-c', 'cli_auth_credentials_store="file"', '-c', 'forced_login_method="chatgpt"');
+      }
       if (model) args.push('--model', model);
       if (imageDataUrl) {
         const image = imageParts(imageDataUrl);
@@ -111,7 +120,7 @@ async function streamCLI(provider, { model, system, turns, imageDataUrl, onToken
         args.push('--image', filename);
       }
       args.push('-');
-      return await run('codex', args, `Answer only from the supplied prompt and image. Do not use tools or inspect files.\n\nInstructions:\n${system}\n\n${prompt}\n`, directory, provider, onToken, signal);
+      return await run('codex', args, `Answer only from the supplied prompt and image. Do not use tools or inspect files.\n\nInstructions:\n${system}\n\n${prompt}\n`, directory, provider, onToken, signal, env);
     }
     throw new Error('Unknown CLI provider: ' + provider);
   } finally {

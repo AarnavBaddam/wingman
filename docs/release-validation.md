@@ -1,5 +1,14 @@
 # Aether release validation
 
+## Latest formatting and Smart depth — 2026-10-18
+
+- 104 tests pass. Reproduced the former streaming failure in localhost Playwright before replacing the parser. Real renderer checks now pass formatted streaming/final agreement, code spacing, ordered lists, raw-symbol math, unsafe HTML/URL removal, Smart single/double-click, keyboard Deep access and reload persistence. Existing capture controls, source links and rejected-answer behavior also pass, with zero page errors.
+- Marked/DOMPurify/KaTeX share one formatting path for streamed and completed text; code preserves spaces and avoids math interpretation. Separate Codex agent messages now have paragraph boundaries. This preserves provider text; it cannot reconstruct spaces the model never emitted. Incomplete markup can settle when closing syntax arrives.
+- Smart Answer/Work/Deep policies are applied before generation, preserve Fast/Smart model tiers, and retain factual citations/uncertainty. These prompt policies are covered by tests, not live compliance checks for every model. Meeting formats remain intact.
+- `npm run pack` and AppImage build pass. Normal FUSE AppImage checks with an isolated profile passed real settings IPC and Smart Work/Deep save/reload, separate-account preference persistence and fixture-driven streamed/final Markdown/math/code spacing. No provider call or usage allowance was consumed by these packaged checks. Production audit: zero findings. Independent review: no material findings.
+- Separate Aether Codex login support is implemented and tested with fake binaries, including parent/default/Claude authentication preservation. Official browser OAuth sign-in was started for the app-data codex-profile. User completion is pending; no Free account request, allowance baseline or usage-duration measurement has been made. Real Aether remains on Ollama with Auto off until login succeeds.
+- Final AppImage: 139,913,796 bytes; SHA-256 `c1c89ab8f87ff35567d7ac78357d535a723550a2b15b58df1d6561f094c8a9ef`. Supersedes all earlier artifacts below. Code graph: 662 nodes / 1,039 edges.
+
 ## Latest screen updates and optional Auto
 
 - Manual remains the default. Settings can enable external click/scroll Assist on native Hyprland. A 650 ms debounce groups bursts; generations never overlap and only the latest pending interaction is retained. Hidden/collapsed/settings/onboarding states pause requests. Runtime listener state drives the Auto badge and failures report recovery guidance. Other desktops remain manual.

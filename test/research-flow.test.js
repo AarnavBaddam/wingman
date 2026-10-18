@@ -17,7 +17,7 @@ async function runResearch({ drafts = ['The local sources are insufficient.', 'T
     './src/stt': { createSTT: () => ({}) },
     './src/llm': { createLLM: () => ({ ready: true, stream: async args => { requests.push(args); if (modelError) throw modelError; args.onToken(drafts[requests.length - 1]); return drafts[requests.length - 1]; } }) },
     './src/research': { ...require('../src/research'), getEvidence: async () => { retrievals++; return local; }, searchWeb: async () => { searches++; return web; }, researchPrompt: sources => sources[0].origin, needsWebFollowup: (text, sources) => sources[0]?.origin === 'library' && text.includes('insufficient') },
-    './src/prompts': { MODES: Object.fromEntries(['research','ask'].map(mode => [mode,{ needsScreen: mode==='ask', userBubble: null, system: mode, build: ({ userText }) => userText }])) },
+    './src/prompts': { ...require('../src/prompts'), MODES: Object.fromEntries(['research','ask'].map(mode => [mode,{ needsScreen: mode==='ask', userBubble: null, system: mode, build: ({ userText }) => userText }])) },
     './src/profile-context': { appendResumeContext: system => system },
     './src/wav': { rms16: () => 0 }
   };
