@@ -19,6 +19,16 @@ let autoRefresh = null, activityWatcher = null, autoRefreshPaused = false;
 let autoRefreshChange = Promise.resolve();
 let autoRefreshActive = false;
 let autoSession = null;
+let zenControl = null;
+
+function getZenControl() {
+  if (!zenControl) zenControl = require('./src/zen-control').createZenControl();
+  return zenControl;
+}
+
+function stopForegroundAuto(reason) {
+  if (autoSession?.target !== 'zen') autoSession?.stop(reason);
+}
 
 // Lightweight diagnostic log so shortcut behavior can be verified from a file.
 function log(msg) {
@@ -129,7 +139,7 @@ function toggleWindow() {
   log('toggleWindow fired. win=' + (win && !win.isDestroyed()) + ' visible=' + (win && win.isVisible()));
   if (!win || win.isDestroyed()) { createWindow(); return; }
   if (win.isVisible()) {
-    autoSession?.stop('Auto stopped because Aether was hidden.');
+    stopForegroundAuto('Auto stopped because Aether was hidden.');
     stopWindowGesture();
     win.hide();
   } else {
@@ -341,7 +351,7 @@ function publishAutoRefreshState(active, error) {
   send('auto-refresh:state', { active, error });
 }
 
-function startAutoMode(goal) {
+function startAutoMode(goal, options) {
   if (!autoRefreshSupported()) throw new Error('Desktop Auto currently requires native Hyprland, grim and ydotool.');
   if (state.busy) throw new Error('Wait for the current answer or stop Auto first.');
   if (!win || win.isDestroyed() || !win.isVisible()) throw new Error('Show Aether before starting Auto.');
@@ -350,6 +360,7 @@ function startAutoMode(goal) {
     getSettings: () => store.getSettings(), createLLM,
     getCodexHome: settings => settings.codexSeparateAccount ? path.join(app.getPath('userData'), 'codex-profile') : undefined,
     createDesktopControl: () => require('./src/desktop-control').createDesktopControl(),
+    createBrowserControl: () => getZenControl(),
     createStopWatcher: options => require('./src/hypr-auto-stop').createHyprAutoStop(options),
     research: (query, settings) => getEvidence(query, settings.apiKeys.tavily),
     onUpdate: update => {
@@ -360,14 +371,22 @@ function startAutoMode(goal) {
     onEnd: () => { state.busy = false; autoRefresh?.cancelPending(); }
   });
   state.busy = true; autoRefresh?.cancelPending();
-  try { return autoSession.start(goal); }
+  try { return autoSession.start(goal, { allowSubmit: options?.allowSubmit === true, target: options?.target || 'desktop', tabId: options?.tabId }); }
   catch (error) { state.busy = false; throw error; }
 }
 
 // -------- IPC --------
 ipcMain.handle('auto-mode:status', () => ({ supported: autoRefreshSupported(), ...(autoSession?.status || { active: false, status: 'idle', message: '' }) }));
-ipcMain.handle('auto-mode:start', (_event, goal) => startAutoMode(goal));
+ipcMain.handle('auto-mode:start', (_event, goal, options) => startAutoMode(goal, options));
 ipcMain.on('auto-mode:stop', () => autoSession?.stop());
+ipcMain.handle('auto-mode:zen-tabs', async () => {
+  if (state.busy) throw new Error('Stop the current task before refreshing Zen tabs.');
+  try {
+    const control = getZenControl();
+    await control.connect();
+    return (await control.listTabs()).filter(tab => /^https?:\/\//i.test(tab.url));
+  } catch (error) { await zenControl?.close(); zenControl = null; throw error; }
+});
 ipcMain.handle('settings:get', () => store.getSettings());
 ipcMain.handle('auto-refresh:status', () => ({ supported: autoRefreshSupported(), active: autoRefreshActive }));
 ipcMain.handle('settings:set', (_e, patch) => {
@@ -384,7 +403,7 @@ ipcMain.handle('settings:set', (_e, patch) => {
   autoRefreshChange = result.catch(() => {});
   return result;
 });
-ipcMain.on('auto-refresh:pause', (_event, paused) => { autoRefreshPaused = !!paused; if (paused) { autoRefresh?.cancelPending(); autoSession?.stop('Auto stopped while Aether is paused.'); } });
+ipcMain.on('auto-refresh:pause', (_event, paused) => { autoRefreshPaused = !!paused; if (paused) { autoRefresh?.cancelPending(); stopForegroundAuto('Auto stopped while Aether is paused.'); } });
 ipcMain.handle('shortcut:assist:set', (_e, accelerator) => setAssistShortcut(accelerator));
 ipcMain.handle('shortcut:toggle:set', (_e, accelerator) => {
   const next = toggleBindingReady.then(() => setToggleShortcut(accelerator));
@@ -420,7 +439,7 @@ ipcMain.handle('capture:system:stop', () => stopLinuxAudio());
 ipcMain.on('ask', (_e, payload) => runFeature(payload.mode, payload.text));
 ipcMain.on('window:hide-for-sharing', async () => {
   await toggleBindingReady;
-  if (registeredShortcuts.toggle && !toggleBindingError && win && !win.isDestroyed()) { autoSession?.stop('Auto stopped because Aether was hidden.'); stopWindowGesture(); win.hide(); }
+  if (registeredShortcuts.toggle && !toggleBindingError && win && !win.isDestroyed()) { stopForegroundAuto('Auto stopped because Aether was hidden.'); stopWindowGesture(); win.hide(); }
 });
 ipcMain.on('mic:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.you.push(Buffer.from(arrayBuffer)); });
 ipcMain.on('system:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.them.push(Buffer.from(arrayBuffer)); });
@@ -626,6 +645,7 @@ app.on('before-quit', event => {
   void autoSession.completion.finally(() => { quittingAfterAuto = true; app.quit(); });
 });
 app.on('will-quit', () => {
+  zenControl?.close();
   autoSession?.stop('Auto stopped because Aether is quitting.');
   autoRefresh?.stop(); activityWatcher?.stop();
   stopWindowGesture();

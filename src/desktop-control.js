@@ -47,6 +47,7 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
     } catch (error) {
       cancelled(signal);
       if (error.name === 'AbortError') throw error;
+      if (command === 'ydotool') throw new Error(`Desktop input failed. Run systemctl --user start ydotool, then check YDOTOOL_SOCKET (${helperEnv.YDOTOOL_SOCKET || 'not configured'}) and /dev/uinput permissions.`, { cause: error });
       throw new Error(`Desktop ${command === 'grim' ? 'capture' : 'control'} failed. Check Hyprland, grim, and the ydotool service/socket.`);
     }
   }
@@ -92,7 +93,7 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
     if (authorized) locked.set(target, false);
     cancelled(signal);
     if (!authorized) throw new Error('Capture the locked target before acting.');
-    if (!action || !['click', 'type', 'scroll'].includes(action.type)) throw new Error('Unsupported desktop action.');
+    if (!action || !['click', 'type', 'scroll', 'drag'].includes(action.type)) throw new Error('Unsupported desktop action.');
     if (action.type === 'type') {
       if (typeof action.text !== 'string' || !action.text.length || action.text.length > 1000 || /[^\x20-\x7e]/.test(action.text)) throw new Error('Type accepts printable ASCII text only, without Enter or Tab.');
       if (!helperEnv.YDOTOOL_SOCKET) throw new Error('Configure the ydotool socket before desktop input.');
@@ -105,11 +106,12 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
       return;
     }
     if (![action.x, action.y].every(Number.isFinite) || action.x < 0 || action.y < 0 || action.x >= target.size[0] || action.y >= target.size[1]) throw new Error('Desktop coordinates are outside the captured window.');
+    if (action.type === 'drag' && (![action.toX, action.toY].every(Number.isFinite) || action.toX < 0 || action.toY < 0 || action.toX >= target.size[0] || action.toY >= target.size[1])) throw new Error('Desktop drag destination is outside the captured window.');
     if (action.type === 'scroll' && (!Number.isSafeInteger(action.amount) || action.amount === 0 || Math.abs(action.amount) > 5)) throw new Error('Scroll amount must be a nonzero integer between -5 and 5.');
     if (!helperEnv.YDOTOOL_SOCKET) throw new Error('Configure the ydotool socket before desktop input.');
     const x = target.at[0] + Math.min(target.size[0] - 1, Math.round(action.x));
     const y = target.at[1] + Math.min(target.size[1] - 1, Math.round(action.y));
-    async function checkPoint() {
+    async function checkPoint(px = x, py = y) {
       let clients;
       try { clients = JSON.parse(String(await invoke('hyprctl', ['-j', 'clients'], signal))); }
       catch (error) { cancelled(signal); throw new Error('Cannot check Aether window positions. Retry desktop control.'); }
@@ -117,7 +119,7 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
       for (const w of clients) {
         if (w.mapped !== true || !(ownClass(w.class) || w.pid === pid)) continue;
         if (!Array.isArray(w.at) || w.at.length !== 2 || !Array.isArray(w.size) || w.size.length !== 2 || [...w.at, ...w.size].some(n => !Number.isFinite(n)) || w.size.some(n => n <= 0)) throw new Error('Cannot check Aether window positions.');
-        if (x >= w.at[0] && y >= w.at[1] && x < w.at[0] + w.size[0] && y < w.at[1] + w.size[1]) throw new Error('Move Aether away from the target point before acting.');
+        if (px >= w.at[0] && py >= w.at[1] && px < w.at[0] + w.size[0] && py < w.at[1] + w.size[1]) throw new Error('Move Aether away from the target point before acting.');
       }
     }
     await checkPoint();
@@ -126,12 +128,36 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
     if (String(response).trim() !== 'ok') throw new Error('Hyprland cursor move failed.');
     await checkPoint();
     await validate(target, signal);
+    if (action.type === 'drag') {
+      const endX = Math.min(target.size[0] - 1, Math.round(action.toX));
+      const endY = Math.min(target.size[1] - 1, Math.round(action.toY));
+      await input(['click', '0x40']);
+      for (let i = 1; i <= 12; i++) {
+        const px = Math.round(x + (target.at[0] + endX - x) * i / 12);
+        const py = Math.round(y + (target.at[1] + endY - y) * i / 12);
+        await checkPoint(px, py); await validate(target, signal);
+        const moved = await invoke('hyprctl', ['eval', `hl.dispatch(hl.dsp.cursor.move({x=${px},y=${py}}))`], signal);
+        if (String(moved).trim() !== 'ok') throw new Error('Hyprland cursor move failed.');
+        await new Promise(resolve => setTimeout(resolve, 40));
+      }
+      await checkPoint(target.at[0] + endX, target.at[1] + endY);
+      await validate(target, signal);
+      await input(['click', '0x80']);
+      return;
+    }
     await input(action.type === 'click' ? ['click', '0xC0'] : ['mousemove', '-w', '-x', '0', '-y', String(-action.amount)]);
   }
   async function execute(target, action, signal) {
-    let inputAttempted = false;
+    let inputAttempted = false, connected = false;
     const input = async (args, extra) => {
       cancelled(signal);
+      if (!connected) {
+        // debug connects to the daemon without emitting input. Fail before cleanup
+        // is needed, and recheck focus after the extra helper round trip.
+        await invoke('ydotool', ['debug'], signal);
+        await validate(target, signal);
+        connected = true;
+      }
       inputAttempted = true;
       return invoke('ydotool', args, signal, extra);
     };

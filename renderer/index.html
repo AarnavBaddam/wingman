@@ -44,6 +44,16 @@
         </div>
 
         <div id="auto-mode-status" class="status-line hidden" role="status" aria-live="polite"></div>
+        <div class="status-line" style="display:flex;gap:6px;align-items:center">
+          <fieldset id="auto-target" aria-label="Auto target" style="display:flex;gap:8px;align-items:center;margin:0;padding:0;border:0">
+            <span>Auto target</span>
+            <label><input type="radio" name="auto-target" value="desktop" checked> Desktop</label>
+            <label><input type="radio" name="auto-target" value="zen"> Zen tab</label>
+          </fieldset>
+          <button id="auto-zen-connect" class="smart-pill hidden" type="button">Connect Zen</button>
+          <fieldset id="auto-zen-tab" class="hidden" aria-label="Zen target tab" style="min-width:0;flex:1;max-height:70px;overflow:auto;margin:0;padding:3px 6px;border:1px solid var(--bd-hair);border-radius:6px">Connect to list tabs</fieldset>
+        </div>
+        <label class="status-line" title="Applies only to the next Auto run; resets when started."><input id="auto-submit" type="checkbox"> Allow Auto to submit this form</label>
         <div id="composer">
           <div id="input-area">
             <div id="placeholder">Ask about your screen or conversation, or <span class="keycap">⌘</span><span class="keycap">⏎</span> for Assist</div>
@@ -51,7 +61,7 @@
           </div>
           <div id="composer-bottom">
             <button id="smart-toggle" class="smart-pill"><span class="ic"></span><span>Smart</span></button>
-            <button id="auto-mode-btn" class="smart-pill" title="Move Aether clear of the fields. Type a task, click Auto, then focus the target app within 3 seconds. Escape stops. Review before submitting.">Auto</button>
+            <button id="auto-mode-btn" class="smart-pill" title="Move Aether clear of the fields. Type a task, click Auto, then focus the target app within 3 seconds. Escape stops. Enable form submission if wanted.">Auto</button>
             <button id="more-btn" class="more-btn" title="Settings"></button>
             <button id="zoom-out-btn" class="more-btn" title="Zoom Out" style="font-size: 18px; font-family: monospace; line-height: 1;">-</button>
             <button id="zoom-in-btn" class="more-btn" title="Zoom In" style="font-size: 16px; font-family: monospace; line-height: 1;">+</button>

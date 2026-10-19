@@ -4,6 +4,13 @@ const { parseAutoAction, createAutoMode, AUTO_SYSTEM } = require('../src/auto-mo
 const bounds = { width: 800, height: 600, sourceIds: [3] };
 const click = { type: 'click', x: 20, y: 30, label: 'Name field', intent: 'focus' };
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
+test('drag accepts bounded endpoints and rejects malformed destinations', () => {
+  const drag = { type: 'drag', x: 100, y: 100, toX: 300, toY: 400, label: 'Weight to acts on car' };
+  assert.deepEqual(parseAutoAction(JSON.stringify(drag), bounds), drag);
+  for (const patch of [{ toX: 800 }, { toY: -1 }, { toX: 1.5 }, { toY: null }, { x: -1 }, { label: '' }, { label: 'Drag to Submit' }, { script: 'drop()' }]) {
+    assert.throws(() => parseAutoAction(JSON.stringify({ ...drag, ...patch }), bounds));
+  }
+});
 function harness(actions, overrides = {}) {
   const calls = [], updates = [];
   let index = 0;
@@ -16,6 +23,21 @@ function harness(actions, overrides = {}) {
   });
   return { engine, calls, updates };
 }
+test('drag invalidates verified answers and requires fresh verification before submit', async () => {
+  const verified = { layout: 'single-page', question: 'Sort forces', navigation: 'submit-form', scroll: 'none', status: 'answer-verified' };
+  const seen = [], executed = [];
+  const actions = [{ type: 'drag', x: 100, y: 100, toX: 200, toY: 300, label: 'Weight to acts on car', form: verified },
+    { type: 'click', x: 20, y: 30, label: 'Submit', intent: 'submit' },
+    { type: 'click', x: 20, y: 30, label: 'Submit', intent: 'submit', form: verified },
+    { type: 'done', message: 'Receipt confirmed', form: { ...verified, navigation: 'none', status: 'complete' } }];
+  const h = harness([], { decide: async context => { seen.push(context); return JSON.stringify(actions.shift()); }, execute: async a => executed.push(a.type) });
+  await h.engine.run('Sort and submit', { allowSubmit: true });
+  assert.equal(seen[1].form.status, 'incomplete');
+  assert.equal(seen[1].observation.action, 'drag');
+  assert.ok(seen[2].history.some(a => a.type === 'feedback' && /Before submission/.test(a.message)));
+  assert.deepEqual(executed, ['drag', 'click']);
+  assert.equal(h.updates.at(-1).status, 'done');
+});
 test('parser accepts only strict bounded action objects and fenced JSON', () => {
   assert.deepEqual(parseAutoAction('```json\n' + JSON.stringify(click) + '\n```', bounds), click);
   for (const action of [
@@ -74,11 +96,13 @@ test('wall timeout aborts even a non-cooperative dependency', async () => {
   assert.equal(h.updates.at(-1).status, 'paused');
   assert.equal(h.engine.active, false);
 });
-test('bounds steps, pauses repeated actions, and handles missing input without execution', async () => {
-  const repeated = harness([click, click, click]);
+test('bounds steps, gives recovery before pausing repeated actions, and handles missing input', async () => {
+  const repeated = harness([click, click, click, click]);
   await repeated.engine.run('Fill draft');
   assert.equal(repeated.calls.filter(x => x === 'click').length, 2);
   assert.equal(repeated.updates.at(-1).status, 'paused');
+  assert.ok(repeated.updates.some(u => /No repeated input was sent/.test(u.message)));
+  assert.match(repeated.updates.at(-1).message, /click.*focus/i);
   const bounded = harness([click], { maxSteps: 1 });
   await bounded.engine.run('Fill draft');
   assert.equal(bounded.updates.at(-1).status, 'paused');
@@ -87,6 +111,35 @@ test('bounds steps, pauses repeated actions, and handles missing input without e
   await missing.engine.run('Fill draft');
   assert.equal(missing.updates.at(-1).status, 'paused');
   assert.deepEqual(missing.calls, ['capture', 'decide']);
+});
+
+test('a repeated selection is not clicked twice and can recover by scrolling', async () => {
+  const option={...click,intent:'select',label:'Straight-line paths'};
+  const contexts=[], actions=[option,option,formMap,{type:'scroll',x:700,y:500,amount:2,label:'Find next button'},{type:'need_input',message:'Stop'}];
+  const h=harness([], {decide:async c=>{contexts.push(c);return JSON.stringify(actions.shift());}});
+  await h.engine.run('Answer and advance');
+  assert.equal(h.calls.filter(c=>c==='click').length,1);
+  assert.equal(h.calls.filter(c=>c==='scroll').length,1);
+  assert.match(contexts[2].history.at(-1).message,/selected|selection/i);
+});
+
+test('identical Next clicks on changed pages are progress, not a repetition failure', async () => {
+  let frames=0;
+  const next={...click,intent:'navigate',label:'Next'};
+  const h=harness([next,next,next,{type:'done',message:'Ready'}],{capture:async()=>({...bounds,imageDataUrl:'frame'+(++frames)})});
+  await h.engine.run('Move through pages');
+  assert.equal(h.calls.filter(c=>c==='click').length,3);
+  assert.equal(h.updates.at(-1).status,'done');
+});
+
+test('a verified map can accompany the submission action in one model response', async () => {
+  const {type,...form}=formMap;
+  const h=harness([{...submit,form:{...form,navigation:'submit-form'}},
+    {...{type:'done',message:'Confirmed'},form:{...form,navigation:'none',status:'complete'}}]);
+  await h.engine.run('Submit test form',{allowSubmit:true});
+  assert.equal(h.calls.filter(c=>c==='click').length,1);
+  assert.equal(h.updates.at(-1).status,'done');
+  assert.throws(()=>parseAutoAction(JSON.stringify({...submit,form:{...form,extra:'bad'}}),{...bounds,allowSubmit:true}));
 });
 test('external abort stops, errors propagate with exactly one error update, invalid goals never start', async () => {
   const controller = new AbortController(); controller.abort();
@@ -212,4 +265,52 @@ test('pending input labels prevent ambiguous alias typing before any duplicate i
   assert.match(contexts[3].history.at(-1).message, /Outstanding field labels: \["Result"\]/);
   assert.match(contexts[4].history.at(-1).message, /Outstanding field labels: \["Result"\]/);
   assert.equal(h.updates.at(-1).status, 'done');
+});
+
+const formMap = { type: 'map', layout: 'per-question', question: 'Question 1', navigation: 'submit-answer', scroll: 'none', status: 'answer-verified' };
+const submit = { type: 'click', x: 30, y: 40, label: 'Submit answer', intent: 'submit' };
+test('submission permission cannot come from the model or a misleading click intent', () => {
+  assert.throws(() => parseAutoAction(JSON.stringify(submit), bounds), /submission/i);
+  assert.deepEqual(parseAutoAction(JSON.stringify(submit), { ...bounds, allowSubmit: true }), submit);
+  assert.throws(() => parseAutoAction(JSON.stringify({ ...submit, intent: 'navigate' }), { ...bounds, allowSubmit: true }), /intent/i);
+  assert.throws(() => parseAutoAction(JSON.stringify({ ...submit, label: 'Pay now' }), { ...bounds, allowSubmit: true }), /sensitive/i);
+  assert.throws(() => parseAutoAction(JSON.stringify({ ...formMap, layout: 'whatever' }), bounds));
+});
+test('maps questions, requires verified answers before submission and observes completion', async () => {
+  const seen = [], executed = [];
+  const actions = [submit, { ...formMap, status: 'incomplete', scroll: 'down' }, submit,
+    { ...formMap, navigation: 'submit-form' }, submit, { type: 'done', message: 'Submitted' },
+    { ...formMap, question: 'Confirmation', navigation: 'none', status: 'complete' },
+    { type: 'done', message: 'Submission confirmed' }];
+  const h = harness([], { decide: async c => { seen.push(c); return JSON.stringify(actions.shift()); }, execute: async a => executed.push(a) });
+  await h.engine.run('Complete and submit this test form', { allowSubmit: true });
+  assert.deepEqual(executed, [submit]);
+  assert.equal(seen[2].form.scroll, 'down');
+  assert.equal(seen[5].form, null, 'navigation invalidates old question verification');
+  assert.match(seen[6].history.at(-1).message, /confirmation/i);
+  assert.equal(h.updates.at(-1).status, 'done');
+});
+test('question map survives bounded action history and navigation needs a new map', async () => {
+  const contexts = [], actions = [formMap, { ...click, intent: 'navigate', label: 'Next' }, submit, { type: 'need_input', message: 'Stop' }];
+  const h = harness([], { decide: async c => { contexts.push(c); return JSON.stringify(actions.shift()); } });
+  await h.engine.run('Complete and submit test form', { allowSubmit: true });
+  assert.equal(contexts[2].form, null);
+  assert.match(contexts[3].history.at(-1).message, /map/i);
+});
+test('unchanged screenshot after a click gives feedback rather than silently advancing', async () => {
+  const contexts = [], actions = [click, { type: 'need_input', message: 'Stop' }];
+  const h = harness([], { decide: async c => { contexts.push(c); return JSON.stringify(actions.shift()); } });
+  await h.engine.run('Focus name');
+  assert.match(contexts[1].observation.message, /unchanged/i);
+});
+test('malformed model output receives bounded correction without executing it', async () => {
+  const contexts=[]; const replies=['not JSON', JSON.stringify({type:'need_input',message:'Stop'})];
+  const h=harness([], {decide:async c=>{contexts.push(c); return replies.shift();}});
+  await h.engine.run('Fill form');
+  assert.match(contexts[1].history.at(-1).message,/JSON/);
+  assert.ok(!h.calls.includes('click'));
+  assert.equal(h.updates.at(-1).status,'paused');
+  const bad=harness([], {decide:async()=> 'not JSON'});
+  await assert.rejects(bad.engine.run('Fill form'), /JSON/);
+  assert.equal(bad.calls.filter(c=>c==='capture').length,3);
 });

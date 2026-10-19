@@ -118,16 +118,46 @@
     autoModeActive = !!state.active;
     if (typeof state.supported === 'boolean') autoModeSupported = state.supported;
     const button = $('#auto-mode-btn');
+    $('#auto-submit').disabled = autoModeActive || !autoModeSupported;
+    for (const id of ['#auto-target', '#auto-zen-connect', '#auto-zen-tab']) $(id).disabled = autoModeActive;
     button.textContent = autoModeActive ? 'Stop Auto' : 'Auto';
     button.classList.toggle('on', autoModeActive);
     button.disabled = !autoModeSupported && !autoModeActive;
     if (!autoModeSupported) button.title = 'Desktop Auto currently requires native Hyprland, grim and ydotool.';
     const status = $('#auto-mode-status');
-    status.textContent = state.message || '';
+    status.textContent = state.message ? (state.step ? 'Step ' + state.step + ' · ' : '') + state.message : '';
     status.classList.toggle('hidden', !state.message);
     setBusy(autoModeActive);
   }
   wingman.on('auto-mode:state', paintAutoMode);
+  $('#auto-target').addEventListener('change', () => {
+    const browser = document.querySelector('input[name="auto-target"]:checked').value === 'zen';
+    $('#auto-zen-connect').classList.toggle('hidden', !browser);
+    $('#auto-zen-tab').classList.toggle('hidden', !browser);
+    $('#auto-mode-btn').title = browser ? 'Run on the selected Zen tab without using the desktop cursor. Escape stops Auto.' : 'Focus the target app within 3 seconds after Auto starts. Escape stops Auto.';
+  });
+  $('#auto-zen-connect').addEventListener('click', async () => {
+    if (busy) return showStatus('Stop the current task before refreshing Zen tabs.');
+    const list = $('#auto-zen-tab');
+    const selected = list.querySelector('input:checked')?.value;
+    $('#auto-zen-connect').disabled = true;
+    try {
+      const tabs = await wingman.autoModeZenTabs();
+      list.replaceChildren();
+      for (const tab of tabs) {
+        const label = document.createElement('label');
+        const input = document.createElement('input');
+        input.type = 'radio'; input.name = 'zen-tab'; input.value = tab.id; input.checked = tab.id === selected;
+        label.append(input, document.createTextNode(' ' + (tab.title || tab.url || 'Untitled tab')));
+        list.append(label);
+      }
+      if (!tabs.length) list.textContent = 'No web tabs available';
+      showStatus(tabs.length ? 'Zen connected. Select the form tab; leave it untouched while Auto runs.' : 'Zen connected, but no web tabs are available.');
+    } catch (error) {
+      list.textContent = 'Connect to list tabs';
+      showStatus(error?.message || 'Could not connect to Zen. Restart it with --marionette.', true);
+    } finally { $('#auto-zen-connect').disabled = autoModeActive; }
+  });
   let autoClickStops = false;
   $('#auto-mode-btn').addEventListener('pointerdown', () => { autoClickStops = autoModeActive; });
   $('#auto-mode-btn').addEventListener('pointercancel', () => { autoClickStops = false; });
@@ -143,9 +173,13 @@
     const goal = $('#input').value.trim();
     if (!goal) return showStatus('Type a task first, then click Auto.');
     if (busy) return showStatus('Wait for the current answer first.');
+    const target = document.querySelector('input[name="auto-target"]:checked').value;
+    const tabId = $('#auto-zen-tab input:checked')?.value;
+    if (target === 'zen' && !tabId) return showStatus('Connect Zen and select the form tab first.');
     try {
       clearMessages();
-      await wingman.autoModeStart(goal);
+      await wingman.autoModeStart(goal, { allowSubmit: $('#auto-submit').checked, target, ...(target === 'zen' ? { tabId } : {}) });
+      $('#auto-submit').checked = false;
     } catch (error) { showStatus(error?.message || 'Auto could not start.', true); }
   });
 

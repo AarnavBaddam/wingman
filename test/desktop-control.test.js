@@ -46,11 +46,23 @@ test('focus and geometry changes during capture invalidate image; PNG scaling mi
   await assert.rejects(h.control.capture(t), /dimensions/);
   await assert.rejects(h.control.execute(t, { type: 'click', x: 1, y: 1 }), /Capture/);
 });
+test('drag holds through intermediate window-local moves and releases on focus loss', async () => {
+  const drag = { type: 'drag', x: 10, y: 20, toX: 300, toY: 400 };
+  const h = harness(); const t = await h.ready();
+  await h.control.execute(t, drag);
+  const buttons = h.calls.filter(c => c.command === 'ydotool' && c.args[0] === 'click');
+  assert.deepEqual(buttons.map(c => c.args), [['click', '0x40'], ['click', '0x80']]);
+  assert.ok(h.calls.some(c => c.args[1] === 'hl.dispatch(hl.dsp.cursor.move({x=-600,y=450}))'));
+  await h.control.capture(t);
+  h.after = (cmd, args) => { if (cmd === 'ydotool' && args[1] === '0x40') h.window.pid = 43; };
+  await assert.rejects(h.control.execute(t, drag), /changed/);
+  assert.ok(h.calls.slice(-2).some(c => c.args[1] === '0x80'));
+});
 test('click maps local pixels to global logical coordinates and scroll positive means down', async () => {
   const h = harness(); const t = await h.ready();
   await h.control.execute(t, { type: 'click', x: 10.4, y: 20.6 });
   assert.deepEqual(h.calls.find(c => c.args[0] === 'eval').args, ['eval', 'hl.dispatch(hl.dsp.cursor.move({x=-890,y=71}))']);
-  assert.deepEqual(h.calls.find(c => c.command === 'ydotool').args, ['click', '0xC0']);
+  assert.deepEqual(h.calls.find(c => c.command === 'ydotool' && c.args[0] === 'click').args, ['click', '0xC0']);
   await h.control.capture(t);
   await h.control.execute(t, { type: 'scroll', x: 799.9, y: 599.9, amount: 3 });
   assert.deepEqual(h.calls.at(-1).args, ['mousemove', '-w', '-x', '0', '-y', '-3']);
@@ -89,7 +101,7 @@ test('cancellation after capture or cursor movement prevents every subsequent in
 test('typing sends printable text only through stdin with fixed argv, including shell-looking strings', async () => {
   const h = harness(); const t = await h.ready(); const text = '--file /etc/passwd; $(touch /tmp/evil) `date`';
   await h.control.execute(t, { type: 'type', text });
-  const typed = h.calls.filter(c => c.command === 'ydotool');
+  const typed = h.calls.filter(c => c.command === 'ydotool' && c.args[0] === 'type');
   assert.equal(typed.map(c => c.options.input).join(''), text);
   assert(typed.every(c => c.options.input.length <= 8));
   const c = typed[0]; assert.equal(c.command, 'ydotool');
@@ -120,7 +132,7 @@ test('each captured image authorizes only one action', async () => {
 });
 test('focus loss after the first type chunk prevents sending the remaining text', async () => {
   const h = harness(); const t = await h.ready();
-  h.after = command => { if (command === 'ydotool') h.window.pid = 43; };
+  h.after = (command, args) => { if (command === 'ydotool' && args[0] === 'type') h.window.pid = 43; };
   await assert.rejects(h.control.execute(t, { type: 'type', text: 'abcdefghmore text never sent' }), /changed/);
   const typed = h.calls.filter(c => c.command === 'ydotool' && c.args[0] === 'type');
   assert.equal(typed.length, 1); assert.equal(typed[0].options.input, 'abcdefgh');
@@ -135,7 +147,7 @@ test('aborted typing or mouse input releases virtual state on the same socket wi
     };
     const action = type === 'type' ? { type, text: 'abcdefghremaining' } : { type, x: 1, y: 1 };
     await assert.rejects(h.control.execute(t, action, controller.signal), { name: 'AbortError' });
-    const input = h.calls.filter(c => c.command === 'ydotool');
+    const input = h.calls.filter(c => c.command === 'ydotool' && c.args[0] !== 'debug');
     assert.equal(input.length, 3);
     assert.deepEqual(input[1].args, ['click', '0x80']);
     assert.deepEqual(input[2].args, ['key', '--key-delay', '0', ...Array.from({ length: 127 }, (_, i) => `${i + 1}:0`)]);
@@ -149,9 +161,22 @@ test('aborted typing or mouse input releases virtual state on the same socket wi
 });
 test('input failure still attempts both releases and reports actionable cleanup failure', async () => {
   const h = harness(); const t = await h.ready();
-  h.after = command => { if (command === 'ydotool') throw Error('socket unavailable'); };
+  h.after = (command, args) => { if (command === 'ydotool' && args[0] !== 'debug') throw Error('socket unavailable'); };
   await assert.rejects(h.control.execute(t, { type: 'type', text: 'hello' }), error => error.code === 'INPUT_CLEANUP' && /virtual key\/button release failed.*ydotool/.test(error.message));
-  assert.deepEqual(h.calls.filter(c => c.command === 'ydotool').map(c => c.args[0]), ['type', 'click', 'key']);
+  assert.deepEqual(h.calls.filter(c => c.command === 'ydotool').map(c => c.args[0]), ['debug', 'type', 'click', 'key']);
+});
+test('missing input service fails before input or cleanup with actionable setup guidance', async () => {
+  const h = harness(); const t = await h.ready();
+  h.after = (command, args) => { if (command === 'ydotool' && args[0] === 'debug') throw Error('socket unavailable'); };
+  await assert.rejects(h.control.execute(t, { type: 'click', x: 1, y: 1 }), error =>
+    error.code !== 'INPUT_CLEANUP' && /systemctl --user start ydotool/.test(error.message) && /YDOTOOL_SOCKET/.test(error.message));
+  assert.deepEqual(h.calls.filter(c => c.command === 'ydotool').map(c => c.args[0]), ['debug']);
+});
+test('focus change during daemon preflight prevents input and unnecessary releases', async () => {
+  const h = harness(); const t = await h.ready();
+  h.after = (command, args) => { if (command === 'ydotool' && args[0] === 'debug') h.window.pid = 43; };
+  await assert.rejects(h.control.execute(t, { type: 'type', text: 'hello' }), /changed/);
+  assert.deepEqual(h.calls.filter(c => c.command === 'ydotool').map(c => c.args[0]), ['debug']);
 });
 test('subprocess abort waits for actual child close before rejection', async () => {
   const { EventEmitter } = require('node:events');

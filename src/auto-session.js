@@ -9,22 +9,25 @@ function wait(ms, signal) {
   });
 }
 
-function createAutoSession({ getSettings, createLLM, getCodexHome, createDesktopControl, createStopWatcher,
+function createAutoSession({ getSettings, createLLM, getCodexHome, createDesktopControl, createBrowserControl, createStopWatcher,
   research, onUpdate = () => {}, onEnd = () => {}, countdownMs = 3000 }) {
   let current = null, completion = Promise.resolve();
   let last = { active: false, status: 'idle', message: '' };
   const manager = {
     get active() { return current !== null; },
+    get target() { return current?.targetType || null; },
     get completion() { return completion; },
     get status() { return last; },
     stop(reason = 'Auto stopped.') {
       if (!current) return;
       current.reason = reason; current.controller.abort(); current.engine?.stop();
     },
-    start(goal) {
+    start(goal, { allowSubmit = false, target: targetType = 'desktop', tabId } = {}) {
       if (current) throw new Error('Auto is already running.');
       if (typeof goal !== 'string' || !goal.trim() || goal.length > 4000) throw new Error('Type an Auto task first (maximum 4,000 characters).');
-      const session = { controller: new AbortController(), reason: 'Auto stopped.' };
+      if (!['desktop', 'zen'].includes(targetType)) throw new Error('Invalid Auto target.');
+      if (targetType === 'zen' && (typeof tabId !== 'string' || !tabId.trim() || tabId.length > 200)) throw new Error('Connect Zen and select a target tab first.');
+      const session = { controller: new AbortController(), reason: 'Auto stopped.', targetType };
       current = session;
       const signal = session.controller.signal;
       const publish = update => { last = { ...update, active: true }; onUpdate(last); };
@@ -34,13 +37,16 @@ function createAutoSession({ getSettings, createLLM, getCodexHome, createDesktop
           const settings = getSettings();
           const llm = createLLM({ ...settings, codexHome: getCodexHome(settings) });
           if (!llm.ready) throw new Error('Configure a vision-capable answer provider in Settings before Auto.');
-          const desktop = createDesktopControl();
+          const desktop = targetType === 'zen' ? createBrowserControl?.() : createDesktopControl();
+          if (!desktop) throw new Error('Zen tab control is unavailable. Connect Zen first.');
           session.watcher = createStopWatcher({ onStop: reason => manager.stop(reason) });
           publish({ status: 'starting', message: 'Preparing Auto. Escape stops it.' });
           await session.watcher.start(); signal.throwIfAborted();
-          publish({ status: 'countdown', message: 'Focus the target app within 3 seconds. Escape stops Auto.' });
-          await wait(countdownMs, signal);
-          const target = await desktop.lockTarget(signal);
+          if (targetType === 'desktop') {
+            publish({ status: 'countdown', message: 'Focus the target app within 3 seconds. Escape stops Auto.' });
+            await wait(countdownMs, signal);
+          } else publish({ status: 'starting', message: 'Locking the selected Zen tab. You can work elsewhere; Escape stops Auto.' });
+          const target = targetType === 'zen' ? await desktop.lockTarget(tabId, signal) : await desktop.lockTarget(signal);
           signal.throwIfAborted();
           session.engine = createAutoMode({
             capture: innerSignal => desktop.capture(target, innerSignal),
@@ -49,10 +55,10 @@ function createAutoSession({ getSettings, createLLM, getCodexHome, createDesktop
               return session.pendingInput;
             },
             research: (query, innerSignal) => research(query, settings, innerSignal),
-            decide: ({ goal, screen, history, sources, signal: innerSignal }) => llm.stream({
+            decide: ({ goal, screen, history, sources, form, observation, allowSubmit, signal: innerSignal }) => llm.stream({
               system: AUTO_SYSTEM,
               turns: [{ role: 'user', text: JSON.stringify({ goal, screen: { width: screen.width, height: screen.height },
-                history, sources: sources.map(source => ({ ...source, content: String(source.content || '').slice(0, 4000) })) }) }],
+                allowSubmit, form, observation, history, sources: sources.map(source => ({ ...source, content: String(source.content || '').slice(0, 4000) })) }) }],
               imageDataUrl: screen.imageDataUrl, maxTokens: 1200, signal: innerSignal, onToken() {}
             }),
             onUpdate(update) {
@@ -60,7 +66,7 @@ function createAutoSession({ getSettings, createLLM, getCodexHome, createDesktop
               publish(update);
             }
           });
-          await session.engine.run(goal, { signal });
+          await session.engine.run(goal, { signal, allowSubmit: allowSubmit === true });
         } catch (error) {
           terminal = signal.aborted ? { status: 'stopped', message: session.reason } :
             { status: 'error', message: error?.message || 'Auto could not continue. Review the screen.' };

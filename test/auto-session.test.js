@@ -51,3 +51,36 @@ test('session remains active until cancelled input teardown drains', async () =>
   release(); await h.manager.completion;
   assert.equal(h.manager.active, false); assert.equal(h.ended, 1);
 });
+
+test('session passes only explicit per-run submission permission and form observations to the provider', async () => {
+  for (const allowSubmit of [true, false, 'true']) {
+    const h = setup();
+    h.manager.start('Complete test form', { allowSubmit }); await h.manager.completion;
+    const context = JSON.parse(h.requests[0].turns[0].text);
+    assert.equal(context.allowSubmit, allowSubmit === true);
+    assert.equal(context.form, null);
+    assert.equal(context.observation, null);
+  }
+});
+
+test('Zen sessions lock only the selected tab and skip desktop countdown/control', async () => {
+  let selected, executed=0;
+  const h=setup({countdownMs:10000,createDesktopControl:()=>{throw Error('must not use desktop');},
+    createBrowserControl:()=>({lockTarget:async(id,signal)=>{selected=id;assert.equal(signal.aborted,false);return {id};},
+      capture:async()=>({imageDataUrl:'tab image',width:800,height:600}),execute:async()=>executed++})});
+  h.manager.start('Complete form',{target:'zen',tabId:'chosen-tab'});
+  assert.equal(h.manager.target,'zen');
+  await h.manager.completion;
+  assert.equal(selected,'chosen-tab');assert.equal(executed,0);
+  assert.ok(!h.updates.some(u=>u.status==='countdown'));
+  assert.equal(h.manager.status.status,'done');
+  assert.equal(h.manager.target,null);
+});
+
+test('invalid browser targets fail before starting a session', () => {
+  const h=setup();
+  for(const options of [{target:'other'},{target:'zen'},{target:'zen',tabId:''},{target:'zen',tabId:3}]) {
+    assert.throws(()=>h.manager.start('Fill form',options),/target|tab/i);
+    assert.equal(h.manager.active,false);
+  }
+});
