@@ -1,5 +1,6 @@
 node_modules/
 dist/
+packages/macdotool/bin/
 graphify-out/
 out/
 native/systemaudio

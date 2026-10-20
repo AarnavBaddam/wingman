@@ -8,6 +8,7 @@
   "author": "",
   "main": "main.js",
   "scripts": {
+    "prestart": "node packages/macdotool/build.js",
     "start": "electron .",
     "test": "node --test",
     "pack": "electron-builder --dir",

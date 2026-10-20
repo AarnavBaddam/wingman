@@ -5,7 +5,7 @@ contextBridge.exposeInMainWorld('wingman', {
   getZoomLevel: () => webFrame.getZoomLevel(),
   platform: process.platform,
   compositorMoves: process.platform === 'linux' && !!process.env.HYPRLAND_INSTANCE_SIGNATURE,
-  autoRefreshSupported: process.platform === 'linux' && !!process.env.HYPRLAND_INSTANCE_SIGNATURE,
+  autoRefreshSupported: process.platform === 'darwin' || (process.platform === 'linux' && !!process.env.HYPRLAND_INSTANCE_SIGNATURE),
   autoRefreshPause: (paused) => ipcRenderer.send('auto-refresh:pause', paused),
   autoRefreshStatus: () => ipcRenderer.invoke('auto-refresh:status'),
   autoModeStatus: () => ipcRenderer.invoke('auto-mode:status'),

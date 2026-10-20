@@ -30,11 +30,17 @@ module.exports = {
   appId: "dev.prahladv.aether",
   productName: "Aether",
   publish: null,
-  files: ["main.js", "preload.js", "src/**/*", "renderer/**/*", "data/**/*", "LICENSE"],
+  files: ["main.js", "preload.js", "src/**/*", "renderer/**/*", "data/**/*", "packages/macdotool/index.js", "LICENSE"],
+  // Desktop Auto on macOS needs the macdotool helper; compile it before packaging.
+  beforePack: (context) => {
+    if (context.electronPlatformName === "darwin") require("./packages/macdotool/build").build();
+  },
   directories: { buildResources: "build-resources" },
   mac: {
     target: [{ target: "zip", arch: ["arm64"] }],
     category: "public.app-category.productivity",
+    // Outside asar so it can be spawned; electron-builder signs it with the app.
+    extraResources: [{ from: "packages/macdotool/bin/macdotool", to: "macdotool" }],
     // With a real cert, let electron-builder discover it and apply the hardened
     // runtime (notarization is refused without it). Without one, identity:null
     // makes it skip signing rather than fail.

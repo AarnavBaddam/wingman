@@ -321,18 +321,25 @@ async function runFeature(mode, userText, capturePoint) {
 }
 
 function autoRefreshSupported() {
-  return process.platform === 'linux' && !!process.env.HYPRLAND_INSTANCE_SIGNATURE && app.commandLine.getSwitchValue('ozone-platform') !== 'headless';
+  if (app.commandLine.getSwitchValue('ozone-platform') === 'headless') return false;
+  return process.platform === 'darwin' || (process.platform === 'linux' && !!process.env.HYPRLAND_INSTANCE_SIGNATURE);
 }
+const pointInWindow = point => {
+  if (!win || win.isDestroyed() || !win.isVisible()) return false;
+  const b = win.getBounds();
+  return point.x >= b.x && point.y >= b.y && point.x < b.x + b.width && point.y < b.y + b.height;
+};
 async function configureAutoRefresh(enabled) {
   if (!autoRefresh) autoRefresh = require('./src/auto-refresh').createAutoRefresh({
     run: point => runFeature('assist', '', point), isBusy: () => state.busy,
     canObserve: () => !!win && !win.isDestroyed() && win.isVisible() && !autoRefreshPaused
   });
   if (!enabled) { autoRefresh.setEnabled(false); activityWatcher?.stop(); activityWatcher = null; publishAutoRefreshState(false); return; }
-  if (!autoRefreshSupported()) throw new Error('Click/scroll auto refresh is currently available on Hyprland. Manual Assist remains available.');
+  if (!autoRefreshSupported()) throw new Error('Click/scroll auto refresh is currently available on macOS and Hyprland. Manual Assist remains available.');
   if (!activityWatcher) {
-    const watcher = require('./src/hypr-activity').createHyprActivityWatcher({
+    const watcher = require(process.platform === 'darwin' ? './src/mac-activity' : './src/hypr-activity')[process.platform === 'darwin' ? 'createMacActivityWatcher' : 'createHyprActivityWatcher']({
       onActivity: point => autoRefresh.activity(point),
+      isOwnPoint: pointInWindow,
       onError: () => {
         autoRefresh.setEnabled(false);
         activityWatcher?.stop(); activityWatcher = null;
@@ -352,7 +359,7 @@ function publishAutoRefreshState(active, error) {
 }
 
 function startAutoMode(goal, options) {
-  if (!autoRefreshSupported()) throw new Error('Desktop Auto currently requires native Hyprland, grim and ydotool.');
+  if (!autoRefreshSupported()) throw new Error('Desktop Auto currently requires macOS, or native Hyprland with grim and ydotool.');
   if (state.busy) throw new Error('Wait for the current answer or stop Auto first.');
   if (!win || win.isDestroyed() || !win.isVisible()) throw new Error('Show Aether before starting Auto.');
   if (autoRefreshPaused) throw new Error('Close Settings/onboarding and expand Aether before starting Auto.');
@@ -361,7 +368,9 @@ function startAutoMode(goal, options) {
     getCodexHome: settings => settings.codexSeparateAccount ? path.join(app.getPath('userData'), 'codex-profile') : undefined,
     createDesktopControl: () => require('./src/desktop-control').createDesktopControl(),
     createBrowserControl: () => getZenControl(),
-    createStopWatcher: options => require('./src/hypr-auto-stop').createHyprAutoStop(options),
+    createStopWatcher: options => process.platform === 'darwin'
+      ? require('./src/mac-auto-stop').createMacAutoStop(options)
+      : require('./src/hypr-auto-stop').createHyprAutoStop(options),
     research: (query, settings) => getEvidence(query, settings.apiKeys.tavily),
     onUpdate: update => {
       // Never expose screenshots, typed values or source bodies through status logs.

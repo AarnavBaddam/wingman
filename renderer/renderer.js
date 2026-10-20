@@ -123,7 +123,7 @@
     button.textContent = autoModeActive ? 'Stop Auto' : 'Auto';
     button.classList.toggle('on', autoModeActive);
     button.disabled = !autoModeSupported && !autoModeActive;
-    if (!autoModeSupported) button.title = 'Desktop Auto currently requires native Hyprland, grim and ydotool.';
+    if (!autoModeSupported) button.title = 'Desktop Auto currently requires macOS, or native Hyprland with grim and ydotool.';
     const status = $('#auto-mode-status');
     status.textContent = state.message ? (state.step ? 'Step ' + state.step + ' · ' : '') + state.message : '';
     status.classList.toggle('hidden', !state.message);
@@ -496,7 +496,7 @@ function fillSettings() {
     $('#auto-refresh').disabled = !autoRefreshSupported;
     $('#auto-refresh-hint').textContent = autoRefreshSupported
       ? 'Off by default. After interaction pauses, a screenshot goes to your selected provider and uses its allowance.'
-      : 'Click/scroll refresh is currently available on Hyprland. Manual Assist works here.';
+      : 'Click/scroll refresh is currently available on macOS and Hyprland. Manual Assist works here.';
     document.querySelectorAll('#provider-seg button').forEach((b) => b.classList.toggle('on', b.dataset.provider === settings.provider));
     $('#key-openai').value = settings.apiKeys.openai || '';
     $('#key-anthropic').value = settings.apiKeys.anthropic || '';
@@ -783,7 +783,8 @@ async function saveSettings() {
       body: 'Aether needs two macOS permissions. Click each button, turn <strong>Aether</strong> ON in the window that opens, then come back here.<ul><li><strong>Microphone</strong> — to hear you</li><li><strong>Screen Recording</strong> — to see your screen and hear meeting audio</li></ul>',
       buttons: [
         { label: 'Open Microphone settings', action: () => wingman.openPane('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone') },
-        { label: 'Open Screen Recording settings', action: () => wingman.openPane('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture') }
+        { label: 'Open Screen Recording settings', action: () => wingman.openPane('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture') },
+        { label: 'Open Accessibility settings (Auto only)', action: () => wingman.openPane('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility') }
       ]
     }] : []),
     {

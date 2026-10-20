@@ -1,0 +1,12 @@
+{
+  "name": "macdotool",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ydotool-style input, window and screen helper for macOS (CGEvent, Accessibility, ScreenCaptureKit).",
+  "license": "GPL-3.0-or-later",
+  "main": "index.js",
+  "os": ["darwin"],
+  "scripts": {
+    "build": "node build.js"
+  }
+}

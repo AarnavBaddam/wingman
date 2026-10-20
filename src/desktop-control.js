@@ -35,9 +35,19 @@ function run(command, args, options) {
   });
 }
 
-function createDesktopControl({ env = process.env, pid = process.pid, call = run } = {}) {
+function createDesktopControl({ env = process.env, pid = process.pid, call = run, platform = process.platform,
+  macdotool = platform === 'darwin' ? require('../packages/macdotool').binaryPath() : 'macdotool' } = {}) {
   const locked = new WeakMap();
-  const helperEnv = { ...env, YDOTOOL_SOCKET: env.YDOTOOL_SOCKET || (env.XDG_RUNTIME_DIR ? `${env.XDG_RUNTIME_DIR}/.ydotool_socket` : '') };
+  const mac = platform === 'darwin';
+  // macdotool mirrors ydotool's argv and hyprctl's JSON, so only command names differ per platform.
+  const inputTool = mac ? macdotool : 'ydotool';
+  const helperEnv = mac ? env : { ...env, YDOTOOL_SOCKET: env.YDOTOOL_SOCKET || (env.XDG_RUNTIME_DIR ? `${env.XDG_RUNTIME_DIR}/.ydotool_socket` : '') };
+  const query = (what, signal) => mac ? invoke(macdotool, [what], signal) : invoke('hyprctl', ['-j', what], signal);
+  async function moveCursor(x, y, signal) {
+    if (mac) { await invoke(macdotool, ['mousemove', '--absolute', '-x', String(x), '-y', String(y)], signal); return; }
+    const response = await invoke('hyprctl', ['eval', `hl.dispatch(hl.dsp.cursor.move({x=${x},y=${y}}))`], signal);
+    if (String(response).trim() !== 'ok') throw new Error('Hyprland cursor move failed.');
+  }
   async function invoke(command, args, signal, extra = {}) {
     cancelled(signal);
     try {
@@ -47,6 +57,11 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
     } catch (error) {
       cancelled(signal);
       if (error.name === 'AbortError') throw error;
+      if (mac) {
+        if (args[0] === 'capture') throw new Error('Desktop capture failed. Allow Aether in System Settings > Privacy & Security > Screen Recording, then retry.');
+        if (['debug', 'click', 'mousemove', 'type', 'key'].includes(args[0])) throw new Error('Desktop input failed. Allow Aether in System Settings > Privacy & Security > Accessibility, then retry.', { cause: error });
+        throw new Error('Desktop control failed. Allow Aether in System Settings > Privacy & Security > Accessibility, then retry.');
+      }
       if (command === 'ydotool') throw new Error(`Desktop input failed. Run systemctl --user start ydotool, then check YDOTOOL_SOCKET (${helperEnv.YDOTOOL_SOCKET || 'not configured'}) and /dev/uinput permissions.`, { cause: error });
       throw new Error(`Desktop ${command === 'grim' ? 'capture' : 'control'} failed. Check Hyprland, grim, and the ydotool service/socket.`);
     }
@@ -60,7 +75,7 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
     return { address: w.address, pid: w.pid, class: w.class, at: Object.freeze([...w.at]), size: Object.freeze([...w.size]) };
   }
   async function active(signal) {
-    try { return windowData(JSON.parse(String(await invoke('hyprctl', ['-j', 'activewindow'], signal)))); }
+    try { return windowData(JSON.parse(String(await query('activewindow', signal)))); }
     catch (error) { cancelled(signal); throw new Error('Target window unavailable. Focus the intended application and retry.'); }
   }
   async function validate(target, signal) {
@@ -79,7 +94,8 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
     // Invalidate the previous image even if this capture fails.
     locked.set(target, false);
     const [x, y] = target.at, [width, height] = target.size;
-    const png = await invoke('grim', ['-s', '1', '-g', `${x},${y} ${width}x${height}`, '-t', 'png', '-'], signal);
+    const geometry = `${x},${y} ${width}x${height}`;
+    const png = mac ? await invoke(macdotool, ['capture', '-g', geometry], signal) : await invoke('grim', ['-s', '1', '-g', geometry, '-t', 'png', '-'], signal);
     await validate(target, signal);
     if (!Buffer.isBuffer(png) || png.length < 33 || png.length > MAX_BUFFER ||
         png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a' || png.readUInt32BE(8) !== 13 || png.toString('ascii', 12, 16) !== 'IHDR' ||
@@ -96,7 +112,7 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
     if (!action || !['click', 'type', 'scroll', 'drag'].includes(action.type)) throw new Error('Unsupported desktop action.');
     if (action.type === 'type') {
       if (typeof action.text !== 'string' || !action.text.length || action.text.length > 1000 || /[^\x20-\x7e]/.test(action.text)) throw new Error('Type accepts printable ASCII text only, without Enter or Tab.');
-      if (!helperEnv.YDOTOOL_SOCKET) throw new Error('Configure the ydotool socket before desktop input.');
+      if (!mac && !helperEnv.YDOTOOL_SOCKET) throw new Error('Configure the ydotool socket before desktop input.');
       // Focus checks and input are separate compositor operations, not atomic.
       // Small chunks bound text sent if focus changes during a helper call.
       for (let offset = 0; offset < action.text.length; offset += 8) {
@@ -108,12 +124,12 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
     if (![action.x, action.y].every(Number.isFinite) || action.x < 0 || action.y < 0 || action.x >= target.size[0] || action.y >= target.size[1]) throw new Error('Desktop coordinates are outside the captured window.');
     if (action.type === 'drag' && (![action.toX, action.toY].every(Number.isFinite) || action.toX < 0 || action.toY < 0 || action.toX >= target.size[0] || action.toY >= target.size[1])) throw new Error('Desktop drag destination is outside the captured window.');
     if (action.type === 'scroll' && (!Number.isSafeInteger(action.amount) || action.amount === 0 || Math.abs(action.amount) > 5)) throw new Error('Scroll amount must be a nonzero integer between -5 and 5.');
-    if (!helperEnv.YDOTOOL_SOCKET) throw new Error('Configure the ydotool socket before desktop input.');
+    if (!mac && !helperEnv.YDOTOOL_SOCKET) throw new Error('Configure the ydotool socket before desktop input.');
     const x = target.at[0] + Math.min(target.size[0] - 1, Math.round(action.x));
     const y = target.at[1] + Math.min(target.size[1] - 1, Math.round(action.y));
     async function checkPoint(px = x, py = y) {
       let clients;
-      try { clients = JSON.parse(String(await invoke('hyprctl', ['-j', 'clients'], signal))); }
+      try { clients = JSON.parse(String(await query('clients', signal))); }
       catch (error) { cancelled(signal); throw new Error('Cannot check Aether window positions. Retry desktop control.'); }
       if (!Array.isArray(clients)) throw new Error('Cannot check Aether window positions.');
       for (const w of clients) {
@@ -124,8 +140,7 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
     }
     await checkPoint();
     await validate(target, signal);
-    const response = await invoke('hyprctl', ['eval', `hl.dispatch(hl.dsp.cursor.move({x=${x},y=${y}}))`], signal);
-    if (String(response).trim() !== 'ok') throw new Error('Hyprland cursor move failed.');
+    await moveCursor(x, y, signal);
     await checkPoint();
     await validate(target, signal);
     if (action.type === 'drag') {
@@ -136,8 +151,7 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
         const px = Math.round(x + (target.at[0] + endX - x) * i / 12);
         const py = Math.round(y + (target.at[1] + endY - y) * i / 12);
         await checkPoint(px, py); await validate(target, signal);
-        const moved = await invoke('hyprctl', ['eval', `hl.dispatch(hl.dsp.cursor.move({x=${px},y=${py}}))`], signal);
-        if (String(moved).trim() !== 'ok') throw new Error('Hyprland cursor move failed.');
+        await moveCursor(px, py, signal);
         await new Promise(resolve => setTimeout(resolve, 40));
       }
       await checkPoint(target.at[0] + endX, target.at[1] + endY);
@@ -154,12 +168,12 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
       if (!connected) {
         // debug connects to the daemon without emitting input. Fail before cleanup
         // is needed, and recheck focus after the extra helper round trip.
-        await invoke('ydotool', ['debug'], signal);
+        await invoke(inputTool, ['debug'], signal);
         await validate(target, signal);
         connected = true;
       }
       inputAttempted = true;
-      return invoke('ydotool', args, signal, extra);
+      return invoke(inputTool, args, signal, extra);
     };
     try { await executeAction(target, action, signal, input); }
     catch (error) {
@@ -167,17 +181,19 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
         // SIGKILL can interrupt a virtual key/button hold. Release on the same
         // ydotool device after the input helper closes, even after cancellation.
         // Only release after our own input attempt; never touch a physical device.
+        // macdotool type only ever presses virtual keycode 0.
         const releases = [
           ['click', '0x80'],
-          ['key', '--key-delay', '0', ...Array.from({ length: 127 }, (_, i) => `${i + 1}:0`)]
+          ['key', '--key-delay', '0', ...(mac ? ['0:0'] : Array.from({ length: 127 }, (_, i) => `${i + 1}:0`))]
         ];
         let cleanupFailed = false;
         for (const args of releases) {
-          try { await invoke('ydotool', args, undefined, { timeout: 750 }); }
+          try { await invoke(inputTool, args, undefined, { timeout: 750 }); }
           catch { cleanupFailed = true; }
         }
         if (cleanupFailed) {
-          const failure = new Error('Desktop input stopped, but virtual key/button release failed. Restore the ydotool service/socket before continuing.', { cause: error });
+          const failure = new Error(mac ? 'Desktop input stopped, but virtual key/button release failed. Check Aether\'s Accessibility permission before continuing.'
+            : 'Desktop input stopped, but virtual key/button release failed. Restore the ydotool service/socket before continuing.', { cause: error });
           failure.code = 'INPUT_CLEANUP';
           throw failure;
         }

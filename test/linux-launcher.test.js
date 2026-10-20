@@ -6,7 +6,8 @@ const path = require('node:path');
 const { installLauncher } = require('../scripts/install-linux');
 
 test('Linux launcher registers the portal identity and preserves quoted AppImage paths', t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aether-launcher-'));
+  // realpath: macOS tmpdir is a /var -> /private/var symlink.
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'aether-launcher-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const image = path.join(root, 'Aether $value "quoted" 100%.AppImage');
   fs.writeFileSync(image, '', { mode: 0o755 });

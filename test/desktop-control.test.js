@@ -11,7 +11,7 @@ function png(width = 800, height = 600) {
 }
 function harness() {
   const h = { calls: [], window: { address: '0x123abc', pid: 42, class: 'editor', mapped: true, at: [-900, 50], size: [800, 600] }, clients: [], image: png(), after: null };
-  h.control = createDesktopControl({ pid: 99, env: { XDG_RUNTIME_DIR: '/run/user/1000' }, call: async (command, args, options) => {
+  h.control = createDesktopControl({ pid: 99, platform: 'linux', env: { XDG_RUNTIME_DIR: '/run/user/1000' }, call: async (command, args, options) => {
     h.calls.push({ command, args, options });
     const stdout = command === 'grim' ? h.image : args[1] === 'activewindow' ? JSON.stringify(h.window) : args[1] === 'clients' ? JSON.stringify(h.clients) : 'ok';
     if (h.after) h.after(command, args);

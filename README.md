@@ -12,6 +12,7 @@ This is a fork of [Wingman by Aarnav Baddam](https://github.com/AarnavBaddam/win
 - Ollama, Claude CLI, and Codex CLI are available alongside the original API providers. Local Whisper transcription is available and is mandatory when Ollama is selected.
 - Typed factual questions search a bundled 1,832-article reference library first. Current questions, library gaps, and explicit model uncertainty use Tavily web search. The app displays retrieved source links and holds a factual answer until it cites one of them or states uncertainty. Retrieval and citation checks reduce unsupported answers; they cannot prove every claim true.
 - Linux AppImage packaging is configured; macOS and Windows targets remain available.
+- macOS has feature parity for desktop Auto and Auto refresh through the bundled [`macdotool`](packages/macdotool/README.md) helper, a ydotool-style Swift tool.
 
 ## Install
 
@@ -24,7 +25,22 @@ npm start
 
 Build a local unpacked app with `npm run pack`, or an AppImage on Linux with `npm run dist:linux`. `npm run dist` targets macOS; `npm run dist:win` targets Windows. macOS signing and notarization need your own Apple credentials. The Linux AppImage and cross-platform capture behavior need validation on the target machine.
 
-Electron 44 requires macOS 13 or later. After building on Linux, register the AppImage's desktop identity so Wayland portals can recognize Aether:
+Electron 44 requires macOS 13 or later; desktop Auto and Auto refresh on macOS need macOS 14+ and Xcode Command Line Tools (`xcode-select --install`) so `npm start` / `npm run pack` can compile `packages/macdotool`.
+
+### macOS permissions
+
+Grant these in **System Settings → Privacy & Security** to Aether (or to your terminal when running `npm start`):
+
+| Permission | Used for |
+| --- | --- |
+| Microphone | Hearing you |
+| Screen Recording | Assist screenshots, meeting audio, Auto captures |
+| Accessibility | Auto mode clicks, typing, scrolling and focused-window lookup (macOS prompts on first Auto run) |
+| Input Monitoring | Only if Auto refresh reports that it cannot observe clicks/scrolls |
+
+Unsigned local builds get a new identity on every rebuild, so macOS may ask again; sign with your own certificate (`MAC_SIGN=1`) to keep grants.
+
+After building on Linux, register the AppImage's desktop identity so Wayland portals can recognize Aether:
 
 ```bash
 node scripts/install-linux.js # defaults to dist/Aether-0.1.0.AppImage
@@ -51,11 +67,11 @@ Smart has three response depths: **Answer** gives the answer/code only; **Work**
 
 For a separate ChatGPT login on this Linux machine, sign in with `CODEX_HOME="$HOME/.config/Aether/codex-profile" codex login -c 'cli_auth_credentials_store="file"'`, then select **Codex CLI** and **Use a separate Aether ChatGPT login** in Settings. This preserves the normal development login. Other platforms use the `codex-profile` folder inside Aether's app-data directory. Do not share or commit its auth cache. Free CLI access is account-dependent and unverified; check [official access and usage guidance](https://learn.chatgpt.com/docs/pricing) before relying on it.
 
-Screen capture on native Hyprland requires `grim` on PATH (`sudo pacman -S --needed grim` on Arch/CachyOS). Manual Assist reads the display under the pointer. Settings offers optional **Auto refresh Assist after clicks or scrolling** on Hyprland: it waits 650 ms for external activity to settle, keeps only the latest pending refresh and captures that interaction's display. It pauses while Aether is hidden/collapsed or settings/onboarding is open. Auto refresh is off by default; other desktops use manual Assist. Enabling it sends more screenshots to the selected provider and may use more allowance. Fresh AI answers still take model processing time.
+Screen capture on native Hyprland requires `grim` on PATH (`sudo pacman -S --needed grim` on Arch/CachyOS). Manual Assist reads the display under the pointer. Settings offers optional **Auto refresh Assist after clicks or scrolling** on macOS and Hyprland: it waits 650 ms for external activity to settle, keeps only the latest pending refresh and captures that interaction's display. It pauses while Aether is hidden/collapsed or settings/onboarding is open. Auto refresh is off by default; other desktops use manual Assist. On macOS it uses a listen-only event tap (`macdotool watch`) and ignores clicks on Aether itself. Enabling it sends more screenshots to the selected provider and may use more allowance. Fresh AI answers still take model processing time.
 
 ### Auto mode: click, type and scroll
 
-Auto mode controls the focused desktop app on native Hyprland with Lua support. It requires `hyprctl`, `grim`, `ydotool`, a running ydotool daemon/socket, and a vision-capable provider. This first version is unavailable on other desktops and operating systems.
+Auto mode controls the focused desktop app on macOS 14+ or native Hyprland with Lua support, and needs a vision-capable provider. On Hyprland it requires `hyprctl`, `grim`, `ydotool` and a running ydotool daemon/socket. On macOS the bundled `macdotool` replaces all three; grant Accessibility and Screen Recording. On macOS, Escape is reserved as a global shortcut while Auto runs. Other desktops and Windows are unsupported.
 
 Move Aether clear of the target fields, type a specific task in its input, and click **Auto**. Focus the target app within the three-second countdown. Auto reads that window, chooses one action, performs it, and reads the result before continuing. Press **Escape** anywhere or click **Stop Auto** to cancel. Changing target focus/geometry, opening Aether settings, hiding/reloading Aether, or losing the Escape connection stops the task. Each run is limited to 20 decisions and three minutes; each decision can consume provider allowance.
 
