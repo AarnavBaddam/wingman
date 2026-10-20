@@ -314,3 +314,85 @@ test('malformed model output receives bounded correction without executing it', 
   await assert.rejects(bad.engine.run('Fill form'), /JSON/);
   assert.equal(bad.calls.filter(c=>c==='capture').length,3);
 });
+test('graph questions are skipped, Next is allowed, and instructions reach the final message', async () => {
+  const skip = { type: 'skip', question: 'Q2 plot y=2x+1', instructions: 'Pick the line tool, plot (0,1) and (2,5).',
+    form: { layout: 'multi-step', question: 'Q2 plot y=2x+1', navigation: 'next', scroll: 'none', status: 'incomplete' } };
+  assert.deepEqual(parseAutoAction(JSON.stringify(skip), bounds), skip);
+  assert.throws(() => parseAutoAction(JSON.stringify({ ...skip, instructions: '' }), bounds), /skip/i);
+  const executed = [];
+  const actions = [skip, { type: 'click', x: 30, y: 40, label: 'Next', intent: 'navigate' },
+    { type: 'click', x: 30, y: 40, label: 'Next', intent: 'navigate', form: skip.form },
+    { type: 'done', message: 'Draft ready' }];
+  const h = harness([], { decide: async () => JSON.stringify(actions.shift()), execute: async a => executed.push(a.label) });
+  await h.engine.run('Fill the test form');
+  assert.deepEqual(executed, ['Next'], 'skip unlocks only one Next; the following question needs verification');
+  assert.equal(h.updates.at(-1).status, 'done');
+  assert.match(h.updates.at(-1).message, /Skipped for you to answer:\n1\. Q2 plot y=2x\+1: Pick the line tool/);
+  assert.equal(h.updates.at(-1).skipped.length, 1);
+});
+test('vector draws from axis calibration and corrects from the tool readout', async () => {
+  const draw = { type: 'vector', label: 'Fn', magnitude: 3, angle: 90, origin: { x: 400, y: 300 }, tick: { x: 440, y: 300, value: 1 } };
+  assert.deepEqual(parseAutoAction(JSON.stringify(draw), bounds), draw);
+  for (const patch of [{ magnitude: 0 }, { angle: 'up' }, { tick: { x: 400, y: 300, value: 1 } }, { tick: { x: 440, y: 300, value: 0 } },
+    { origin: { x: 900, y: 1 } }, { readout: { magnitude: 3, angle: 90 } }, { label: 'Submit' }]) {
+    assert.throws(() => parseAutoAction(JSON.stringify({ ...draw, ...patch }), bounds));
+  }
+  const seenTip = { type: 'vector', label: 'Fn', magnitude: 3, angle: 90, readout: { magnitude: 2, angle: 90 }, tip: { x: 400, y: 200 } };
+  assert.deepEqual(parseAutoAction(JSON.stringify(seenTip), bounds), seenTip);
+  assert.throws(() => parseAutoAction(JSON.stringify({ ...draw, tip: { x: 1, y: 1 } }), bounds));
+  assert.throws(() => parseAutoAction(JSON.stringify({ ...seenTip, tip: { x: 1, y: 900 } }), bounds));
+  const fix = { type: 'vector', label: 'Fn', magnitude: 3, angle: 90 };
+  const executed = [], seen = [];
+  const actions = [
+    { ...fix, readout: { magnitude: 2, angle: 90 } }, // nothing drawn yet
+    draw, // 3 units * 40px up: (400,300) -> (400,180)
+    draw, // re-draw refused
+    // Tool really draws 30px per unit and its angle is 5 deg higher than the screen angle.
+    { ...fix, readout: { magnitude: 4, angle: 95 } },
+    { type: 'vector', label: 'Fg', magnitude: 2, angle: 270, origin: { x: 400, y: 300 }, tick: { x: 400, y: 260, value: 1 } },
+    { ...fix, readout: { magnitude: 3.1, angle: 90 } }, { ...fix, readout: { magnitude: 3.1, angle: 90 } },
+    { ...fix, readout: { magnitude: 3.2, angle: 90 } }, { ...fix, readout: { magnitude: 3.3, angle: 90 } },
+    { type: 'done', message: 'FBD drawn' }];
+  const h = harness([], { decide: async c => { seen.push(c); return JSON.stringify(actions.shift()); }, execute: async a => executed.push([a.type, a.x, a.y, a.toX, a.toY]) });
+  await h.engine.run('Draw the free-body diagram');
+  assert.match(seen[1].history.at(-1).message, /No drawn Fn/);
+  assert.deepEqual(executed[0], ['drag', 400, 300, 400, 180]);
+  assert.match(seen[3].history.at(-1).message, /already drawn/);
+  // Scale 120px/4 = 30px per unit, aim 85 deg on screen: tip = 400+90cos85, 300-90sin85.
+  assert.deepEqual(executed[1], ['drag', 400, 180, 408, 210]);
+  assert.deepEqual(executed[2], ['drag', 400, 300, 400, 380]);
+  assert.equal(executed.length, 5, 'corrections stop after three per label');
+  assert.match(seen.at(-1).history.at(-1).message, /correction limit/);
+  assert.equal(h.updates.at(-1).status, 'done');
+});
+test('double click is accepted only for select intent', () => {
+  const dbl = { type: 'click', x: 20, y: 30, label: 'Mass and weight have different units', intent: 'select', clicks: 2 };
+  assert.deepEqual(parseAutoAction(JSON.stringify(dbl), bounds), dbl);
+  for (const patch of [{ intent: 'submit' }, { intent: 'navigate' }, { clicks: 3 }, { clicks: '2' }]) {
+    assert.throws(() => parseAutoAction(JSON.stringify({ ...dbl, ...patch }), { ...bounds, allowSubmit: true }));
+  }
+  assert.match(AUTO_SYSTEM, /clicks 2/);
+});
+test('a second map of an unchanged screen is recorded but nudged toward a real action', async () => {
+  const map = { type: 'map', layout: 'per-question', question: 'Q1', navigation: 'submit-answer', scroll: 'none', status: 'answer-verified' };
+  const { engine, updates } = harness([map, { ...map, status: 'incomplete' }, { type: 'done', message: 'ok' }]);
+  await engine.run('Answer');
+  const nudges = updates.filter(u => /Do not map again/.test(u.message));
+  assert.equal(nudges.length, 1);
+  assert.equal(updates.at(-1).status, 'done');
+});
+test('repeated maps of an unchanged screen pause instead of stalling', async () => {
+  const map = { type: 'map', layout: 'per-question', question: 'Q1', navigation: 'submit-answer', scroll: 'none', status: 'incomplete' };
+  const { engine, updates } = harness([map, { ...map, question: 'Q1 ' }, { ...map, status: 'answer-verified' }, { ...map, question: 'Q 1' }, { type: 'done', message: 'x' }]);
+  await engine.run('Answer');
+  assert.equal(updates.at(-1).status, 'paused');
+  assert.match(updates.at(-1).message, /re-reading the same screen/);
+});
+test('a submitted form mapped complete finishes without another done turn', async () => {
+  const verified = { layout: 'single-page', question: 'Q1', navigation: 'submit-form', scroll: 'none', status: 'answer-verified' };
+  const { engine, updates, calls } = harness([{ type: 'click', x: 20, y: 30, label: 'Submit', intent: 'submit', form: verified },
+    { type: 'map', layout: 'single-page', question: 'Thank you!', navigation: 'none', scroll: 'none', status: 'complete' }]);
+  await engine.run('Submit it', { allowSubmit: true });
+  assert.equal(updates.at(-1).status, 'done');
+  assert.equal(calls.filter(c => c === 'decide').length, 2);
+});

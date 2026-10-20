@@ -32,7 +32,7 @@ function createAutoSession({ getSettings, createLLM, getCodexHome, createDesktop
       const signal = session.controller.signal;
       const publish = update => { last = { ...update, active: true }; onUpdate(last); };
       completion = (async () => {
-        let terminal = { status: 'stopped', message: 'Auto stopped.' };
+        let terminal = { status: 'stopped', message: 'Auto stopped.' }, skippedNote = '';
         try {
           const settings = getSettings();
           const llm = createLLM({ ...settings, codexHome: getCodexHome(settings) });
@@ -63,6 +63,7 @@ function createAutoSession({ getSettings, createLLM, getCodexHome, createDesktop
             }),
             onUpdate(update) {
               if (['done', 'paused', 'stopped', 'error'].includes(update.status)) terminal = update;
+              if (update.skipped) skippedNote = update.message.slice(update.message.indexOf('\nSkipped for you'));
               publish(update);
             }
           });
@@ -77,6 +78,8 @@ function createAutoSession({ getSettings, createLLM, getCodexHome, createDesktop
           catch (error) { if (error?.code === 'INPUT_CLEANUP') terminal = { status: 'error', message: error.message }; }
           try { session.watcher?.stop(); } catch { terminal = { status: 'error', message: 'Auto stopped; restart Aether to clear its Escape binding.' }; }
           if (current === session) current = null;
+          // Escape/errors replace the message; never lose skipped-question instructions.
+          if (skippedNote && !terminal.message.includes(skippedNote)) terminal = { ...terminal, message: terminal.message + skippedNote };
           last = { ...terminal, active: false }; onUpdate(last); onEnd();
         }
       })();

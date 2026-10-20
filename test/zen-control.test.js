@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const net = require('node:net');
+const vm = require('node:vm');
 const { createZenControl } = require('../src/zen-control');
 
 function png(width = 800, height = 600) {
@@ -18,7 +19,11 @@ test('drag holds the pointer through scaled intermediate moves and releases it',
   const moves = steps.slice(2).filter(a => a.type === 'pointerMove');
   assert.ok(moves.length >= 8);
   assert.equal(moves.at(-1).x, 300); assert.equal(moves.at(-1).y, 200);
-  assert.equal(steps.at(-1).type, 'pointerUp');
+  assert.notEqual(steps.at(-1).type, 'pointerUp');
+  assert.deepEqual(commands.filter(c => c.name === 'WebDriver:PerformActions').at(-1).params.actions[0].actions, [
+    { type: 'pointerMove', origin: 'viewport', duration: 40, x: 299, y: 200 },
+    { type: 'pointerMove', origin: 'viewport', duration: 40, x: 300, y: 200 },
+    { type: 'pointerUp', button: 0 }]);
   assert.equal(commands.at(-1).name, 'WebDriver:ReleaseActions');
   await assert.rejects(control.execute(target, { type: 'drag', x: 1, y: 1, toX: 2, toY: 2 }), /Capture/);
   await control.capture(target);
@@ -56,7 +61,7 @@ async function fixture(t, override = () => undefined, options = {}) {
           else if (name === 'WebDriver:GetWindowHandle') result = current;
           else if (name === 'WebDriver:GetTitle') result = 'Form café';
           else if (name === 'WebDriver:GetCurrentURL') result = 'https://example.com/form';
-          else if (name === 'WebDriver:ExecuteScript') result = params.sandbox === 'aether-drag' ? { handled: false } : params.args.length ? { scrolled: true } : { width: 400, height: 300, dpr: 2 };
+          else if (name === 'WebDriver:ExecuteScript') result = params.sandbox === 'aether-drag' ? { handled: false } : params.sandbox === 'aether-drag-hover' ? { hovered: true } : params.args.length ? { scrolled: true } : { width: 400, height: 300, dpr: 2 };
           else if (name === 'WebDriver:TakeScreenshot') result = png();
           else result = {};
         }
@@ -134,6 +139,26 @@ test('HTML drag uses bounded fixed script through frames and resets context with
   assert.deepEqual(commands.filter(c => c.params.sandbox === 'aether-drag').map(c => c.params.args), [[50, 50, 250, 200], [20, 30, 100, 150]]);
   assert.equal(commands.filter(c => c.name === 'WebDriver:PerformActions').length, 0);
 });
+test('draggable attribute does not swallow mouse widgets that reject HTML drop', async t => {
+  for (const acceptsHTML of [false, true]) {
+    const events = [];
+    const source = { draggable: true, dispatchEvent: e => { events.push(e.type); return true; } };
+    const destination = { dispatchEvent: e => { events.push(e.type); return !(acceptsHTML && e.type === 'dragover'); } };
+    const { control, commands } = await fixture(t, (name, params) => {
+      if (name !== 'WebDriver:ExecuteScript' || params.sandbox !== 'aether-drag') return;
+      return vm.runInNewContext('(function(){' + params.script + '}).apply(null, points)', {
+        points: params.args, innerWidth: 400, innerHeight: 300,
+        document: { elementFromPoint: x => x < 100 ? source : destination },
+        DataTransfer: class {}, DragEvent: class { constructor(type, init) { Object.assign(this, { type }, init); } }
+      });
+    });
+    const target = await control.lockTarget('tab-a'); await control.capture(target);
+    await control.execute(target, { type: 'drag', x: 100, y: 100, toX: 500, toY: 400 });
+    assert.equal(commands.filter(c => c.name === 'WebDriver:PerformActions').length, acceptsHTML ? 0 : 2);
+    assert.equal(events.includes('drop'), acceptsHTML);
+    assert.ok(events.includes('dragend'));
+  }
+});
 test('abort drains the in-flight command and releases input before rejecting', async t => {
   const aborter = new AbortController();
   const { control, commands } = await fixture(t, name => { if (name === 'WebDriver:PerformActions') aborter.abort(); });
@@ -148,7 +173,7 @@ test('bounded command timeout closes connection and prevents queued late input',
   await assert.rejects(control.lockTarget('tab-a'), /connect/i);
 });
 test('rejects mismatched screenshot geometry and abort before work', async t => {
-  const { control } = await fixture(t, name => name === 'WebDriver:TakeScreenshot' ? png(799, 600) : undefined);
+  const { control } = await fixture(t, name => name === 'WebDriver:TakeScreenshot' ? png(801, 600) : undefined);
   const target = await control.lockTarget('tab-a');
   await assert.rejects(control.capture(target), /dimensions/);
   await assert.rejects(control.execute(target, { type: 'click', x: 1, y: 1 }), /Capture/);
@@ -198,4 +223,37 @@ test('fractional DPR matches canvas integer truncation without shifting click co
   await control.capture(target); await control.execute(target, { type: 'click', x: 150, y: 150 });
   const move = commands.find(c => c.name === 'WebDriver:PerformActions').params.actions[0].actions[0];
   assert.equal(move.x, 100); assert.equal(move.y, 100);
+});
+test('scrollbar-trimmed screenshots are accepted and bound coordinates by the real image', async t => {
+  const { control } = await fixture(t, name => name === 'WebDriver:TakeScreenshot' ? png(770, 600) : undefined);
+  const target = await control.lockTarget('tab-a');
+  const screen = await control.capture(target);
+  assert.equal(screen.width, 770); assert.equal(screen.height, 600);
+  await assert.rejects(control.execute(target, { type: 'click', x: 780, y: 10 }), /outside/);
+  await control.capture(target); await control.execute(target, { type: 'click', x: 769, y: 10 });
+});
+test('screenshots far smaller than the viewport are still rejected', async t => {
+  const { control } = await fixture(t, name => name === 'WebDriver:TakeScreenshot' ? png(700, 600) : undefined);
+  await assert.rejects(control.capture(await control.lockTarget('tab-a')), /dimensions/);
+});
+test('fractional desktop scaling with 1x screenshots maps clicks by the real image scale', async t => {
+  const { control, commands } = await fixture(t, name => {
+    if (name === 'WebDriver:ExecuteScript') return { width: 1463, height: 756, dpr: 1.3043478260869565 };
+    if (name === 'WebDriver:TakeScreenshot') return png(1463, 756);
+  });
+  const target = await control.lockTarget('tab-a');
+  assert.deepEqual((({ width, height }) => ({ width, height }))(await control.capture(target)), { width: 1463, height: 756 });
+  await control.execute(target, { type: 'click', x: 1000, y: 500 });
+  const move = commands.find(c => c.name === 'WebDriver:PerformActions').params.actions[0].actions[0];
+  assert.equal(move.x, 1000); assert.equal(move.y, 500);
+});
+test('double click sends two press/release pairs at one point', async t => {
+  const { control, commands } = await fixture(t, name => {
+    if (name === 'WebDriver:ExecuteScript') return { width: 800, height: 600, dpr: 1 };
+    if (name === 'WebDriver:TakeScreenshot') return png(800, 600);
+  });
+  const target = await control.lockTarget('tab-a'); await control.capture(target);
+  await control.execute(target, { type: 'click', x: 100, y: 200, clicks: 2 });
+  const actions = commands.find(c => c.name === 'WebDriver:PerformActions').params.actions[0].actions;
+  assert.deepEqual(actions.map(a => a.type), ['pointerMove', 'pointerDown', 'pointerUp', 'pointerDown', 'pointerUp']);
 });

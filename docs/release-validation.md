@@ -1,5 +1,10 @@
 # Aether release validation
 
+## Workspace pinning correction — 2026-10-19
+
+- Current artifact: `dist/Aether-0.1.0.AppImage`, 139,930,307 bytes; SHA-256 `92315ab30730b9da07a519203996f8840e0cbc42071f8f5604793bf396465f49`. Full 177-test suite, localhost Playwright renderer/form/repetition checks, pack/AppImage and diff check pass. Graph refreshed to 790 nodes / 1,235 edges.
+- Confirmed the live window had `pinned=true` and the v2 rule explicitly requested it. Regression fails with that rule. The v3 rule disables earlier versions and specifies `pin=false`; live compositor accepted it. Unpinned the old window, switched to an unused workspace 11, confirmed Aether remained on workspace 1 with `pinned=false` and `floating=true`, then restored the original workspace. A newly launched AppImage instance was also mapped with `pinned=false`, confirming startup preservation. No screenshots of unrelated desktop content, live model calls, or real form actions.
+
 ## Drag/drop support — 2026-10-19
 
 - Current artifact supersedes earlier hashes: `dist/Aether-0.1.0.AppImage`, 139,930,280 bytes; SHA-256 `52cd0aefd96a34ffd4227d702db1d3205a57368f50d24a8f0c80a6c2206b61e5`. 177 tests, `npm run pack`, `npm run dist:linux`, and diff check pass. Packaged ASAR contains the new model schema and both drag executors. Graph: 789 nodes / 1,234 edges.

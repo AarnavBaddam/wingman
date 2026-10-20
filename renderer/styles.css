@@ -338,3 +338,4 @@ button:focus { outline: none; }
   #panel, .user-bubble { animation: none !important; opacity: 1 !important; transform: none !important; }
   #live-dot { animation: none !important; }
 }
+#auto-mode-status { white-space: pre-line; }

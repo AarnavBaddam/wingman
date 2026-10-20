@@ -1,5 +1,6 @@
 # Aether project notes
 
+- User wants Aether to stay on its assigned Linux workspace, not follow desktop switches. Hyprland overlay must float with `pin=false`; retire old session rule versions when changing static properties. Native workspace-switch verification must confirm unchanged window workspace and unpinned state. Do not confuse floating with pinned. macOS all-Spaces behavior has not been changed by this Linux fix.
 - Auto drag uses bounded screenshot start/end points; verify placement on a fresh image before submission. Custom Zen widgets use native held-pointer actions. Hidden-tab native HTML drag fired dragstart without drop on this host: explicit HTML draggable elements use a fixed bounded synthetic DragEvent/DataTransfer adapter with iframe traversal, not arbitrary AI scripts. Do not call those HTML events trusted or promise sites requiring trusted HTML drops will accept them. Keep native pointer, synthetic HTML adapter, scripted engine, and live model quality evidence distinct.
 - This is a GPL-3.0-or-later fork of Aarnav Baddam's Wingman. Keep attribution and the original code license unless every rights holder explicitly approves a change.
 - Product name is Aether. Keep existing internal `wingman-data.json` compatibility unless a data migration is implemented.

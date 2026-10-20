@@ -59,6 +59,7 @@ test('isolated Codex forwards its account home without changing default or Claud
   try {
     const script = `#!/usr/bin/env node
 const fs = require('node:fs');
+if (process.argv[2] === 'app-server') process.exit(1); // exercise the exec fallback
 fs.readFileSync(0, 'utf8');
 const text = JSON.stringify({ args: process.argv.slice(2), env: Object.fromEntries(['CODEX_HOME', 'OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN'].map(name => [name, process.env[name] ?? null])) });
 if (process.argv[1].endsWith('claude')) {
@@ -107,6 +108,41 @@ test('CLI adapter cancels the child process', async () => {
     const pending = streamCLI('claude-cli', { system: 'Answer briefly', turns: [{ role: 'user', text: 'Hi' }], signal: controller.signal });
     controller.abort();
     await assert.rejects(pending, /cancelled/);
+  } finally {
+    process.env.PATH = originalPath;
+    fs.rmSync(bin, { recursive: true, force: true });
+  }
+});
+
+test('Codex profile requests reuse one warm app-server with fresh threads, and fall back to exec when it dies', async () => {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'wingman-codex-server-'));
+  const log = path.join(bin, 'log');
+  const originalPath = process.env.PATH;
+  const codex = `#!/usr/bin/env node
+const fs = require('fs'), log = ${JSON.stringify(log)};
+if (process.argv[2] !== 'app-server') { fs.appendFileSync(log, 'exec\\n'); process.stdin.resume(); process.stdin.on('end', () => {
+  console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'from exec' } })); console.log(JSON.stringify({ type: 'turn.completed' })); }); return; }
+if (fs.existsSync(log + '.broken')) process.exit(1);
+fs.appendFileSync(log, 'server\\n'); let threads = 0;
+require('readline').createInterface({ input: process.stdin }).on('line', line => {
+  const m = JSON.parse(line), send = o => process.stdout.write(JSON.stringify(o) + '\\n');
+  if (m.method === 'initialize') send({ id: m.id, result: {} });
+  if (m.method === 'thread/start') { fs.appendFileSync(log, 'thread ' + m.params.ephemeral + ' ' + m.params.sandbox + ' ' + m.params.baseInstructions.includes('Be brief') + '\\n'); send({ id: m.id, result: { thread: { id: 't' + ++threads } } }); }
+  if (m.method === 'turn/start') { const threadId = m.params.threadId; fs.appendFileSync(log, 'image ' + m.params.input.some(i => i.type === 'localImage') + '\\n');
+    send({ id: m.id, result: { turn: { id: 'u1' } } });
+    send({ method: 'item/completed', params: { threadId, item: { type: 'agentMessage', text: 'answer ' + threadId } } });
+    send({ method: 'turn/completed', params: { threadId, turn: { id: 'u1', status: 'completed' } } }); }
+});`;
+  try {
+    fs.writeFileSync(path.join(bin, 'codex'), codex, { mode: 0o755 });
+    process.env.PATH = bin + path.delimiter + originalPath;
+    const params = { system: 'Be brief', turns: [{ role: 'user', text: 'Hi' }], imageDataUrl: png, codexHome: path.join(bin, 'profile') };
+    assert.equal(await streamCLI('codex-cli', params), 'answer t1');
+    assert.equal(await streamCLI('codex-cli', params), 'answer t2');
+    assert.deepEqual(fs.readFileSync(log, 'utf8').trim().split('\n'), ['server', 'thread true read-only true', 'image true', 'thread true read-only true', 'image true']);
+    fs.writeFileSync(log + '.broken', '');
+    assert.equal(await streamCLI('codex-cli', { ...params, codexHome: path.join(bin, 'other-profile') }), 'from exec');
+    assert.equal(fs.readFileSync(log, 'utf8').trim().split('\n').at(-1), 'exec');
   } finally {
     process.env.PATH = originalPath;
     fs.rmSync(bin, { recursive: true, force: true });

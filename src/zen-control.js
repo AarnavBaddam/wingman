@@ -44,14 +44,31 @@ if(!source?.draggable)return {handled:false};
 const target=hit(toX,toY);if(!target)throw Error('Drag destination unavailable');
 const dataTransfer=new DataTransfer();
 const emit=(el,type,px,py)=>el.dispatchEvent(new DragEvent(type,{bubbles:true,cancelable:true,composed:true,clientX:px,clientY:py,dataTransfer}));
+let accepted=false;
 if(emit(source,'dragstart',x,y)) {
   emit(target,'dragenter',toX,toY);
-  const accepted=!emit(target,'dragover',toX,toY);
+  accepted=!emit(target,'dragover',toX,toY);
   dataTransfer.dropEffect=accepted?'move':'none';
   if(accepted)emit(target,'drop',toX,toY);
   emit(source,'dragend',toX,toY);
 }
-return {handled:true};`;
+// Mouse-driven widgets can also carry draggable=true. A rejected HTML drop
+// must fall through to the native mouse gesture instead of swallowing it.
+return {handled:accepted};`;
+// Gecko sends hidden-tab pointer motion but omits hover transitions. Legacy
+// mouse widgets use mouseover on drop shims to recognize the destination.
+const DRAG_HOVER_SCRIPT = `
+const [x,y]=arguments;
+if(![x,y].every(Number.isFinite)||x<0||y<0||x>=innerWidth||y>=innerHeight)throw Error('Drag destination must be visible');
+let el=document.elementFromPoint(x,y);
+for(let i=0;i<20&&el?.shadowRoot?.elementFromPoint;i++){const child=el.shadowRoot.elementFromPoint(x,y);if(!child||child===el)break;el=child;}
+if(el?.localName==='iframe'||el?.localName==='frame'){
+ const r=el.getBoundingClientRect();return {frame:el,x:(x-r.left)/(r.width/el.offsetWidth)-el.clientLeft,y:(y-r.top)/(r.height/el.offsetHeight)-el.clientTop};
+}
+if(document.visibilityState==='hidden'&&el){
+ el.dispatchEvent(new MouseEvent('mouseover',{bubbles:true,cancelable:true,composed:true,clientX:x,clientY:y,buttons:1,button:0,relatedTarget:null}));
+}
+return {hovered:true};`;
 function cancelled(signal) { if (signal?.aborted) { const error = new Error('Zen action cancelled.'); error.name = 'AbortError'; throw error; } }
 
 function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, connectSocket = options => net.createConnection(options) } = {}) {
@@ -169,12 +186,20 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
     const encoded = await command('WebDriver:TakeScreenshot', { full: false, scroll: false }, signal);
     if (typeof encoded !== 'string' || encoded.length > MAX_FRAME || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) throw new Error('Invalid Zen screenshot.');
     const png = Buffer.from(encoded, 'base64');
-    if (png.length < 33 || png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a' || png.readUInt32BE(8) !== 13 || png.toString('ascii', 12, 16) !== 'IHDR' || png.readUInt32BE(16) !== target.width || png.readUInt32BE(20) !== target.height) throw new Error('Zen screenshot dimensions changed. Start again.');
-    await validate(target, signal); state.fresh = true;
-    return { imageDataUrl: `data:image/png;base64,${encoded}`, width: target.width, height: target.height };
+    if (png.length < 33 || png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a' || png.readUInt32BE(8) !== 13 || png.toString('ascii', 12, 16) !== 'IHDR') throw new Error('Invalid Zen screenshot.');
+    // Gecko renders viewport screenshots at devicePixelRatio, except under some
+    // fractional desktop scaling where it stays at 1x CSS pixels. It may also omit
+    // classic scrollbars. Detect the real scale and map coordinates with it.
+    const width = png.readUInt32BE(16), height = png.readUInt32BE(20), { view } = state;
+    const fits = k => width <= Math.floor(view.width * k) && height <= Math.floor(view.height * k) &&
+      width >= Math.floor(view.width * k) - Math.ceil(32 * k) && height >= Math.floor(view.height * k) - Math.ceil(32 * k);
+    const scale = [view.dpr, 1].find(fits);
+    if (!scale || !width || !height) throw new Error('Zen screenshot dimensions changed. Start again.');
+    await validate(target, signal); state.fresh = true; state.width = width; state.height = height; state.scale = scale;
+    return { imageDataUrl: `data:image/png;base64,${encoded}`, width, height };
   }
   async function scroll(target, action, state, signal) {
-    let x = action.x / state.view.dpr, y = action.y / state.view.dpr;
+    let x = action.x / state.scale, y = action.y / state.scale;
     try {
       for (let depth = 0; depth < 5; depth++) {
         cancelled(signal);
@@ -201,15 +226,15 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
     if (action.type === 'type') {
       if (typeof action.text !== 'string' || !action.text.length || action.text.length > 1000 || /[^\x20-\x7e]/.test(action.text)) throw new Error('Type accepts printable ASCII text only, without Enter or Tab.');
     } else {
-      if (![action.x, action.y].every(Number.isFinite) || action.x < 0 || action.y < 0 || action.x >= target.width || action.y >= target.height) throw new Error('Zen coordinates are outside the captured viewport.');
-      if (action.type === 'drag' && (![action.toX, action.toY].every(Number.isFinite) || action.toX < 0 || action.toY < 0 || action.toX >= target.width || action.toY >= target.height)) throw new Error('Zen drag destination is outside the captured viewport.');
+      if (![action.x, action.y].every(Number.isFinite) || action.x < 0 || action.y < 0 || action.x >= state.width || action.y >= state.height) throw new Error('Zen coordinates are outside the captured viewport.');
+      if (action.type === 'drag' && (![action.toX, action.toY].every(Number.isFinite) || action.toX < 0 || action.toY < 0 || action.toX >= state.width || action.toY >= state.height)) throw new Error('Zen drag destination is outside the captured viewport.');
       if (action.type === 'scroll' && (!Number.isSafeInteger(action.amount) || action.amount === 0 || Math.abs(action.amount) > 5)) throw new Error('Scroll amount must be a nonzero integer between -5 and 5.');
     }
     let attempted = false;
     try {
       if (action.type === 'drag') {
         await validate(target, signal);
-        let points = [action.x, action.y, action.toX, action.toY].map(n => n / state.view.dpr);
+        let points = [action.x, action.y, action.toX, action.toY].map(n => n / state.scale);
         let handled = false;
         try {
           for (let depth = 0; depth < 5; depth++) {
@@ -236,12 +261,13 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
         let source;
         if (chunk !== null) source = { type: 'key', id: 'aether-keys', actions: [...chunk].flatMap(value => [{ type: 'keyDown', value }, { type: 'keyUp', value }]) };
         else {
-          const x = Math.min(state.view.width - 1, Math.floor(action.x / state.view.dpr));
-          const y = Math.min(state.view.height - 1, Math.floor(action.y / state.view.dpr));
+          const x = Math.min(state.view.width - 1, Math.floor(action.x / state.scale));
+          const y = Math.min(state.view.height - 1, Math.floor(action.y / state.scale));
           source = { type: 'pointer', id: 'aether-pointer', parameters: { pointerType: 'mouse' }, actions: [{ type: 'pointerMove', origin: 'viewport', duration: 0, x, y }, { type: 'pointerDown', button: 0 }, { type: 'pointerUp', button: 0 }] };
+          if (action.type === 'click' && action.clicks === 2) source.actions.push({ type: 'pointerDown', button: 0 }, { type: 'pointerUp', button: 0 });
           if (action.type === 'drag') {
-            const toX = Math.min(state.view.width - 1, Math.floor(action.toX / state.view.dpr));
-            const toY = Math.min(state.view.height - 1, Math.floor(action.toY / state.view.dpr));
+            const toX = Math.min(state.view.width - 1, Math.floor(action.toX / state.scale));
+            const toY = Math.min(state.view.height - 1, Math.floor(action.toY / state.scale));
             // A short hold plus multiple moves crosses drag thresholds for both
             // HTML draggable elements and pointer/mouse-driven sorting widgets.
             source.actions.splice(2, 0, { type: 'pause', duration: 120 },
@@ -253,7 +279,28 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
         attempted = true;
         // A sent action drains before cancellation is reported; never queue a late
         // action or release input while an earlier command can still press it.
-        await command('WebDriver:PerformActions', { actions: [source] }, signal);
+        if (action.type === 'drag') {
+          // Supply missing hidden-tab hover while held, before releasing.
+          await command('WebDriver:PerformActions', { actions: [{ ...source, actions: source.actions.slice(0, -1) }] }, signal);
+          let point = [action.toX, action.toY].map(n => n / state.scale);
+          try {
+            for (let depth = 0; depth < 5; depth++) {
+              const result = await command('WebDriver:ExecuteScript', { script: DRAG_HOVER_SCRIPT, args: point, newSandbox: true, sandbox: 'aether-drag-hover' }, signal);
+              if (result?.frame) {
+                if (depth === 4 || ![result.x, result.y].every(Number.isFinite)) throw new Error('Zen drag hover frame depth or coordinates unsupported.');
+                await command('WebDriver:SwitchToFrame', { element: result.frame }, signal);
+                point = [result.x, result.y];
+              } else {
+                if (result?.hovered !== true) throw new Error('Zen drag hover target unavailable.');
+                break;
+              }
+            }
+          } finally { if (socket) await command('WebDriver:SwitchToFrame', { id: null }); }
+          cancelled(signal);
+          // Legacy widgets (YUI DD) register the target on the next move after hover.
+          const end = source.actions.findLast(a => a.type === 'pointerMove');
+          await command('WebDriver:PerformActions', { actions: [{ ...source, actions: [{ ...end, x: end.x ? end.x - 1 : 1 }, end, { type: 'pointerUp', button: 0 }] }] }, signal);
+        } else await command('WebDriver:PerformActions', { actions: [source] }, signal);
       }
     } finally {
       if (attempted) {

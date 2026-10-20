@@ -9,7 +9,8 @@ test('native Hyprland configures a narrowly matched floating overlay before mapp
   assert.equal(calls[0][0], 'eval');
   assert.match(calls[0][1], /class = "\^dev\\\\\.prahladv\\\\\.aether\$"/);
   assert.match(calls[0][1], /float = true/);
-  assert.match(calls[0][1], /pin = true/);
+  assert.match(calls[0][1], /pin = false/);
+  assert.match(calls[0][1], /aether_overlay_rule_v2:set_enabled\(false\)/);
   assert.match(calls[0][1], /no_blur = true/);
   assert.match(calls[0][1], /size = \{700, 420\}/);
   assert.match(calls[0][1], /if not .* then/);
@@ -70,4 +71,5 @@ test('releasing flushes the final cursor position even before the first motion r
   resolveCursor('{"x":250,"y":230}');
   await Promise.all([pending,finished]);
   assert.match(scripts.at(-1),/x=180,y=120,relative=false,window=w/);
+  assert.match(scripts.at(-1),/get_monitor_at\(530, 330\).*follow=false/);
 });

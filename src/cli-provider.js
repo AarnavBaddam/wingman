@@ -119,8 +119,19 @@ async function streamCLI(provider, { model, system, turns, imageDataUrl, onToken
         fs.writeFileSync(filename, image.bytes, { mode: 0o600 });
         args.push('--image', filename);
       }
+      const instructions = `Answer only from the supplied prompt and image. Do not use tools or inspect files.\n\nInstructions:\n${system}`;
+      // ponytail: the warm app-server only runs on Aether's own Codex profile. It has no
+      // --ignore-user-config, so the default profile keeps the isolated `codex exec` path.
+      if (codexHome) {
+        try {
+          return await require('./codex-server').codexServerTurn({ codexHome, env, model, instructions, text: prompt, onToken, signal,
+            imagePath: args.includes('--image') ? args[args.indexOf('--image') + 1] : null, timeoutMs: TIMEOUT_MS, maxOutput: MAX_OUTPUT, cwd: directory });
+        } catch (error) {
+          if (!error.serverFault || signal?.aborted) throw error;
+        }
+      }
       args.push('-');
-      return await run('codex', args, `Answer only from the supplied prompt and image. Do not use tools or inspect files.\n\nInstructions:\n${system}\n\n${prompt}\n`, directory, provider, onToken, signal, env);
+      return await run('codex', args, `${instructions}\n\n${prompt}\n`, directory, provider, onToken, signal, env);
     }
     throw new Error('Unknown CLI provider: ' + provider);
   } finally {

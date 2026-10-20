@@ -145,7 +145,7 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
       await input(['click', '0x80']);
       return;
     }
-    await input(action.type === 'click' ? ['click', '0xC0'] : ['mousemove', '-w', '-x', '0', '-y', String(-action.amount)]);
+    await input(action.type === 'click' ? ['click', ...(action.clicks === 2 ? ['--repeat', '2', '--next-delay', '40'] : []), '0xC0'] : ['mousemove', '-w', '-x', '0', '-y', String(-action.amount)]);
   }
   async function execute(target, action, signal) {
     let inputAttempted = false, connected = false;

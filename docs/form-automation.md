@@ -42,3 +42,15 @@ Submission defaults to review. When enabled, both per-answer and final submissio
 - Real localhost Playwright passed the submission control/reset and three real form flows: long single page with scrolling, multi-step Next, and per-question Submit. Decisions were scripted; this is execution/loop evidence.
 - An isolated native Electron target confirmed actual Hyprland/ydotool click, typing and scrolling. The previously stopped ydotool user service was started and enabled.
 - No live Free Codex request was made in this follow-up. The user's trial will establish recognition quality for their form; success on arbitrary forms is not established.
+
+## Vector and free-body diagrams
+
+The model returns `vector` actions in physics terms: label, magnitude, angle (degrees counterclockwise from +x), the origin dot and one axis tick with its graph value. The engine turns that into pixels and drags tail to tip. To correct, the model reads the tool's length/angle readout and the arrowhead position it sees; the engine solves the tool's real scale and angle offset from those and drags the tip. Re-drawing an existing label is refused, and each label gets at most 3 corrections before the model must `skip`. QA: `/tmp/aether-vector-qa.cjs` (mock snapping/clipping vector tool, hidden Zen tab, scripted decisions).
+
+## Graphing questions
+
+Other graph questions (curves, plotted points, shading) are not drawn. It solves the question, returns a `skip` with exact steps (tool, points, values), clicks Next, and lists every skipped question at the end of the run, including after Escape or an error.
+
+## Double clicks
+
+Click accepts an optional `clicks` of 1 or 2. 2 is only valid with intent `select`, so a double click can never submit or navigate. Use it when the goal or the page asks for a double click, e.g. Amplifire, where one click marks an answer "unsure" and a double click marks it "sure". The duplicate-selection guard still blocks an identical repeat, but allows a double click on an answer that was single-clicked before.
