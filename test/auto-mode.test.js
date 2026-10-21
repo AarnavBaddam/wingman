@@ -227,16 +227,20 @@ test('rejects unfocused typing, blocks premature done, and recovers with a match
   assert.equal(h.calls.filter(call => call === 'capture').length, 9);
 });
 
-test('scroll, selection, and typing each consume the previous field focus', async () => {
+test('scroll and selection consume field focus; typing continues in the same field only', async () => {
   const typed = { type: 'type', text: 'draft', origin: 'user', label: 'Name field' };
+  const other = { type: 'type', text: 'x', origin: 'user', label: 'Email field' };
+  const h2 = harness([click, typed, { ...typed, text: ' more' }, other, { type: 'need_input', message: 'Review needed' }]);
+  await h2.engine.run('Fill draft');
+  assert.deepEqual(h2.calls.filter(c => c === 'type').length, 2);
   for (const intervening of [
     { type: 'scroll', x: 20, y: 30, amount: 1, label: 'Form' },
-    { ...click, intent: 'select' }, typed
+    { ...click, intent: 'select' }
   ]) {
     const executed = [];
     const h = harness([click, intervening, typed, { type: 'need_input', message: 'Review needed' }], { execute: async action => executed.push(action) });
     await h.engine.run('Fill draft');
-    assert.equal(executed.filter(action => action.type === 'type').length, intervening.type === 'type' ? 1 : 0);
+    assert.equal(executed.filter(action => action.type === 'type').length, 0);
     assert.ok(h.updates.some(update => update.status === 'deciding' && /focus/i.test(update.message)));
   }
 });
@@ -395,4 +399,91 @@ test('a submitted form mapped complete finishes without another done turn', asyn
   await engine.run('Submit it', { allowSubmit: true });
   assert.equal(updates.at(-1).status, 'done');
   assert.equal(calls.filter(c => c === 'decide').length, 2);
+});
+test('a failed research lookup becomes feedback instead of ending the run', async () => {
+  const { engine, updates } = harness([{ type: 'research', query: 'SI unit of force' }, { type: 'done', message: 'ok' }],
+    { research: async () => { throw new Error('Add a Tavily search API key in Settings to research the web.'); } });
+  await engine.run('Answer');
+  assert.ok(updates.some(u => /Research failed \(Add a Tavily/.test(u.message)));
+  assert.equal(updates.at(-1).status, 'done');
+});
+const zlib = require('node:zlib');
+// Minimal RGB PNG writer; paint(x, y) returns [r, g, b]. Uses Sub filter so the decoder's unfiltering is exercised.
+function png(width, height, paint) {
+  const rows = [];
+  for (let y = 0; y < height; y++) {
+    const row = Buffer.alloc(1 + width * 3); row[0] = 1;
+    for (let x = 0; x < width; x++) {
+      const px = paint(x, y);
+      for (let k = 0; k < 3; k++) row[1 + x * 3 + k] = (px[k] - (x ? paint(x - 1, y)[k] : 0)) & 255;
+    }
+    rows.push(row);
+  }
+  const chunk = (type, data) => { const head = Buffer.alloc(8); head.writeUInt32BE(data.length); head.write(type, 4); return Buffer.concat([head, data, Buffer.alloc(4)]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(width); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = 2;
+  return 'data:image/png;base64,' + Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(Buffer.concat(rows))), chunk('IEND', Buffer.alloc(0))]).toString('base64');
+}
+const white = [255, 255, 255], ink = [20, 20, 20];
+test('blank frames: flat page and tooltip strip are blank; a sparse question page is not', () => {
+  const { isBlankFrame } = require('../src/auto-mode');
+  assert.equal(isBlankFrame(png(120, 200, () => white)), true);
+  assert.equal(isBlankFrame(png(120, 200, (x, y) => y > 195 && x < 60 ? ink : white)), true);
+  assert.equal(isBlankFrame(png(120, 200, (x, y) => !y || !x || x === 119 || (y > 185 && x < 60) ? ink : white)), true, 'border plus tooltip');
+  assert.equal(isBlankFrame(png(120, 200, (x, y) => ((y > 20 && y < 40) || (y > 70 && y < 90)) && x % 7 < 3 ? ink : white)), false);
+  assert.equal(isBlankFrame('data:image/png;base64,AA=='), false);
+});
+test('math symbols in typed answers become ASCII instead of failing the run', () => {
+  const typed = parseAutoAction(JSON.stringify({ type: 'type', text: '15(cos(5π/12) + i sin(5π/12)) √2 x²', label: 'z', origin: 'calculation' }), bounds);
+  assert.equal(typed.text, '15(cos(5pi/12) + i sin(5pi/12)) sqrt2 x^2');
+  assert.throws(() => parseAutoAction(JSON.stringify({ type: 'type', text: 'é', label: 'z', origin: 'user' }), bounds), /pi, sqrt/);
+});
+test('after Next, unchanged and blank loading frames are waited out without a model call', async () => {
+  const page1 = png(40, 40, (x, y) => y < 20 && x % 3 ? ink : white), page2 = png(40, 40, (x, y) => y > 20 && x % 3 ? ink : white);
+  const frames = [page1, page1, png(40, 40, () => white), page2], seen = [];
+  const actions = [{ type: 'click', x: 5, y: 5, label: 'Next', intent: 'navigate' }, { type: 'done', message: 'Draft ready' }];
+  const h = harness([], { delay: 1, capture: async () => ({ imageDataUrl: frames.shift(), width: 40, height: 40 }),
+    decide: async context => { seen.push(context.screen.imageDataUrl); return JSON.stringify(actions.shift()); } });
+  await h.engine.run('Next page');
+  assert.deepEqual(seen, [page1, page2]);
+  assert.ok(h.updates.some(u => /finish loading/.test(u.message)));
+});
+test('palette insert keeps the math field focused so typing continues without refocus', async () => {
+  const actions = [{ type: 'click', x: 10, y: 10, label: 'z answer', intent: 'focus' }, { type: 'type', text: '15(cos(5', label: 'z answer', origin: 'calculation' },
+    { type: 'click', x: 30, y: 10, label: 'pi symbol in palette', intent: 'insert' }, { type: 'type', text: '/12)', label: 'z answer', origin: 'calculation' },
+    { type: 'click', x: 30, y: 10, label: 'Answer choice', intent: 'select' }, { type: 'type', text: 'x', label: 'z answer', origin: 'calculation' },
+    { type: 'need_input', message: 'stop' }];
+  const executed = [];
+  const h = harness(actions, { execute: async a => executed.push(a.type === 'type' ? a.text : a.intent) });
+  await h.engine.run('Answer z');
+  assert.deepEqual(executed, ['focus', '15(cos(5', 'insert', '/12)', 'select']);
+  assert.ok(h.updates.some(u => /Click intended field with intent focus/.test(u.message)));
+});
+test('type with palette symbols types ASCII runs and clicks each symbol in text order', async () => {
+  const pi = { x: 62, y: 176 }, executed = [];
+  const h = harness([{ type: 'click', x: 10, y: 10, label: 'z', intent: 'focus' },
+    { type: 'type', text: '15(cos(5π/12))', label: 'z', origin: 'calculation', symbols: { 'π': pi } }, { type: 'need_input', message: 'stop' }],
+  { execute: async a => executed.push(a.type === 'type' ? a.text : `${a.intent}@${a.x},${a.y}`) });
+  await h.engine.run('Answer z');
+  assert.deepEqual(executed, ['focus@10,10', '15(cos(5', 'insert@62,176', '/12))']);
+  for (const symbols of [{ a: pi }, { 'π': { x: 900, y: 1 } }, { 'ππ': pi }, {}]) {
+    assert.throws(() => parseAutoAction(JSON.stringify({ type: 'type', text: 'π', label: 'z', origin: 'calculation', symbols }), bounds));
+  }
+});
+test('a second Submit with no answer change since the first is not sent', async () => {
+  const verified = { layout: 'per-question', question: 'Q1', navigation: 'submit-answer', scroll: 'none', status: 'answer-verified' };
+  const submit = { type: 'click', x: 66, y: 244, label: 'Submit', intent: 'submit', form: verified };
+  const executed = [];
+  const h = harness([submit, submit, { type: 'click', x: 9, y: 9, label: 'Choice B', intent: 'select' }, submit, { type: 'need_input', message: 'stop' }],
+    { execute: async a => executed.push(a.intent) });
+  await h.engine.run('Answer', { allowSubmit: true });
+  assert.deepEqual(executed, ['submit', 'select', 'submit']);
+  assert.ok(h.updates.some(u => /already clicked/.test(u.message)));
+});
+test('clear runs only on the field just focused, and typing may follow it', async () => {
+  const executed = [];
+  const h = harness([{ type: 'clear', label: 'z' }, { type: 'click', x: 10, y: 10, label: 'z', intent: 'focus' }, { type: 'clear', label: 'z' },
+    { type: 'type', text: '15', label: 'z', origin: 'calculation' }, { type: 'need_input', message: 'stop' }], { execute: async a => executed.push(a.type) });
+  await h.engine.run('Fix z');
+  assert.deepEqual(executed, ['click', 'clear', 'type']);
+  assert.ok(h.updates.some(u => /Clear was not performed/.test(u.message)));
 });

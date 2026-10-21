@@ -201,3 +201,8 @@ test('subprocess abort waits for actual child close before rejection', async () 
   child.emit('close', null);
   await assert.rejects(pending, { name: 'AbortError' });
 });
+test('clear sends only the fixed Ctrl+A, Backspace key sequence', async () => {
+  const h = harness(); const t = await h.ready();
+  await h.control.execute(t, { type: 'clear', label: 'z' });
+  assert.deepEqual(h.calls.filter(c => c.command === 'ydotool' && c.args[0] !== 'debug').map(c => c.args), [['key', '--key-delay', '12', '29:1', '30:1', '30:0', '29:0', '14:1', '14:0']]);
+});

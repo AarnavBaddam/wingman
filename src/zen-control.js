@@ -222,8 +222,9 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
     if (state) state.fresh = false;
     cancelled(signal);
     if (!fresh) throw new Error('Capture the locked Zen tab before acting.');
-    if (!action || !['click', 'type', 'scroll', 'drag'].includes(action.type)) throw new Error('Unsupported Zen action.');
-    if (action.type === 'type') {
+    if (!action || !['click', 'type', 'scroll', 'drag', 'clear'].includes(action.type)) throw new Error('Unsupported Zen action.');
+    if (action.type === 'clear') {
+    } else if (action.type === 'type') {
       if (typeof action.text !== 'string' || !action.text.length || action.text.length > 1000 || /[^\x20-\x7e]/.test(action.text)) throw new Error('Type accepts printable ASCII text only, without Enter or Tab.');
     } else {
       if (![action.x, action.y].every(Number.isFinite) || action.x < 0 || action.y < 0 || action.x >= state.width || action.y >= state.height) throw new Error('Zen coordinates are outside the captured viewport.');
@@ -254,6 +255,14 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
       if (action.type === 'scroll') {
         await validate(target, signal);
         return await scroll(target, action, state, signal);
+      }
+      if (action.type === 'clear') {
+        // Fixed Ctrl+A then Backspace in the focused field; never a model-chosen key.
+        await validate(target, signal); attempted = true;
+        await command('WebDriver:PerformActions', { actions: [{ type: 'key', id: 'aether-keys', actions: [
+          { type: 'keyDown', value: '\uE009' }, { type: 'keyDown', value: 'a' }, { type: 'keyUp', value: 'a' }, { type: 'keyUp', value: '\uE009' },
+          { type: 'keyDown', value: '\uE003' }, { type: 'keyUp', value: '\uE003' }] }] }, signal);
+        return;
       }
       const chunks = action.type === 'type' ? action.text.match(/.{1,8}/g) : [null];
       for (const chunk of chunks) {

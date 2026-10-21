@@ -93,7 +93,14 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
     if (authorized) locked.set(target, false);
     cancelled(signal);
     if (!authorized) throw new Error('Capture the locked target before acting.');
-    if (!action || !['click', 'type', 'scroll', 'drag'].includes(action.type)) throw new Error('Unsupported desktop action.');
+    if (!action || !['click', 'type', 'scroll', 'drag', 'clear'].includes(action.type)) throw new Error('Unsupported desktop action.');
+    if (action.type === 'clear') {
+      if (!helperEnv.YDOTOOL_SOCKET) throw new Error('Configure the ydotool socket before desktop input.');
+      await validate(target, signal);
+      // Fixed Ctrl+A then Backspace (evdev 29, 30, 14) in the focused field; never a model-chosen key.
+      await input(['key', '--key-delay', '12', '29:1', '30:1', '30:0', '29:0', '14:1', '14:0']);
+      return;
+    }
     if (action.type === 'type') {
       if (typeof action.text !== 'string' || !action.text.length || action.text.length > 1000 || /[^\x20-\x7e]/.test(action.text)) throw new Error('Type accepts printable ASCII text only, without Enter or Tab.');
       if (!helperEnv.YDOTOOL_SOCKET) throw new Error('Configure the ydotool socket before desktop input.');

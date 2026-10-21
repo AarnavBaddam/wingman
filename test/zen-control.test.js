@@ -257,3 +257,14 @@ test('double click sends two press/release pairs at one point', async t => {
   const actions = commands.find(c => c.name === 'WebDriver:PerformActions').params.actions[0].actions;
   assert.deepEqual(actions.map(a => a.type), ['pointerMove', 'pointerDown', 'pointerUp', 'pointerDown', 'pointerUp']);
 });
+test('clear sends only the fixed Ctrl+A, Backspace key sequence and releases', async t => {
+  const { control, commands } = await fixture(t, name => {
+    if (name === 'WebDriver:ExecuteScript') return { width: 800, height: 600, dpr: 1 };
+    if (name === 'WebDriver:TakeScreenshot') return png(800, 600);
+  });
+  const target = await control.lockTarget('tab-a'); await control.capture(target);
+  await control.execute(target, { type: 'clear', label: 'z' });
+  const keys = commands.find(c => c.name === 'WebDriver:PerformActions').params.actions[0].actions;
+  assert.deepEqual(keys.map(a => a.type + ':' + a.value), ['keyDown:', 'keyDown:a', 'keyUp:a', 'keyUp:', 'keyDown:', 'keyUp:']);
+  assert.ok(commands.some(c => c.name === 'WebDriver:ReleaseActions'));
+});
