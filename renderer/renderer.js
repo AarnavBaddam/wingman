@@ -9,17 +9,7 @@
   const DEFAULT_ASSIST_SHORTCUT = 'CommandOrControl+Return';
   const DEFAULT_TOGGLE_SHORTCUT = 'CommandOrControl+Shift+Space';
 
-  // ---- paint icons -------------------------------------------------------
-  $('#logo-btn').innerHTML = icon('logo', { size: 18 });
-  $('.tb-hide .chev').innerHTML = icon('chevron-down', { size: 14 });
-  $('#stop-btn').innerHTML = icon('stop-square', { size: 15 });
-  document.querySelector('.act[data-mode="assist"] .ic').innerHTML = icon('sparkles', { size: 16 });
-  document.querySelector('.act[data-mode="say"] .ic').innerHTML = icon('wand-sparkles', { size: 16 });
-  document.querySelector('.act[data-mode="followup"] .ic').innerHTML = icon('message-circle', { size: 16 });
-  document.querySelector('.act[data-mode="recap"] .ic').innerHTML = icon('refresh-cw', { size: 16 });
-  $('#smart-toggle .ic').innerHTML = icon('zap', { size: 14 });
-  $('#more-btn').innerHTML = icon('more-horizontal', { size: 18 });
-  $('#send-btn').innerHTML = icon('play', { size: 15 });
+  // Direction 3 (instrument UI) labels its keys with text; no icon painting needed.
 
   // ---- state -------------------------------------------------------------
   let settings = null;
@@ -60,7 +50,7 @@
     if (!recordingShortcut) $('#shortcut-toggle').textContent = shortcutParts(toggleShortcut).join(' + ');
     $('#share-hide-btn').title = 'Hide the entire window. Restore with ' + shortcutParts(toggleShortcut).join('+') + '. Test restoring before sharing.';
     const placeholder = $('#placeholder');
-    if (placeholder) placeholder.innerHTML = 'Ask about your screen or conversation, or ' + shortcutKeycapsHtml(assistShortcut) + ' for Assist';
+    if (placeholder) placeholder.innerHTML = 'Ask anything · ' + shortcutKeycapsHtml(assistShortcut) + ' Assist';
   }
 
   const renderMarkdown = window.createAnswerFormatter({ Marked: marked.Marked, DOMPurify, katex });
@@ -120,7 +110,7 @@
     const button = $('#auto-mode-btn');
     $('#auto-submit').disabled = autoModeActive || !autoModeSupported;
     for (const id of ['#auto-target', '#auto-zen-connect', '#auto-zen-tab']) $(id).disabled = autoModeActive;
-    button.textContent = autoModeActive ? 'Stop Auto' : 'Auto';
+    button.querySelector('.n').textContent = autoModeActive ? 'Stop Auto' : 'Run Auto';
     button.classList.toggle('on', autoModeActive);
     button.disabled = !autoModeSupported && !autoModeActive;
     if (!autoModeSupported) button.title = 'Desktop Auto currently requires native Hyprland, grim and ydotool.';
@@ -128,12 +118,19 @@
     status.textContent = state.message ? (state.step ? 'Step ' + state.step + ' · ' : '') + state.message : '';
     status.classList.toggle('hidden', !state.message);
     setBusy(autoModeActive);
+    syncReadout();
   }
+  // Header readout: what Auto would do right now.
+  function syncReadout() {
+    const zen = document.querySelector('input[name="auto-target"]:checked')?.value === 'zen';
+    $('#readout').textContent = (autoModeActive ? 'AUTO ON' : 'AUTO') + ' · ' + (zen ? 'ZEN' : 'DESK') + ' · ARM ' + ($('#auto-submit').checked ? 'ON' : 'OFF');
+  }
+  $('#auto-submit').addEventListener('change', syncReadout);
   wingman.on('auto-mode:state', paintAutoMode);
   $('#auto-target').addEventListener('change', () => {
     const browser = document.querySelector('input[name="auto-target"]:checked').value === 'zen';
-    $('#auto-zen-connect').classList.toggle('hidden', !browser);
-    $('#auto-zen-tab').classList.toggle('hidden', !browser);
+    $('#zen-row').classList.toggle('hidden', !browser);
+    syncReadout();
     $('#auto-mode-btn').title = browser ? 'Run on the selected Zen tab without using the desktop cursor. Escape stops Auto.' : 'Focus the target app within 3 seconds after Auto starts. Escape stops Auto.';
   });
   $('#auto-zen-connect').addEventListener('click', async () => {
@@ -179,7 +176,7 @@
     try {
       clearMessages();
       await wingman.autoModeStart(goal, { allowSubmit: $('#auto-submit').checked, target, ...(target === 'zen' ? { tabId } : {}) });
-      $('#auto-submit').checked = false;
+      $('#auto-submit').checked = false; syncReadout();
     } catch (error) { showStatus(error?.message || 'Auto could not start.', true); }
   });
 
@@ -190,7 +187,7 @@
     wingman.ask({ mode, text: text || '' });
   }
 
-  document.querySelectorAll('.act').forEach((btn) => {
+  document.querySelectorAll('.act[data-mode]').forEach((btn) => {
     btn.addEventListener('click', () => {
       if (btn.dataset.mode !== 'research') return runMode(btn.dataset.mode, '');
       const question = $('#input').value.trim();
@@ -228,16 +225,19 @@
     if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); send(); }
   });
 
-  // Smart toggle
+  // Depth slider: Answer (smart false) / Work (true) / Deep ('deep').
   const smartBtn = $('#smart-toggle');
+  const DEPTHS = { answer: false, work: true, deep: 'deep' };
   let smartSave = Promise.resolve(), smartRevision = 0;
   function syncSmart() {
     const value = settings?.smart;
-    const label = value === 'deep' ? 'Smart: Deep' : value ? 'Smart: Work' : 'Smart: Answer';
-    smartBtn.querySelector('span:last-child').textContent = label;
-    smartBtn.classList.toggle('on', !!value);
-    smartBtn.setAttribute('aria-pressed', value === 'deep' ? 'mixed' : String(!!value));
-    smartBtn.title = label + '. Click: answer/work. Double-click: in-depth explanation. Alt+Enter: deep.';
+    const current = value === 'deep' ? 'deep' : value ? 'work' : 'answer';
+    for (const button of smartBtn.querySelectorAll('button')) {
+      const on = button.dataset.depth === current;
+      button.setAttribute('aria-checked', String(on)); button.tabIndex = on ? 0 : -1;
+    }
+    smartBtn.dataset.depth = current;
+    $('#depth-readout').textContent = 'DEPTH: ' + current.toUpperCase();
   }
   function selectSmart(value) {
     if (!settings) return showStatus('Settings are unavailable. Restart Aether to retry.', true);
@@ -251,20 +251,22 @@
     });
   }
   smartBtn.addEventListener('click', event => {
-    if (event.detail < 2) selectSmart(!settings?.smart);
+    const button = event.target.closest('button[data-depth]');
+    if (button) selectSmart(DEPTHS[button.dataset.depth]);
   });
-  smartBtn.addEventListener('dblclick', () => selectSmart('deep'));
   smartBtn.addEventListener('keydown', event => {
-    if (event.altKey && event.key === 'Enter') { event.preventDefault(); selectSmart('deep'); }
+    const order = ['answer', 'work', 'deep'], at = order.indexOf(smartBtn.dataset.depth);
+    const next = event.key === 'ArrowRight' ? order[Math.min(2, at + 1)] : event.key === 'ArrowLeft' ? order[Math.max(0, at - 1)] : null;
+    if (!next) return;
+    event.preventDefault(); selectSmart(DEPTHS[next]); smartBtn.querySelector(`[data-depth="${next}"]`).focus();
   });
+  // Alt+Enter still jumps straight to Deep from anywhere in the panel.
+  document.addEventListener('keydown', event => { if (event.altKey && event.key === 'Enter') { event.preventDefault(); selectSmart('deep'); } });
 
   // Hide / collapse
-  $('#hide-btn').addEventListener('click', () => {
-    const collapsed = $('#panel').classList.toggle('collapsed');
-    $('#hide-btn').classList.toggle('collapsed', collapsed);
-    $('#live-dot').style.display = collapsed ? 'none' : '';
-    syncAutoRefreshPause();
-  });
+  // Hide puts the panel away; the dock at the top stays and reopens it.
+  $('#hide-btn').addEventListener('click', () => wingman.panelHide());
+  $('#dock-btn').addEventListener('click', () => wingman.dockShow());
   $('#share-hide-btn').addEventListener('click', () => wingman.hideForSharing());
 
   // Start getDisplayMedia directly from the click so its user gesture stays valid.
@@ -687,10 +689,9 @@ async function saveSettings() {
   // ---- example conversation (matches the reference screenshot) ------------
   function showExample() {
     clearMessages();
-    addUserBubble('What should I say?');
     const ai = document.createElement('div');
-    ai.className = 'ai-text';
-    ai.textContent = '“A discounted cash flow model values a company by projecting future free cash flows and discounting them to present value using the weighted average cost of capital.”';
+    ai.className = 'ai-text idle';
+    ai.textContent = 'Ready. Ask about your screen, press F1 for Assist, or type a task and Run Auto.';
     messages.appendChild(ai);
   }
 
@@ -699,6 +700,11 @@ async function saveSettings() {
     if (e.key === 'Escape' && !scrim.classList.contains('hidden')) closeSettings();
     if (isCmdOrCtrl(e)) {
       if (e.key === ',') { e.preventDefault(); openSettings(); }
+    }
+    // F1-F5 press the mode keys, unless a dialog is open or a shortcut is being recorded.
+    const fkey = /^F([1-5])$/.exec(e.key);
+    if (fkey && !recordingShortcut && scrim.classList.contains('hidden') && obScrim.classList.contains('hidden') && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault(); document.querySelectorAll('#action-row .act[data-mode]')[Number(fkey[1]) - 1]?.click();
     }
   });
 
@@ -720,7 +726,7 @@ async function saveSettings() {
   }
   document.addEventListener('mousemove', (e) => {
     const el = document.elementFromPoint(e.clientX, e.clientY);
-    const overUI = !!(el && el.closest && el.closest('#toolbar, #panel-wrap, #settings-scrim, #onboard-scrim, .resize-corner'));
+    const overUI = !!(el && el.closest && el.closest('#plate, #settings-scrim, #onboard-scrim, .resize-corner'));
     setIgnore(!overUI);
   });
   setIgnore(true); // supported platforms re-enable input when the pointer enters UI
@@ -773,12 +779,12 @@ async function saveSettings() {
   const obScrim = $('#onboard-scrim');
   const OB_STEPS = [
     {
-      icon: '👋',
+      icon: '01 · HELLO',
       title: 'Welcome to Aether',
       body: 'Aether is an AI copilot that floats over your screen. It can <strong>see your screen</strong>, <strong>hear your meetings</strong>, and help you answer questions or solve coding problems.<br><br>This quick guide gets you running in about a minute.'
     },
     ...(wingman.platform === 'darwin' ? [{
-      icon: '🔐',
+      icon: '02 · ACCESS',
       title: 'Allow Aether to see & hear',
       body: 'Aether needs two macOS permissions. Click each button, turn <strong>Aether</strong> ON in the window that opens, then come back here.<ul><li><strong>Microphone</strong> — to hear you</li><li><strong>Screen Recording</strong> — to see your screen and hear meeting audio</li></ul>',
       buttons: [
@@ -787,13 +793,13 @@ async function saveSettings() {
       ]
     }] : []),
     {
-      icon: '🔑',
+      icon: 'SETUP · PROVIDER',
       title: 'Connect an AI provider',
       body: 'Choose an AI provider in Settings: a cloud API key, local <strong>Ollama</strong>, or a signed-in <strong>Claude/Codex CLI</strong>. For factual questions, Aether searches its bundled reference library and uses Tavily web search for current topics or library gaps; web search needs a separate Tavily key.<br><br>Meeting transcription can use a local Whisper model or an OpenAI/Gemini key. Ollama always transcribes locally.',
       buttons: [{ label: 'Open Aether Settings', action: () => { finishOnboard(); openSettings(); } }]
     },
     {
-      icon: '🫥',
+      icon: 'SHARING',
       title: 'Before you share your screen',
       body: wingman.platform === 'darwin'
         ? 'Aether asks macOS to exclude its window from captures, but some sharing apps may still show it. Configure and test your <strong>Show / hide</strong> shortcut in Settings before sharing. Check the sharing app’s preview after hiding.'
@@ -802,9 +808,9 @@ async function saveSettings() {
           : 'Linux has no Aether window-exclusion support. Share only a selected window or tab when possible. Configure and test your <strong>Show / hide</strong> shortcut in Settings before sharing; Wayland may need a desktop binding. Check the recipient preview after hiding.'
     },
 {
-      icon: '✨',
+      icon: 'READY',
       title: 'You\'re all set',
-      body: () => `How to use Aether:<ul><li>${shortcutKeycapsHtml(assistShortcut, 'kbd')} — <strong>Assist</strong> with whatever's on screen or being said</li><li>${shortcutKeycapsHtml(toggleShortcut, 'kbd')} — <strong>Show / hide</strong> Aether (test restoring before sharing)</li><li><span class="kbd">${cmdKey}</span> <span class="kbd">H</span> — solve a coding problem on screen</li><li>Click <strong>▢</strong> in the top bar to start listening to a meeting</li><li>Type a question and press <span class="kbd">↵</span></li></ul>Reopen this guide anytime by clicking the <strong>Aether logo</strong>. Change shortcuts in <strong>Settings</strong>. Quit with <span class="kbd">${cmdKey}</span><span class="kbd">⇧</span><span class="kbd">X</span>.`
+      body: () => `How to use Aether:<ul><li>${shortcutKeycapsHtml(assistShortcut, 'kbd')} — <strong>Assist</strong> with whatever's on screen or being said</li><li>${shortcutKeycapsHtml(toggleShortcut, 'kbd')} — <strong>Show / hide</strong> Aether (test restoring before sharing)</li><li><span class="kbd">${cmdKey}</span> <span class="kbd">H</span> — solve a coding problem on screen</li><li>Press <strong>LISTEN</strong> in the panel header to start listening to a meeting</li><li>Press <span class="kbd">F1</span>–<span class="kbd">F5</span> for the mode keys; click the dock at the top to open or hide the panel, swipe it up to dismiss it</li><li>Type a question and press <span class="kbd">↵</span></li></ul>Reopen this guide anytime by clicking <strong>AETHER</strong> in the panel header. Change shortcuts in <strong>Settings</strong>. Quit with <span class="kbd">${cmdKey}</span><span class="kbd">⇧</span><span class="kbd">X</span>.`
     }
   ];
   let obIndex = 0;
