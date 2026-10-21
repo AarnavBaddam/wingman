@@ -9,7 +9,7 @@ test('native Hyprland configures a narrowly matched floating overlay before mapp
   assert.equal(calls[0][0], 'eval');
   assert.match(calls[0][1], /class = "\^dev\\\\\.prahladv\\\\\.aether\$"/);
   assert.match(calls[0][1], /float = true/);
-  assert.match(calls[0][1], /pin = false/);
+  assert.match(calls[0][1], /_G.aether_overlay_rule_v5 = hl.window_rule\(\{[\s\S]*?pin = true/);
   assert.match(calls[0][1], /"aether_overlay_rule_v1", "aether_overlay_rule_v2", "aether_overlay_rule_v3"/);
   assert.match(calls[0][1], /title = "\^Aether\$"/);
   assert.match(calls[0][1], /title = "\^Aether Dock\$"[\s\S]*pin = true[\s\S]*no_initial_focus = true[\s\S]*size = \{460, 44\}/);
@@ -95,4 +95,20 @@ test('dock goes top-center under the reserved bar and the panel opens under the 
   assert.match(scripts[1], /w.pid == 42/);
   assert.equal(await hyprPlace('dock', { ...options, env: {} }), false);
   await assert.rejects(hyprPlace('other', options), /Invalid window placement/);
+});
+
+test('panel pin follows workspaces and is toggled only when its state differs', async () => {
+  const { hyprSetPinned } = require('../src/linux-overlay');
+  let pinned = true; const scripts = [];
+  const call = async args => {
+    if (args[1] === 'clients') return JSON.stringify([{pid:42,class:'dev.prahladv.aether',title:'Aether Dock',address:'0xd0c',pinned:true},{pid:42,class:'dev.prahladv.aether',title:'Aether',address:'0xabc',pinned}]);
+    scripts.push(args[1]); pinned = !pinned; return 'ok';
+  };
+  const options = { pid: 42, platform: 'linux', env: { HYPRLAND_INSTANCE_SIGNATURE: 's' }, call };
+  assert.equal(await hyprSetPinned(true, options), true); assert.equal(scripts.length, 0, 'already pinned: no toggle');
+  assert.equal(await hyprSetPinned(false, options), true); assert.equal(pinned, false);
+  assert.match(scripts[0], /address:0xabc.*w.pinned ~= false.*window.pin\(\{window=w\}\)/);
+  assert.equal(await hyprSetPinned(true, options), true); assert.equal(pinned, true);
+  assert.equal(await hyprSetPinned(false, { ...options, env: {} }), false);
+  await assert.rejects(hyprSetPinned('no', options), /Invalid pin request/);
 });

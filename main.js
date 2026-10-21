@@ -64,6 +64,11 @@ function send(channel, data) {
   if (channel === 'capture:state') updateDock({ listening: !!data.active });
 }
 
+async function setPanelPinned(pinned) {
+  try { return await require('./src/linux-overlay').hyprSetPinned(pinned); }
+  catch (error) { log('panel pin change failed: ' + error.message); return false; }
+}
+
 // -------- dock (taskbar extension) --------
 // A small status strip top-center under the bar. Clicking opens the panel under it; the
 // panel can then be dragged anywhere while the dock stays. Swiping the dock up dismisses it.
@@ -426,7 +431,7 @@ function publishAutoRefreshState(active, error) {
   send('auto-refresh:state', { active, error });
 }
 
-function startAutoMode(goal, options) {
+async function startAutoMode(goal, options) {
   if (!autoRefreshSupported()) throw new Error('Desktop Auto currently requires native Hyprland, grim and ydotool.');
   if (state.busy) throw new Error('Wait for the current answer or stop Auto first.');
   if (!win || win.isDestroyed() || !win.isVisible()) throw new Error('Show Aether before starting Auto.');
@@ -443,9 +448,12 @@ function startAutoMode(goal, options) {
       send('auto-mode:state', { active: update.active, status: update.status, message: update.message, step: update.step });
       if (update.sources?.length) send('llm:sources', { sources: update.sources.map(({ number, title, url, origin }) => ({ number, title, url, origin })) });
     },
-    onEnd: () => { state.busy = false; autoRefresh?.cancelPending(); }
+    // The panel follows the user again once a desktop run ends, however it ended.
+    onEnd: () => { state.busy = false; autoRefresh?.cancelPending(); void setPanelPinned(true); }
   });
   state.busy = true; autoRefresh?.cancelPending();
+  // Desktop Auto works on this workspace: keep the panel here until the run ends.
+  if ((options?.target || 'desktop') === 'desktop') await setPanelPinned(false);
   try { return autoSession.start(goal, { allowSubmit: options?.allowSubmit === true, target: options?.target || 'desktop', tabId: options?.tabId }); }
   catch (error) { state.busy = false; throw error; }
 }

@@ -9,21 +9,23 @@ const CLASS = 'dev.prahladv.aether';
 // Install the static rule before BrowserWindow maps, so it never takes a tile.
 // Keep one session-owned rule across app restarts; no user config is rewritten.
 const HYPR_RULE = String.raw`
-for _, old in ipairs({"aether_overlay_rule_v1", "aether_overlay_rule_v2", "aether_overlay_rule_v3"}) do
+for _, old in ipairs({"aether_overlay_rule_v1", "aether_overlay_rule_v2", "aether_overlay_rule_v3", "aether_overlay_rule_v4"}) do
   if _G[old] then _G[old]:set_enabled(false) end
 end
-if not _G.aether_overlay_rule_v4 then
-  _G.aether_overlay_rule_v4 = hl.window_rule({
+if not _G.aether_overlay_rule_v5 then
+  -- The panel follows the user across workspaces; desktop Auto unpins it for the run.
+  _G.aether_overlay_rule_v5 = hl.window_rule({
     name = "aether-overlay",
     match = { class = "^dev\\.prahladv\\.aether$", title = "^Aether$" },
     float = true,
-    pin = false,
+    pin = true,
     no_blur = true,
     no_shadow = true,
     size = {600, 600},
     center = true,
   })
   -- The dock is a taskbar extension: it stays on every workspace, like the bar.
+  if _G.aether_dock_rule_v1 then _G.aether_dock_rule_v1:set_enabled(false) end
   _G.aether_dock_rule_v1 = hl.window_rule({
     name = "aether-dock",
     match = { class = "^dev\\.prahladv\\.aether$", title = "^Aether Dock$" },
@@ -35,7 +37,7 @@ if not _G.aether_overlay_rule_v4 then
     size = {${DOCK_W}, ${DOCK_H}},
   })
 else
-  _G.aether_overlay_rule_v4:set_enabled(true)
+  _G.aether_overlay_rule_v5:set_enabled(true)
   _G.aether_dock_rule_v1:set_enabled(true)
 end`;
 
@@ -129,4 +131,19 @@ async function hyprPlace(kind, { pid = process.pid, env = process.env, platform 
   return (await call(['eval', script])).trim() === 'ok';
 }
 
-module.exports = { configureLinuxOverlay, createHyprGesture, hyprPlace, DOCK_W, DOCK_H };
+// Pin (follow every workspace) or unpin (stay put) the panel, then confirm the real state.
+async function hyprSetPinned(pinned, { pid = process.pid, env = process.env, platform = process.platform,
+  call = async args => (await run('hyprctl', args, { timeout: 1500, maxBuffer: 1024 * 1024 })).stdout } = {}) {
+  if (platform !== 'linux' || !env.HYPRLAND_INSTANCE_SIGNATURE) return false;
+  if (typeof pinned !== 'boolean' || !Number.isSafeInteger(pid) || pid < 1) throw new Error('Invalid pin request');
+  const find = async () => JSON.parse(await call(['-j', 'clients'])).find(w => w.pid === pid && w.class === CLASS && w.title === 'Aether' && /^0x[0-9a-f]+$/i.test(w.address));
+  const panel = await find();
+  if (!panel) return false;
+  if (panel.pinned === pinned) return true;
+  // hl.dsp.window.pin toggles, so only dispatch when the state differs.
+  const script = `local w = hl.get_window("address:${panel.address}"); if w and w.pid == ${pid} and w.class == "${CLASS}" and w.pinned ~= ${pinned} then hl.dispatch(hl.dsp.window.pin({window=w})) end`;
+  if ((await call(['eval', script])).trim() !== 'ok') return false;
+  return (await find())?.pinned === pinned;
+}
+
+module.exports = { configureLinuxOverlay, createHyprGesture, hyprPlace, hyprSetPinned, DOCK_W, DOCK_H };
