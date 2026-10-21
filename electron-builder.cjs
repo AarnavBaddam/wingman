@@ -30,7 +30,7 @@ module.exports = {
   appId: "dev.prahladv.aether",
   productName: "Aether",
   publish: null,
-  files: ["main.js", "preload.js", "src/**/*", "renderer/**/*", "data/**/*", "LICENSE"],
+  files: ["main.js", "preload.js", "dock-preload.js", "src/**/*", "renderer/**/*", "data/**/*", "LICENSE"],
   directories: { buildResources: "build-resources" },
   mac: {
     target: [{ target: "zip", arch: ["arm64"] }],

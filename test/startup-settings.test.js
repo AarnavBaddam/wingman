@@ -4,7 +4,7 @@ test('unavailable saved settings do not interrupt startup lifecycle registration
  const context=vm.createContext({process:{platform:'linux'},console,autoRefreshChange:Promise.resolve(),
   app:{whenReady:()=>({then:fn=>start=fn}),commandLine:{getSwitchValue:()=>''},on:name=>registered.push(name)},
   session:{defaultSession:{setPermissionRequestHandler(){},setPermissionCheckHandler(){},setDisplayMediaRequestHandler(){}}},
-  createWindow(){},registerShortcuts(){},initializeHyprShortcut(){},configureAutoRefresh:async()=>{},publishAutoRefreshState(){},store:{getSettings(){throw Error('Keyring unavailable');}},send:(_channel,data)=>messages.push(data.message)
+  createWindow(){},createDock(){},registerShortcuts(){},initializeHyprShortcut(){},configureAutoRefresh:async()=>{},publishAutoRefreshState(){},store:{getSettings(){throw Error('Keyring unavailable');}},send:(_channel,data)=>messages.push(data.message)
  });
  const source=fs.readFileSync(path.join(__dirname,'../main.js'),'utf8');
  vm.runInContext(source.slice(source.indexOf('// -------- lifecycle')),context);

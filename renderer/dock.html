@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; font-src 'self'" />
+  <title>Aether Dock</title>
+  <link rel="stylesheet" href="dock.css" />
+</head>
+<body>
+  <button id="dock" type="button" title="Click to open Aether · swipe up to dismiss" aria-label="Aether dock. Click to open, swipe up to dismiss.">
+    <span id="led" class="led" aria-hidden="true"></span>
+    <span class="oled" role="status" aria-live="polite"><span id="step"></span><span id="text">AETHER · READY</span><span id="sub"></span></span>
+    <span id="key" class="key"></span>
+  </button>
+  <script src="dock.js"></script>
+</body>
+</html>

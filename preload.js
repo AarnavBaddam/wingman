@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('wingman', {
   shortcutStatus: () => ipcRenderer.invoke('shortcut:status'),
   ask: (payload) => ipcRenderer.send('ask', payload),
   hideForSharing: () => ipcRenderer.send('window:hide-for-sharing'),
+  panelHide: () => ipcRenderer.send('panel:hide'),
+  dockShow: () => ipcRenderer.send('dock:show'),
   resizeStart: (request) => ipcRenderer.invoke('window:resize-start', request),
   resizeMove: (point) => ipcRenderer.send('window:resize-move', point),
   resizeEnd: (request) => ipcRenderer.send('window:resize-end', request),

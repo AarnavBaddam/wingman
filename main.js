@@ -11,6 +11,8 @@ const { appendResumeContext } = require('./src/profile-context');
 const { rms16 } = require('./src/wav');
 
 let win = null;
+let dock = null, dockDismissed = false, dockHiddenForSharing = false, startDocked = true;
+const dockState = { auto: {}, listening: false, panelVisible: false, toggleLabel: '' };
 const registeredShortcuts = {};
 let hyprShortcut = null;
 let toggleBindingError = null;
@@ -56,7 +58,72 @@ const RMS_GATE = 240;
 let flushTimer = null;
 let linuxAudio = null;
 
-function send(channel, data) { if (win && !win.isDestroyed()) win.webContents.send(channel, data); }
+function send(channel, data) {
+  if (win && !win.isDestroyed()) win.webContents.send(channel, data);
+  if (channel === 'auto-mode:state') updateDock({ auto: { ...data, target: autoSession?.target } });
+  if (channel === 'capture:state') updateDock({ listening: !!data.active });
+}
+
+// -------- dock (taskbar extension) --------
+// A small status strip top-center under the bar. Clicking opens the panel under it; the
+// panel can then be dragged anywhere while the dock stays. Swiping the dock up dismisses it.
+function toggleLabel() {
+  // Never let a settings/keyring failure break capture or Auto status updates.
+  let accelerator = 'CommandOrControl+Shift+Space';
+  try { accelerator = store.getSettings().shortcuts?.toggle || accelerator; } catch {}
+  return accelerator.replace('CommandOrControl', process.platform === 'darwin' ? '⌘' : 'Ctrl').replace(/\+/g, ' ').replace('Shift', '⇧').replace('Space', 'SPC');
+}
+function updateDock(patch) {
+  Object.assign(dockState, patch, { toggleLabel: toggleLabel() });
+  if (dock && !dock.isDestroyed()) dock.webContents.send('dock:state', dockState);
+}
+// Wayland clients cannot position themselves; on Hyprland ask the compositor once the window maps.
+async function placeOnHyprland(kind) {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { if (await require('./src/linux-overlay').hyprPlace(kind)) return true; } catch { return false; }
+    await new Promise(resolve => setTimeout(resolve, 80));
+  }
+  return false;
+}
+function createDock() {
+  if (dock && !dock.isDestroyed()) return;
+  const { DOCK_W, DOCK_H } = require('./src/linux-overlay');
+  const { workArea } = screen.getPrimaryDisplay();
+  dock = new BrowserWindow({
+    title: 'Aether Dock', width: DOCK_W, height: DOCK_H,
+    x: Math.round(workArea.x + (workArea.width - DOCK_W) / 2), y: workArea.y + 6,
+    frame: false, transparent: true, hasShadow: false, resizable: false, movable: false,
+    skipTaskbar: true, alwaysOnTop: true, fullscreenable: false, show: false,
+    ...(process.platform === 'darwin' ? { type: 'panel' } : {}),
+    webPreferences: { preload: path.join(__dirname, 'dock-preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true }
+  });
+  if (process.platform === 'darwin' || process.platform === 'win32') dock.setContentProtection(true);
+  dock.setAlwaysOnTop(true, process.platform === 'darwin' ? 'screen-saver' : undefined);
+  if (process.platform === 'darwin') dock.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
+  dock.on('closed', () => { dock = null; });
+  dock.loadFile(path.join(__dirname, 'renderer', 'dock.html'));
+  dock.webContents.on('did-finish-load', () => {
+    updateDock({});
+    if (dockDismissed || dockHiddenForSharing) return;
+    dock.showInactive(); void placeOnHyprland('dock');
+  });
+}
+function showDock() {
+  dockDismissed = false; dockHiddenForSharing = false;
+  if (!dock || dock.isDestroyed()) { createDock(); return; }
+  if (!dock.isVisible()) { dock.showInactive(); void placeOnHyprland('dock'); }
+}
+function openPanelFromDock() {
+  const wasVisible = win && !win.isDestroyed() && win.isVisible();
+  showWindow();
+  if (wasVisible || !dock || dock.isDestroyed()) return;
+  // Open under the dock; after this the panel is free to be dragged away.
+  if (process.env.HYPRLAND_INSTANCE_SIGNATURE) void placeOnHyprland('panel');
+  else {
+    const d = dock.getBounds(), w = win.getBounds();
+    win.setPosition(Math.round(d.x + (d.width - w.width) / 2), d.y + d.height + 6);
+  }
+}
 
 // -------- window --------
 function createWindow() {
@@ -68,13 +135,15 @@ function createWindow() {
     log(overlayError);
   }
   const { workArea } = screen.getPrimaryDisplay();
-  const W = 700, H = 420;
+  const W = 600, H = 600;
   const isMac = process.platform === 'darwin';
   win = new BrowserWindow({
+    title: 'Aether',
+    show: false, // shown after load (or left docked)
     width: W,
     height: H,
     minWidth: 520,
-    minHeight: 300,
+    minHeight: 420,
     x: Math.round(workArea.x + (workArea.width - W) / 2),
     y: workArea.y + 6,
     frame: false,
@@ -110,12 +179,17 @@ function createWindow() {
   if (app.dock && isMac) app.dock.show();
 
   win.webContents.on('did-start-loading', () => { autoSession?.stop('Auto stopped because Aether reloaded.'); autoRefreshPaused = true; autoRefresh?.cancelPending(); stopWindowGesture(); setCapturing(false); });
+  win.on('show', () => updateDock({ panelVisible: true }));
+  win.on('hide', () => updateDock({ panelVisible: false }));
   win.on('closed', () => { autoSession?.stop('Auto stopped because Aether closed.'); stopWindowGesture(); setCapturing(false); });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
   win.webContents.on('did-finish-load', () => {
     if (overlayError) send('status', { message: overlayError });
     if (win.isVisible()) return;
+    // With the dock running, start as just the dock; the panel opens from it (Sentient-style).
+    // Headless checks and setup errors still show the panel directly.
+    if (startDocked && !overlayError && app.commandLine.getSwitchValue('ozone-platform') !== 'headless') { startDocked = false; return; }
     win.showInactive();
     // Re-assert overlay settings each time the window appears, so it keeps
     // following the user into fullscreen apps and across Spaces.
@@ -146,6 +220,7 @@ function toggleWindow() {
     assertOverlay();
     win.show();
     win.focus();
+    if (dockHiddenForSharing && !dockDismissed) showDock();
   }
 }
 
@@ -439,7 +514,26 @@ ipcMain.handle('capture:system:stop', () => stopLinuxAudio());
 ipcMain.on('ask', (_e, payload) => runFeature(payload.mode, payload.text));
 ipcMain.on('window:hide-for-sharing', async () => {
   await toggleBindingReady;
-  if (registeredShortcuts.toggle && !toggleBindingError && win && !win.isDestroyed()) { stopForegroundAuto('Auto stopped because Aether was hidden.'); stopWindowGesture(); win.hide(); }
+  if (registeredShortcuts.toggle && !toggleBindingError && win && !win.isDestroyed()) {
+    stopForegroundAuto('Auto stopped because Aether was hidden.'); stopWindowGesture(); win.hide();
+    // Sharing hides everything Aether draws, the dock included.
+    if (dock && !dock.isDestroyed() && dock.isVisible()) { dockHiddenForSharing = true; dock.hide(); }
+  }
+});
+ipcMain.on('dock:activate', event => {
+  if (!dock || event.sender !== dock.webContents) return;
+  if (win && !win.isDestroyed() && win.isVisible()) { stopForegroundAuto('Auto stopped because Aether was hidden.'); stopWindowGesture(); win.hide(); }
+  else openPanelFromDock();
+});
+ipcMain.on('dock:dismiss', event => {
+  if (!dock || event.sender !== dock.webContents) return;
+  dockDismissed = true; dock.hide();
+});
+ipcMain.on('dock:show', event => { if (win && event.sender === win.webContents) showDock(); });
+ipcMain.on('panel:hide', event => {
+  if (!win || event.sender !== win.webContents) return;
+  stopForegroundAuto('Auto stopped because Aether was hidden.'); stopWindowGesture(); win.hide();
+  if (dockDismissed) showDock();
 });
 ipcMain.on('mic:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.you.push(Buffer.from(arrayBuffer)); });
 ipcMain.on('system:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.them.push(Buffer.from(arrayBuffer)); });
@@ -620,6 +714,7 @@ app.whenReady().then(() => {
   }, { useSystemPicker: false });
 
   createWindow();
+  createDock();
   // Headless checks must not register keys or alter the signed-in desktop's bindings.
   if (app.commandLine.getSwitchValue('ozone-platform') !== 'headless') {
     registerShortcuts();
