@@ -71,6 +71,33 @@ if(document.visibilityState==='hidden'&&el){
 return {hovered:true};`;
 function cancelled(signal) { if (signal?.aborted) { const error = new Error('Zen action cancelled.'); error.name = 'AbortError'; throw error; } }
 
+// Second cursor: a fixed, page-inert marker where Auto acts in the Zen tab, so the user
+// can watch a background run. pointer-events:none keeps it out of hit tests and input.
+// Built with DOM calls, not innerHTML, so Trusted Types pages accept it.
+const CURSOR_SCRIPT = `
+const [mode,x,y]=arguments, id='__aether_cursor';
+let host=document.getElementById(id);
+if(mode==='remove'){host?.remove();return true;}
+if(mode==='hide'||mode==='show'){if(host)host.style.visibility=mode==='hide'?'hidden':'visible';return !!host;}
+if(![x,y].every(Number.isFinite)||x<0||y<0||x>=innerWidth||y>=innerHeight)return false;
+if(!host){
+ const ns='http://www.w3.org/2000/svg';
+ host=document.createElement('div');host.id=id;host.setAttribute('aria-hidden','true');
+ host.style.cssText='position:fixed;left:0;top:0;width:0;height:0;z-index:2147483647;pointer-events:none;transition:transform .18s ease-out;';
+ const ring=document.createElement('div');ring.setAttribute('data-ring','1');
+ ring.style.cssText='position:absolute;left:-14px;top:-14px;width:28px;height:28px;border-radius:50%;border:2px solid #e9692f;opacity:0;';
+ const svg=document.createElementNS(ns,'svg');svg.setAttribute('width','22');svg.setAttribute('height','26');svg.setAttribute('viewBox','0 0 22 26');
+ svg.style.cssText='display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));';
+ const path=document.createElementNS(ns,'path');path.setAttribute('d','M2 2 L2 21 L7.5 16 L11 24 L14.5 22.5 L11 14.8 L18.5 14.8 Z');
+ path.setAttribute('fill','#e9692f');path.setAttribute('stroke','#fff');path.setAttribute('stroke-width','1.6');path.setAttribute('stroke-linejoin','round');
+ svg.appendChild(path);
+ const tag=document.createElement('span');tag.textContent='Aether';
+ tag.style.cssText='position:absolute;left:18px;top:20px;font:600 11px system-ui,sans-serif;color:#fff;background:#e9692f;padding:1px 6px;border-radius:8px;white-space:nowrap;';
+ host.append(ring,svg,tag);document.documentElement.appendChild(host);
+}
+host.style.transform='translate('+x+'px,'+y+'px)';
+if(mode==='click')host.querySelector('[data-ring]')?.animate([{transform:'scale(.6)',opacity:.9},{transform:'scale(1.8)',opacity:0}],{duration:450,easing:'ease-out',fill:'forwards'});
+return true;`;
 function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, connectSocket = options => net.createConnection(options) } = {}) {
   if (host !== '127.0.0.1' || !Number.isInteger(port) || port < 1 || port > 65535 || !Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 30000) throw new Error('Zen automation requires a bounded loopback connection.');
   let socket = null, buffer = Buffer.alloc(0), pending = null, greeting = null, serial = Promise.resolve(), nextId = 0, ready = false;
@@ -183,7 +210,11 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
   async function capture(target, signal) {
     const previous = targets.get(target); if (previous) previous.fresh = false;
     const state = await validate(target, signal);
-    const encoded = await command('WebDriver:TakeScreenshot', { full: false, scroll: false }, signal);
+    // The model must see the page, not Aether's own cursor.
+    await cursor('hide');
+    let encoded;
+    try { encoded = await command('WebDriver:TakeScreenshot', { full: false, scroll: false }, signal); }
+    finally { await cursor('show'); }
     if (typeof encoded !== 'string' || encoded.length > MAX_FRAME || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) throw new Error('Invalid Zen screenshot.');
     const png = Buffer.from(encoded, 'base64');
     if (png.length < 33 || png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a' || png.readUInt32BE(8) !== 13 || png.toString('ascii', 12, 16) !== 'IHDR') throw new Error('Invalid Zen screenshot.');
@@ -217,7 +248,22 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
       if (socket) await command('WebDriver:SwitchToFrame', { id: null });
     }
   }
+  // Cosmetic only: a cursor failure never blocks or fails real input.
+  async function cursor(mode, x, y) {
+    if (!socket) return;
+    try { await command('WebDriver:ExecuteScript', { script: CURSOR_SCRIPT, args: [mode, x, y], newSandbox: true, sandbox: 'aether-cursor' }); } catch {}
+  }
   async function execute(target, action, signal) {
+    const state = targets.get(target);
+    const point = (x, y) => [x / state.scale, y / state.scale];
+    const pointed = state?.fresh && ['click', 'drag', 'scroll'].includes(action?.type) && [action.x, action.y].every(Number.isFinite);
+    if (pointed) await cursor('move', ...point(action.x, action.y));
+    const result = await act(target, action, signal);
+    if (pointed && action.type === 'click') await cursor('click', ...point(action.x, action.y));
+    if (pointed && action.type === 'drag') await cursor('move', ...point(action.toX, action.toY));
+    return result;
+  }
+  async function act(target, action, signal) {
     const state = targets.get(target), fresh = state?.fresh;
     if (state) state.fresh = false;
     cancelled(signal);
@@ -327,6 +373,8 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
     lockTarget: (id, signal) => enqueue(() => lockTarget(id, signal)),
     capture: (target, signal) => enqueue(() => capture(target, signal)),
     execute: (target, action, signal) => enqueue(() => execute(target, action, signal)),
+    // Run end: take the second cursor off the page.
+    release: target => enqueue(async () => { if (targets.has(target)) { try { await select(target.id); } catch { return; } await cursor('remove'); } }),
     // Dropping the transport releases Marionette's session; never Quit/DeleteSession.
     close: () => enqueue(() => { ready = false; const connection = socket; socket = null; connection?.destroy(); })
   };

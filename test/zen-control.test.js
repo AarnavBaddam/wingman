@@ -37,7 +37,7 @@ test('cancellation during drag drains the gesture and releases the held pointer'
   assert.equal(commands.at(-1).name, 'WebDriver:ReleaseActions');
 });
 async function fixture(t, override = () => undefined, options = {}) {
-  const commands = [], sockets = new Set(); let current = 'tab-a';
+  const commands = [], cursorCalls = [], sockets = new Set(); let current = 'tab-a';
   const frame = value => { const json = JSON.stringify(value); return Buffer.from(`${Buffer.byteLength(json)}:${json}`); };
   const server = net.createServer(socket => {
     socket.setNoDelay(true);
@@ -51,7 +51,10 @@ async function fixture(t, override = () => undefined, options = {}) {
         const colon = bytes.indexOf(58); if (colon < 0) return;
         const length = Number(bytes.subarray(0, colon).toString()); if (bytes.length < colon + 1 + length) return;
         const packet = JSON.parse(bytes.subarray(colon + 1, colon + 1 + length)); bytes = bytes.subarray(colon + 1 + length);
-        const [, id, name, params] = packet; commands.push({ name, params });
+        const [, id, name, params] = packet;
+        // Second-cursor drawing is cosmetic; log it apart so input tests keep their exact command streams.
+        if (params?.sandbox === 'aether-cursor') { cursorCalls.push(params.args); if (options.cursorFails) socket.write(frame([1, id, { error: 'javascript error', message: 'blocked' }, null])); else socket.write(frame([1, id, null, { value: true }])); continue; }
+        commands.push({ name, params });
         const changed = override(name, params, commands);
         if (changed === 'hang') continue;
         let result = changed;
@@ -75,7 +78,7 @@ async function fixture(t, override = () => undefined, options = {}) {
   const control = createZenControl({ port: server.address().port, timeoutMs: 500, ...options });
   t.after(async () => { await control.close(); for (const socket of sockets) socket.destroy(); await new Promise(resolve => server.close(resolve)); });
   await control.connect();
-  return { control, commands };
+  return { control, commands, cursorCalls };
 }
 
 test('lists current tabs through fragmented UTF-8 packets and switches without focus', async t => {
@@ -267,4 +270,29 @@ test('clear sends only the fixed Ctrl+A, Backspace key sequence and releases', a
   const keys = commands.find(c => c.name === 'WebDriver:PerformActions').params.actions[0].actions;
   assert.deepEqual(keys.map(a => a.type + ':' + a.value), ['keyDown:', 'keyDown:a', 'keyUp:a', 'keyUp:', 'keyDown:', 'keyUp:']);
   assert.ok(commands.some(c => c.name === 'WebDriver:ReleaseActions'));
+});
+test('second cursor hides for screenshots, follows clicks and drags, and is removed on release', async t => {
+  const { control, commands, cursorCalls } = await fixture(t, name => {
+    if (name === 'WebDriver:ExecuteScript') return { width: 800, height: 600, dpr: 1 };
+    if (name === 'WebDriver:TakeScreenshot') return png(800, 600);
+  });
+  const target = await control.lockTarget('tab-a'); await control.capture(target);
+  assert.deepEqual(cursorCalls.splice(0), [['hide', null, null], ['show', null, null]]);
+  await control.execute(target, { type: 'click', x: 100, y: 200 });
+  assert.deepEqual(cursorCalls.splice(0), [['move', 100, 200], ['click', 100, 200]]);
+  await control.capture(target); cursorCalls.splice(0);
+  await control.execute(target, { type: 'type', text: 'abc' });
+  assert.deepEqual(cursorCalls, [], 'typing keeps the cursor where the field was clicked');
+  await control.release(target);
+  assert.deepEqual(cursorCalls, [['remove', null, null]]);
+  assert.ok(commands.some(c => c.name === 'WebDriver:PerformActions'));
+});
+test('a failing cursor script never blocks the real click', async t => {
+  const { control, commands } = await fixture(t, name => {
+    if (name === 'WebDriver:ExecuteScript') return { width: 800, height: 600, dpr: 1 };
+    if (name === 'WebDriver:TakeScreenshot') return png(800, 600);
+  }, { cursorFails: true });
+  const target = await control.lockTarget('tab-a'); await control.capture(target);
+  await control.execute(target, { type: 'click', x: 100, y: 200 });
+  assert.equal(commands.filter(c => c.name === 'WebDriver:PerformActions').length, 1);
 });

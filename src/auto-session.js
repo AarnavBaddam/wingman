@@ -48,6 +48,7 @@ function createAutoSession({ getSettings, createLLM, getCodexHome, createDesktop
           } else publish({ status: 'starting', message: 'Locking the selected Zen tab. You can work elsewhere; Escape stops Auto.' });
           const target = targetType === 'zen' ? await desktop.lockTarget(tabId, signal) : await desktop.lockTarget(signal);
           signal.throwIfAborted();
+          session.release = () => desktop.release?.(target);
           session.engine = createAutoMode({
             capture: innerSignal => desktop.capture(target, innerSignal),
             execute: (action, innerSignal) => {
@@ -76,6 +77,7 @@ function createAutoSession({ getSettings, createLLM, getCodexHome, createDesktop
           // Input teardown must finish before releasing the busy lock for another task.
           try { await session.pendingInput; }
           catch (error) { if (error?.code === 'INPUT_CLEANUP') terminal = { status: 'error', message: error.message }; }
+          try { await session.release?.(); } catch {}
           try { session.watcher?.stop(); } catch { terminal = { status: 'error', message: 'Auto stopped; restart Aether to clear its Escape binding.' }; }
           if (current === session) current = null;
           // Escape/errors replace the message; never lose skipped-question instructions.
