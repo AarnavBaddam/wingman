@@ -6,3 +6,4 @@ native/systemaudio
 *.log
 .DS_Store
 wingman-data.json
+design/design-demos/preview/

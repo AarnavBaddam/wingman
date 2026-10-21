@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Aether · Direction 1 · Warm Editorial (roulette #12)</title>
+<!-- Logic: roulette (second 31 -> style 12, Warm Editorial). Form seed: the dock is the cursor's home;
+     cursor + dock share terracotta. Answer reads like a typeset page because Aether's core output is an answer you read. -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Hanken+Grotesk:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:oklch(0.962 0.014 82); --paper-2:oklch(0.935 0.018 80); --rule:oklch(0.86 0.02 78);
+  --ink:oklch(0.22 0.01 60); --ink-2:oklch(0.45 0.015 60); --ink-3:oklch(0.58 0.015 65);
+  --clay:oklch(0.60 0.13 42); --clay-ink:oklch(0.46 0.12 40); --clay-wash:oklch(0.92 0.04 50);
+  --serif:'Newsreader',Georgia,serif; --sans:'Hanken Grotesk',system-ui,sans-serif; --mono:'DM Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box;margin:0}
+body{width:1440px;height:900px;overflow:hidden;background:#151312;font-family:var(--sans);color:var(--ink)}
+.bar{position:absolute;inset:0 0 auto 0;height:45px;background:url({{TOPBAR}}) 0 0/1440px 45px}
+/* backdrop browser */
+.browser{position:absolute;left:28px;top:62px;width:900px;height:820px;border-radius:12px;overflow:hidden;background:#fff;box-shadow:0 20px 50px rgba(0,0,0,.45)}
+.chrome{height:40px;background:#26262a;display:flex;align-items:center;gap:8px;padding:0 14px;color:#cfcfd4;font:13px var(--sans)}
+.chrome .tab{background:#3a3a40;border-radius:8px;padding:6px 12px}
+.page{padding:28px 34px;font:15px/1.5 'Open Sans',var(--sans);color:#333}
+.page .q{border:1px solid #d8d8d8;border-radius:4px;padding:18px 22px;width:520px}
+.page .q p{margin-bottom:14px}
+.page .math{font:17px 'Times New Roman',serif;margin:6px 0 16px}
+.zrow{display:flex;align-items:center;gap:10px;font:16px serif}
+.zbox{width:240px;height:38px;border:1.5px solid #888;border-radius:3px;padding:8px 10px;font:15px 'Times New Roman',serif;position:relative}
+.zbox .caret{display:inline-block;width:1px;height:18px;background:#222;vertical-align:-3px;animation:b 1s steps(1) infinite}
+@keyframes b{50%{opacity:0}}
+.palette{margin-top:10px;display:flex;gap:6px}.palette span{border:1px solid #bbb;border-radius:3px;padding:3px 10px;font:15px serif;background:#f6f6f6}
+/* second cursor: same glyph as dock */
+.cursor2{position:absolute;left:300px;top:300px;pointer-events:none}
+.cursor2 .tag{position:absolute;left:18px;top:21px;background:var(--clay);color:var(--paper);font:500 11px var(--mono);padding:2px 7px;border-radius:3px;white-space:nowrap;letter-spacing:.02em}
+.ripple{position:absolute;left:-13px;top:-13px;width:26px;height:26px;border-radius:50%;border:1.5px solid var(--clay);opacity:.55}
+
+/* dock */
+.dock{position:absolute;left:50%;top:50px;transform:translateX(-50%);display:flex;align-items:center;gap:12px;height:34px;padding:0 6px 0 12px;border-radius:17px;background:var(--paper);box-shadow:0 6px 18px rgba(0,0,0,.35),0 0 0 1px rgba(0,0,0,.25);font-size:13px;color:var(--ink);z-index:5}
+.dock .word{font:italic 500 16px var(--serif);letter-spacing:.005em}
+.dock .step{font:500 12px var(--mono);color:var(--clay-ink)}
+.dock .what{color:var(--ink-2)}
+.dock .prog{width:64px;height:3px;background:var(--rule);border-radius:2px;overflow:hidden}.dock .prog i{display:block;width:45%;height:100%;background:var(--clay)}
+.dock .esc{font:500 11px var(--mono);border:1px solid var(--rule);border-radius:10px;padding:3px 8px;color:var(--ink-2);background:var(--paper-2)}
+/* panel */
+.panel{position:absolute;left:50%;top:94px;transform:translateX(-50%);width:540px;background:var(--paper);border-radius:14px;box-shadow:0 30px 70px rgba(0,0,0,.5),0 0 0 1px rgba(0,0,0,.3);z-index:4;overflow:hidden}
+.panel::before{content:"";position:absolute;left:50%;top:-7px;width:14px;height:14px;background:var(--paper);transform:translateX(-50%) rotate(45deg)}
+.p-head{display:flex;justify-content:space-between;align-items:baseline;padding:18px 26px 0;font:500 12px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.depth{display:flex;gap:2px;background:var(--paper-2);border-radius:8px;padding:2px;text-transform:none;letter-spacing:0;font:500 12px var(--sans)}
+.depth button{all:unset;padding:4px 10px;border-radius:6px;color:var(--ink-2);cursor:pointer}
+.depth button[aria-pressed=true]{background:var(--paper);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.answer{padding:14px 26px 6px}
+.answer .kicker{font:15px var(--serif);color:var(--ink-2);margin-bottom:4px}
+.answer h1{font:500 30px/1.2 var(--serif);letter-spacing:-.01em}
+.answer h1 em{font-style:italic;color:var(--clay-ink)}
+.work{display:grid;grid-template-columns:22px 1fr;gap:6px 6px;padding:12px 26px 16px;font:15px/1.5 var(--serif);color:var(--ink-2)}
+.work b{font:500 12px var(--mono);color:var(--clay-ink);padding-top:3px}
+.src{padding:0 26px 16px;font:12px var(--sans);color:var(--ink-3)}
+.rule{height:1px;background:var(--rule);margin:0 26px}
+.modes{display:flex;gap:18px;padding:14px 26px 4px;font:500 14px var(--sans);color:var(--ink-2)}
+.modes span[aria-current]{color:var(--ink);box-shadow:inset 0 -2px 0 var(--clay);padding-bottom:4px}
+.slip{margin:12px 26px 0;border:1px solid var(--rule);border-radius:10px;padding:14px 16px;background:var(--paper-2)}
+.slip .t{display:flex;justify-content:space-between;align-items:center;font:500 14px var(--sans)}
+.slip .t small{font:12px var(--sans);color:var(--ink-3)}
+.seg{display:flex;gap:2px;background:var(--paper);border:1px solid var(--rule);border-radius:8px;padding:2px;font:500 13px var(--sans)}
+.seg span{padding:4px 12px;border-radius:6px;color:var(--ink-2)}.seg .on{background:var(--ink);color:var(--paper)}
+.slip .row{display:flex;justify-content:space-between;align-items:center;margin-top:12px;font:14px var(--sans)}
+.tabname{font:14px var(--serif);font-style:italic}
+.sw{display:flex;align-items:center;gap:8px;font:14px var(--sans)}
+.sw i{width:34px;height:20px;border-radius:10px;background:var(--rule);position:relative}.sw i::after{content:"";position:absolute;left:3px;top:3px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.sw small{color:var(--ink-3);font-size:12px}
+.ask{margin:14px 26px 0;display:flex;align-items:center;gap:10px;border-top:1px solid var(--rule);padding:14px 0 4px}
+.ask .field{flex:1;font:17px var(--serif);color:var(--ink)}
+.ask .run{all:unset;background:var(--clay);color:var(--paper);font:600 14px var(--sans);padding:9px 16px;border-radius:9px}
+.ask .k{font:500 11px var(--mono);color:var(--ink-3);border:1px solid var(--rule);border-radius:5px;padding:2px 6px}
+.foot{display:flex;gap:18px;padding:12px 26px 16px;font:13px var(--sans);color:var(--ink-3)}
+.foot span:last-child{margin-left:auto}
+/* states strip */
+.states{position:absolute;right:26px;top:110px;width:250px;display:flex;flex-direction:column;gap:14px}
+.states h2{font:500 12px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:#b9b0a3}
+.st{display:flex;flex-direction:column;gap:6px}
+.st label{font:12px var(--sans);color:#a8a096}
+.mini{display:inline-flex;align-items:center;gap:9px;height:30px;padding:0 12px;border-radius:15px;background:var(--paper);font:13px var(--sans);color:var(--ink);width:max-content}
+.mini .word{font:italic 500 15px var(--serif)}
+.mini .k{font:500 11px var(--mono);color:var(--ink-3)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--clay)}
+.wave{display:flex;gap:2px;align-items:center}.wave i{width:2px;background:var(--clay);border-radius:1px}
+.need{background:var(--clay-wash);color:var(--clay-ink)}
+</style></head>
+<body>
+<div class="bar" role="img" aria-label="User's Quickshell top bar"></div>
+
+<div class="browser" aria-hidden="true">
+  <div class="chrome"><span class="tab">MyLab Math · Q3 of 10</span></div>
+  <div class="page">
+    <div class="q">
+      <p>Perform the operation and leave the result in trigonometric form.</p>
+      <div class="math">[ <sup>5</sup>⁄<sub>2</sub> ( cos(π/6) + i sin(π/6) ) ] [ 6 ( cos(π/4) + i sin(π/4) ) ]</div>
+      <div class="zrow">z = <div class="zbox">15(cos(5π/12)+i sin(5π<span class="caret"></span></div></div>
+      <div class="palette"><span>π</span><span>√</span><span>xⁿ</span><span>θ</span></div>
+    </div>
+  </div>
+  <div class="cursor2" style="left:262px;top:200px">
+    <div class="ripple"></div>
+    <svg width="22" height="26" viewBox="0 0 22 26"><path d="M2 2 L2 21 L7.5 16 L11 24 L14.5 22.5 L11 14.8 L18.5 14.8 Z" fill="oklch(0.60 0.13 42)" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
+    <span class="tag">Aether</span>
+  </div>
+</div>
+
+<div class="dock" role="status" aria-label="Aether dock, Auto running">
+  <span class="word">Aether</span>
+  <span class="step">04/12</span>
+  <span class="what">Typing answer · Zen · MyLab</span>
+  <span class="prog"><i></i></span>
+  <span class="esc">Esc stop</span>
+</div>
+
+<section class="panel" aria-label="Aether panel">
+  <div class="p-head"><span>Answer · from your screen</span>
+    <div class="depth" role="group" aria-label="Depth"><button aria-pressed="false">Answer</button><button aria-pressed="true">Work</button><button aria-pressed="false">Deep</button></div>
+  </div>
+  <div class="answer"><div class="kicker">In trigonometric form,</div>
+    <h1>z = 15(cos <em>5π/12</em> + i sin <em>5π/12</em>)</h1></div>
+  <div class="work"><b>1</b><span>Multiply the moduli: 5/2 × 6 = 15.</span><b>2</b><span>Add the arguments: π/6 + π/4 = 5π/12.</span></div>
+  <div class="src">Worked from the question on screen · no web sources needed</div>
+  <div class="rule"></div>
+  <nav class="modes" aria-label="Modes"><span aria-current="true">Assist</span><span>What should I say?</span><span>Follow-ups</span><span>Recap</span><span>Research</span></nav>
+  <div class="slip">
+    <div class="t">Auto <small>clicks and types for you; Esc stops it</small></div>
+    <div class="row"><div class="seg" role="radiogroup" aria-label="Auto target"><span>Desktop</span><span class="on">Zen tab</span></div><span class="tabname">MyLab Math · Q3 of 10</span></div>
+    <div class="row"><label class="sw"><i></i> Allow submit <small>this run only</small></label><span style="font:12px var(--sans);color:var(--ink-3)">off by default</span></div>
+  </div>
+  <div class="ask"><span class="field">Answer this question and submit it</span><span class="k">Ctrl ↵</span><button class="run">Run Auto</button></div>
+  <div class="foot"><span>Hide · Ctrl+Shift+Space</span><span>Hide for sharing</span><span>Settings</span></div>
+</section>
+
+<aside class="states" aria-label="Dock states">
+  <h2>Dock states</h2>
+  <div class="st"><label>Idle</label><span class="mini"><span class="word">Aether</span><span class="k">Ctrl+Shift+Space</span></span></div>
+  <div class="st"><label>Listening to a meeting</label><span class="mini"><span class="word">Aether</span><span class="wave"><i style="height:6px"></i><i style="height:12px"></i><i style="height:8px"></i><i style="height:14px"></i><i style="height:5px"></i></span><span>Listening</span></span></div>
+  <div class="st"><label>Auto running</label><span class="mini"><span class="dot"></span><span style="font:500 12px var(--mono);color:var(--clay-ink)">04/12</span><span>Typing answer</span></span></div>
+  <div class="st"><label>Needs you</label><span class="mini need"><span class="word">Aether</span><span>1 graph question to do by hand</span></span></div>
+</aside>
+</body></html>
