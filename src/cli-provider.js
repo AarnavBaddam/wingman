@@ -2,6 +2,7 @@ const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { profileEnv, signedOutError } = require('./codex-login');
 
 const MAX_OUTPUT = 2 * 1024 * 1024;
 const TIMEOUT_MS = 120000;
@@ -52,7 +53,7 @@ function run(binary, args, input, cwd, provider, onToken, signal, env) {
           onToken(text);
         }
         if (item.type === 'turn.completed') completed = true;
-        if (item.type === 'turn.failed' || item.type === 'error') failure = new Error('Codex CLI request failed');
+        if (item.type === 'turn.failed' || item.type === 'error') failure = new Error(item.message || item.error?.message || 'Codex CLI request failed');
       }
     }
 
@@ -106,10 +107,7 @@ async function streamCLI(provider, { model, system, turns, imageDataUrl, onToken
       const args = ['exec', '--json', '--ephemeral', '--ignore-user-config', '--sandbox', 'read-only', '--skip-git-repo-check', '-C', directory];
       let env;
       if (codexHome) {
-        env = { ...process.env, CODEX_HOME: codexHome };
-        delete env.OPENAI_API_KEY;
-        delete env.CODEX_API_KEY;
-        delete env.CODEX_ACCESS_TOKEN;
+        env = profileEnv(codexHome);
         args.push('-c', 'cli_auth_credentials_store="file"', '-c', 'forced_login_method="chatgpt"');
       }
       if (model) args.push('--model', model);
@@ -127,11 +125,12 @@ async function streamCLI(provider, { model, system, turns, imageDataUrl, onToken
           return await require('./codex-server').codexServerTurn({ codexHome, env, model, instructions, text: prompt, onToken, signal,
             imagePath: args.includes('--image') ? args[args.indexOf('--image') + 1] : null, timeoutMs: TIMEOUT_MS, maxOutput: MAX_OUTPUT, cwd: directory });
         } catch (error) {
-          if (!error.serverFault || signal?.aborted) throw error;
+          if (!error.serverFault || signal?.aborted) throw signedOutError(error);
         }
       }
       args.push('-');
-      return await run('codex', args, `${instructions}\n\n${prompt}\n`, directory, provider, onToken, signal, env);
+      try { return await run('codex', args, `${instructions}\n\n${prompt}\n`, directory, provider, onToken, signal, env); }
+      catch (error) { throw codexHome ? signedOutError(error) : error; }
     }
     throw new Error('Unknown CLI provider: ' + provider);
   } finally {

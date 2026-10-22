@@ -4,6 +4,12 @@
 
 Phase 5: platform validation and release readiness. Linux keyring, microphone, output-monitor audio lifecycle, fresh-container runtime, normal FUSE launch, physical Hyprland Hide/restore, and live Tavily retrieval pass. Ollama is configured; factual-quality review, selected-window/recipient sharing, speech quality, a fully clean desktop install, and macOS/Windows remain open. Work is on `codex/wingman-hardening`; local commits are authorized and push remains deferred. See [release validation](docs/release-validation.md).
 
+## Codex sign-in button — 2026-10-22
+
+- Cause of the Oct 21 sign-out: Codex logs in `~/.config/Aether/codex-profile/logs_2.sqlite` show one renewal attempt, at 23:56, which OpenAI rejected with `refresh_token_invalidated`. The session was ended on OpenAI's side. There was no refresh race and no path change, and the GUI rebuild was a coincidence. The profile's `auth.json` is gone, so the profile is signed out. It is a different account from `~/.codex`.
+- Decision (user): keep the separate account and make re-login one click. Settings → **Sign in to Codex** runs `codex login` with `BROWSER=true` and opens the URL in an in-memory-partition window. Success is confirmed via `codex login status`, because a killed `codex login` exits 0. The warm app-server is stopped afterwards. Auth-looking Codex failures now say "Codex is signed out".
+- 207 tests pass. Checked with the real `codex` CLI (URL captured, cancel rejected), plus a real Electron run with Playwright: status shown, OpenAI login page loads in a clean window, and closing it reports "did not finish". A real completed sign-in was not run because it needs the user's account.
+
 ## Workspace behavior correction — 2026-10-19
 
 - User wants Aether to stay on its desktop instead of following workspace switches. Confirmed live Hyprland window was pinned; `src/linux-overlay.js` explicitly set `pin=true`. The v3 runtime rule disables v1/v2 and sets `pin=false`, preserving floating/no-blur/no-shadow. Unpinned the existing window immediately. A real switch to empty workspace 11 left Aether on workspace 1, and restored the original workspace afterward. Rebuilt AppImage and confirmed a newly launched instance is unpinned. macOS Spaces behavior is unchanged.

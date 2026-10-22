@@ -530,6 +530,8 @@ function statusText() {
     $('#codex-account-row').classList.toggle('hidden', provider !== 'codex-cli');
     $('#codex-account-hint').classList.toggle('hidden', provider !== 'codex-cli');
     $('#codex-separate-account').checked = !!settings.codexSeparateAccount;
+    $('#codex-login-row').classList.toggle('hidden', provider !== 'codex-cli');
+    if (provider === 'codex-cli') refreshCodexLogin();
     const hint = $('#model-hint');
     if (provider === 'nvidia') {
       hint.textContent = 'Nvidia NIM: use a vision model like meta/llama-3.2-90b-vision-instruct or meta/llama-3.2-11b-vision-instruct. Text-only models (e.g. nemotron-mini) can\'t see screenshots and will refuse.';
@@ -541,6 +543,20 @@ function statusText() {
       hint.textContent = '';
     }
   }
+  async function refreshCodexLogin() {
+    const signedIn = await wingman.codexLoginStatus();
+    $('#codex-login-state').textContent = signedIn ? 'Aether profile: signed in' : 'Aether profile: signed out';
+    $('#codex-login').textContent = signedIn ? 'Sign in again' : 'Sign in to Codex';
+  }
+  $('#codex-login').addEventListener('click', async () => {
+    const button = $('#codex-login');
+    button.disabled = true;
+    $('#codex-login-state').textContent = 'Finish signing in in the new window…';
+    try { await wingman.codexLogin(); }
+    catch { $('#codex-login-state').textContent = 'Sign-in did not finish. Try again.'; button.disabled = false; return; }
+    button.disabled = false;
+    await refreshCodexLogin();
+  });
   function updateSttControls() {
     if (settings.provider === 'ollama') settings.sttProvider = 'local';
     document.querySelectorAll('#stt-seg button').forEach(button => {

@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('wingman', {
   moveUpdate: () => ipcRenderer.send('window:move-update'),
   settingsGet: () => ipcRenderer.invoke('settings:get'),
   settingsSet: (patch) => ipcRenderer.invoke('settings:set', patch),
+  codexLoginStatus: () => ipcRenderer.invoke('codex:login-status'),
+  codexLogin: () => ipcRenderer.invoke('codex:login'),
   shortcutAssistSet: (accelerator) => ipcRenderer.invoke('shortcut:assist:set', accelerator),
   shortcutToggleSet: (accelerator) => ipcRenderer.invoke('shortcut:toggle:set', accelerator),
   shortcutStatus: () => ipcRenderer.invoke('shortcut:status'),

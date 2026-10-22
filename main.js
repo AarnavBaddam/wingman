@@ -23,6 +23,8 @@ let autoRefreshActive = false;
 let autoSession = null;
 let zenControl = null;
 
+function codexProfileDir() { return path.join(app.getPath('userData'), 'codex-profile'); }
+
 function getZenControl() {
   if (!zenControl) zenControl = require('./src/zen-control').createZenControl();
   return zenControl;
@@ -332,7 +334,7 @@ async function runFeature(mode, userText, capturePoint) {
   state.busy = true;
   try {
     const settings = store.getSettings();
-    const llm = createLLM({ ...settings, codexHome: settings.codexSeparateAccount ? path.join(app.getPath('userData'), 'codex-profile') : undefined });
+    const llm = createLLM({ ...settings, codexHome: settings.codexSeparateAccount ? codexProfileDir() : undefined });
     const userBubble = def.userBubble !== null ? def.userBubble : (mode === 'ask' ? userText : null);
     if (DEBUG) console.log('[DEBUG MAIN] LLM settings loaded:', { provider: settings.provider, smart: settings.smart });
     send('llm:start', { userBubble, small: !!def.small });
@@ -438,7 +440,7 @@ async function startAutoMode(goal, options) {
   if (autoRefreshPaused) throw new Error('Close Settings/onboarding and expand Aether before starting Auto.');
   if (!autoSession) autoSession = require('./src/auto-session').createAutoSession({
     getSettings: () => store.getSettings(), createLLM,
-    getCodexHome: settings => settings.codexSeparateAccount ? path.join(app.getPath('userData'), 'codex-profile') : undefined,
+    getCodexHome: settings => settings.codexSeparateAccount ? codexProfileDir() : undefined,
     createDesktopControl: () => require('./src/desktop-control').createDesktopControl(),
     createBrowserControl: () => getZenControl(),
     createStopWatcher: options => require('./src/hypr-auto-stop').createHyprAutoStop(options),
@@ -471,6 +473,24 @@ ipcMain.handle('auto-mode:zen-tabs', async () => {
   } catch (error) { await zenControl?.close(); zenControl = null; throw error; }
 });
 ipcMain.handle('settings:get', () => store.getSettings());
+ipcMain.handle('codex:login-status', () => require('./src/codex-login').codexLoginStatus(codexProfileDir()));
+ipcMain.handle('codex:login', async () => {
+  const { startCodexLogin, cancelCodexLogin } = require('./src/codex-login');
+  let login = null;
+  // ponytail: in-memory partition = fresh cookies every time, so the user's other ChatGPT
+  // account in their normal browser never hijacks this sign-in. "Continue with Google" may
+  // refuse embedded windows; email sign-in works.
+  const open = url => {
+    login = new BrowserWindow({ width: 520, height: 720, title: 'Sign in to Codex', autoHideMenuBar: true,
+      webPreferences: { partition: 'codex-login', contextIsolation: true, sandbox: true } });
+    login.on('closed', () => { login = null; cancelCodexLogin(); });
+    login.loadURL(url);
+  };
+  try { await startCodexLogin(codexProfileDir(), open); }
+  finally { if (login && !login.isDestroyed()) login.destroy(); }
+  require('./src/codex-server').stopCodexServer(codexProfileDir());
+  return true;
+});
 ipcMain.handle('auto-refresh:status', () => ({ supported: autoRefreshSupported(), active: autoRefreshActive }));
 ipcMain.handle('settings:set', (_e, patch) => {
   const apply = async () => {

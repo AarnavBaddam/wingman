@@ -86,7 +86,7 @@ async function codexServerTurn({ codexHome, env, model, instructions, text, imag
         }
         if (message.method === 'turn/completed') {
           if (params.turn?.status === 'completed' && full) finish(null, full);
-          else finish(new Error('Codex CLI request failed'));
+          else finish(new Error(params.turn?.error?.message || 'Codex CLI request failed'));
         }
       };
       server.listeners.add(listener);
@@ -99,6 +99,8 @@ async function codexServerTurn({ codexHome, env, model, instructions, text, imag
   } finally { server.release(); }
 }
 
+function stopCodexServer(codexHome) { servers.get(codexHome)?.kill(); servers.delete(codexHome); }
+
 process.once('exit', () => { for (const server of servers.values()) server.kill(); });
 
-module.exports = { codexServerTurn };
+module.exports = { codexServerTurn, stopCodexServer };
