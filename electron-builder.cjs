@@ -31,6 +31,9 @@ module.exports = {
   productName: "Aether",
   publish: null,
   files: ["main.js", "preload.js", "dock-preload.js", "src/**/*", "renderer/**/*", "data/**/*", "LICENSE"],
+  // The detector runs as a Python subprocess, which cannot read a file inside
+  // app.asar — ship it on the real filesystem under resources/.
+  extraResources: [{ from: "scripts/aether_detect.py", to: "scripts/aether_detect.py" }],
   directories: { buildResources: "build-resources" },
   mac: {
     target: [{ target: "zip", arch: ["arm64"] }],
