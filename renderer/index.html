@@ -25,7 +25,7 @@
 
       <div id="panel-wrap">
         <div id="panel" class="no-drag">
-          <div class="screen">
+          <div class="screen" id="answer-screen">
             <div class="screen-hdr"><span>ANSWER</span><span id="depth-readout">DEPTH: WORK</span></div>
             <div id="messages"></div>
           </div>
@@ -46,6 +46,7 @@
             <button class="act dark" data-mode="recap" type="button"><span class="f">F4</span><span class="n">Recap</span></button>
             <button class="act blue" data-mode="research" type="button"><span class="f">F5</span><span class="n">Research</span></button>
             <button id="auto-mode-btn" class="act run" type="button" title="Type a task, then Run Auto. Escape stops."><span class="f">AUTO</span><span class="n">Run Auto</span></button>
+            <button id="write-mode-btn" class="act run" type="button" title="Draft, humanise, and type into a Zen tab"><span class="f">WRITE</span><span class="n">Write</span></button>
           </div>
 
           <div class="ctrls">
@@ -69,7 +70,36 @@
             <fieldset id="auto-zen-tab" aria-label="Zen target tab">Connect to list tabs</fieldset>
           </div>
 
-          <div class="foot">
+          <!-- Write mode: draft -> humanise -> approve -> type into a Zen tab -->
+          <div id="write-view" class="hidden">
+            <div class="screen">
+              <div class="screen-hdr"><span>WRITE</span><span id="write-stage">PROMPT</span></div>
+              <div id="write-display">
+                <textarea id="write-input" rows="4" spellcheck="false" placeholder="Prompt to draft from — or paste your own text to humanise and type."></textarea>
+                <label class="s-check" id="write-paste-row"><input id="write-paste-mode" type="checkbox" />Paste mode: humanise my own text, don't draft</label>
+                <textarea id="write-review" class="hidden" rows="6" spellcheck="false" aria-label="Approve the final text"></textarea>
+                <div id="write-detector" class="status-line hidden"></div>
+              </div>
+            </div>
+            <div id="write-status" class="status-line hidden" role="status" aria-live="polite"></div>
+            <div class="write-actions" role="group" aria-label="Write steps">
+              <button id="write-prepare" class="act run" type="button"><span class="f">PREP</span><span class="n">Draft + humanise</span></button>
+              <button id="write-rerun" class="act hidden" type="button"><span class="f">↻</span><span class="n">Re-run</span></button>
+              <button id="write-approve" class="act blue hidden" type="button"><span class="f">OK</span><span class="n">Approve</span></button>
+              <button id="write-type" class="act run hidden" type="button"><span class="f">TYPE</span><span class="n">Type it</span></button>
+              <button id="write-stop" class="act dark hidden" type="button"><span class="f">ESC</span><span class="n">Stop</span></button>
+            </div>
+            <div id="write-zen-row" class="zen-row hidden">
+              <button id="write-zen-connect" class="cap-btn" type="button">Connect Zen</button>
+              <fieldset id="write-zen-tab" aria-label="Zen target tab">Connect to list tabs</fieldset>
+            </div>
+            <div class="foot">
+              <button id="write-back" class="tb-hide" type="button" title="Back to Ask">Back</button>
+              <button id="write-settings" class="tb-hide" type="button" title="Write mode settings">Write settings</button>
+            </div>
+          </div>
+
+          <div class="foot" id="main-foot">
             <button class="tb-hide" id="hide-btn" type="button" title="Hide the panel; the dock stays">Hide</button>
             <button class="tb-hide" id="share-hide-btn" type="button">Hide for sharing</button>
             <button id="dock-btn" class="tb-hide" type="button" title="Bring the dock back">Dock</button>
@@ -135,6 +165,24 @@
 
         <label class="s-check"><input id="auto-refresh" type="checkbox" />Auto refresh Assist after clicks or scrolling</label>
         <div class="s-hint" id="auto-refresh-hint">Off by default. After interaction pauses, a screenshot goes to your selected provider and uses its allowance.</div>
+
+        <label class="s-label">Write mode <span class="s-hint">human-paced typing into a Zen tab</span></label>
+        <label class="s-check"><input id="wm-humanize" type="checkbox" />Humanise with Config C before typing</label>
+        <div class="s-seg" id="wm-detector-seg">
+          <button data-detector="local">Local detector</button>
+          <button data-detector="local+zerogpt">Local + ZeroGPT</button>
+        </div>
+        <div class="s-field"><span>Speed (WPM)</span><input id="wm-wpm" type="number" min="10" max="200" step="1" autocomplete="off" /></div>
+        <div class="s-field"><span>Corrected typos</span><input id="wm-typo" type="number" min="0" max="1" step="0.01" autocomplete="off" /></div>
+        <div class="s-field"><span>Left-in typos</span><input id="wm-untypo" type="number" min="0" max="1" step="0.001" autocomplete="off" /></div>
+        <div class="s-field"><span>Stutter rate</span><input id="wm-stutter" type="number" min="0" max="1" step="0.01" autocomplete="off" /></div>
+        <div class="s-field"><span>Long-gap chance</span><input id="wm-gap" type="number" min="0" max="1" step="0.01" autocomplete="off" /></div>
+        <div class="s-hint">Rates are 0–1 per keystroke. Defaults model a slower, less-skilled typist. Gaps span 20s–10min, weighted small.</div>
+        <div class="s-field"><span>Humaniser candidates</span><input id="wm-candidates" type="number" min="1" max="30" step="1" autocomplete="off" /></div>
+        <div class="s-field"><span>Refine passes</span><input id="wm-refine" type="number" min="0" max="30" step="1" autocomplete="off" /></div>
+        <div class="s-field"><span>Python path</span><input id="wm-python" type="text" placeholder="auto-detect" autocomplete="off" /></div>
+        <div class="s-field"><span>Humaniser folder</span><input id="wm-inksplash" type="text" placeholder="auto (InkSplash checkout)" autocomplete="off" /></div>
+        <div class="s-hint" id="wm-python-status">Checking Python…</div>
 
         <label class="s-label">Keyboard shortcuts</label>
         <div class="s-shortcut">

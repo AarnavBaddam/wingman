@@ -180,6 +180,117 @@
     } catch (error) { showStatus(error?.message || 'Auto could not start.', true); }
   });
 
+  // ---- Write mode --------------------------------------------------------
+  const writeView = $('#write-view');
+  const panelEl = $('#panel');
+  const setWriteStage = (stage) => { $('#write-stage').textContent = (stage || 'prompt').toUpperCase(); };
+  function showWriteButtons({ prepare, rerun, approve, type, stop }) {
+    $('#write-prepare').classList.toggle('hidden', !prepare);
+    $('#write-rerun').classList.toggle('hidden', !rerun);
+    $('#write-approve').classList.toggle('hidden', !approve);
+    $('#write-type').classList.toggle('hidden', !type);
+    $('#write-stop').classList.toggle('hidden', !stop);
+  }
+  function writeStatus(msg, err) { const el = $('#write-status'); el.textContent = msg; el.classList.remove('hidden'); el.classList.toggle('error', !!err); }
+  function resetWrite() {
+    $('#write-review').classList.add('hidden');
+    $('#write-input').classList.remove('hidden');
+    $('#write-paste-row').classList.remove('hidden');
+    $('#write-detector').classList.add('hidden');
+    $('#write-zen-row').classList.add('hidden');
+    $('#write-status').classList.add('hidden');
+    showWriteButtons({ prepare: true });
+    setWriteStage('prompt');
+  }
+  function enterWrite() { panelEl.classList.add('writing'); writeView.classList.remove('hidden'); resetWrite(); }
+  function exitWrite() { panelEl.classList.remove('writing'); writeView.classList.add('hidden'); }
+  $('#write-mode-btn').addEventListener('click', enterWrite);
+  $('#write-back').addEventListener('click', exitWrite);
+  $('#write-settings').addEventListener('click', openSettings);
+
+  async function runPrepare() {
+    const text = $('#write-input').value.trim();
+    if (!text) return writeStatus('Enter a prompt or paste text.', true);
+    const paste = $('#write-paste-mode').checked;
+    showWriteButtons({});
+    writeStatus(paste ? 'Humanising…' : 'Drafting…');
+    try {
+      const review = await wingman.writePrepare(paste ? { pasted: text } : { prompt: text });
+      $('#write-review').value = review.text || '';
+      $('#write-review').classList.remove('hidden');
+      $('#write-input').classList.add('hidden');
+      $('#write-paste-row').classList.add('hidden');
+      const det = $('#write-detector');
+      det.classList.remove('hidden');
+      const pct = review.aiScore == null ? '—' : Number(review.aiScore).toFixed(1) + '%';
+      det.textContent = `AI: ${pct} · ${review.pass ? 'PASS' : 'FAIL'}${review.detail ? ' · ' + review.detail : ''}`;
+      det.classList.toggle('pass', !!review.pass);
+      det.classList.toggle('fail', !review.pass);
+      setWriteStage('review');
+      writeStatus('Edit the text if you like, then Approve.');
+      showWriteButtons({ rerun: true, approve: true });
+    } catch (e) {
+      writeStatus(e?.message || 'Could not prepare the text.', true);
+      showWriteButtons({ prepare: true });
+    }
+  }
+  $('#write-prepare').addEventListener('click', runPrepare);
+  $('#write-rerun').addEventListener('click', () => {
+    $('#write-input').value = $('#write-input').value || $('#write-review').value;
+    $('#write-input').classList.remove('hidden'); $('#write-review').classList.add('hidden');
+    runPrepare();
+  });
+  $('#write-approve').addEventListener('click', async () => {
+    const final = $('#write-review').value.trim();
+    if (!final) return writeStatus('Nothing to approve.', true);
+    try {
+      await wingman.writeApprove(final);
+      setWriteStage('armed');
+      $('#write-zen-row').classList.remove('hidden');
+      writeStatus('Model disengaged. Connect Zen, pick the tab, then Type it.');
+      showWriteButtons({ type: true });
+    } catch (e) { writeStatus(e?.message || 'Could not approve.', true); }
+  });
+  $('#write-zen-connect').addEventListener('click', async () => {
+    const list = $('#write-zen-tab');
+    const selected = list.querySelector('input:checked')?.value;
+    $('#write-zen-connect').disabled = true;
+    try {
+      const tabs = await wingman.writeZenTabs();
+      list.replaceChildren();
+      for (const tab of tabs) {
+        const label = document.createElement('label');
+        const input = document.createElement('input');
+        input.type = 'radio'; input.name = 'write-zen-tab'; input.value = tab.id; input.checked = tab.id === selected;
+        label.append(input, document.createTextNode(' ' + (tab.title || tab.url || 'Untitled tab')));
+        list.append(label);
+      }
+      if (!tabs.length) list.textContent = 'No web tabs available';
+      writeStatus(tabs.length ? 'Zen connected. Select the Google Docs tab.' : 'Zen connected, but no web tabs are available.');
+    } catch (e) { list.textContent = 'Connect to list tabs'; writeStatus(e?.message || 'Could not connect to Zen. Restart it with --marionette.', true); }
+    finally { $('#write-zen-connect').disabled = false; }
+  });
+  $('#write-type').addEventListener('click', async () => {
+    const tabId = $('#write-zen-tab input:checked')?.value;
+    if (!tabId) return writeStatus('Connect Zen and select the tab first.', true);
+    try {
+      await wingman.writeType(tabId, {});
+      setWriteStage('typing');
+      showWriteButtons({ stop: true });
+      writeStatus('Typing… you can switch desktops. Stop or Escape to halt.');
+    } catch (e) { writeStatus(e?.message || 'Could not start typing.', true); }
+  });
+  $('#write-stop').addEventListener('click', () => wingman.writeStop());
+  wingman.on('write-mode:state', (s) => {
+    if (!s) return;
+    if (s.stage) setWriteStage(s.stage);
+    if (s.status === 'typing' && s.total) { writeStatus(`Typing… ${s.typed || 0}/${s.total}`); showWriteButtons({ stop: true }); }
+    else if (s.status === 'done') { resetWrite(); writeStatus(s.message || 'Typed the approved text.'); }
+    else if (s.status === 'stopped') { writeStatus('Write stopped.'); showWriteButtons({ type: true }); setWriteStage('armed'); }
+    else if (s.status === 'error') { writeStatus(s.message || 'Write error.', true); showWriteButtons({ type: true }); }
+    else if (s.message) writeStatus(s.message);
+  });
+
   // ---- actions -----------------------------------------------------------
   function runMode(mode, text) {
     if (busy) return;
@@ -512,8 +623,33 @@ function fillSettings() {
     const m = settings.models[settings.provider] || { fast: '', smart: '' };
     $('#model-fast').value = m.fast; $('#model-smart').value = m.smart;
     updateModelHint(settings.provider);
+    const wm = settings.writeMode || {}; const t = wm.typing || {};
+    $('#wm-humanize').checked = wm.humanizeEnabled !== false;
+    document.querySelectorAll('#wm-detector-seg button').forEach(b => b.classList.toggle('on', b.dataset.detector === (wm.detector || 'local')));
+    $('#wm-wpm').value = t.wpm ?? ''; $('#wm-typo').value = t.typoRate ?? '';
+    $('#wm-untypo').value = t.uncorrectedTypoRate ?? ''; $('#wm-stutter').value = t.stutterRate ?? '';
+    $('#wm-gap').value = t.gapChance ?? ''; $('#wm-candidates').value = wm.candidates ?? '';
+    $('#wm-refine').value = wm.refine ?? ''; $('#wm-python').value = wm.pythonPath || '';
+    $('#wm-inksplash').value = wm.inksplashDir || '';
+    refreshPythonStatus();
     syncAssistShortcutLabels();
     $('#s-status').textContent = statusText();
+  }
+  document.querySelectorAll('#wm-detector-seg button').forEach(b => b.addEventListener('click', () => {
+    settings.writeMode = settings.writeMode || {};
+    settings.writeMode.detector = b.dataset.detector;
+    document.querySelectorAll('#wm-detector-seg button').forEach(x => x.classList.toggle('on', x === b));
+  }));
+  async function refreshPythonStatus() {
+    const el = $('#wm-python-status'); if (!el) return; el.textContent = 'Checking Python…';
+    try {
+      const st = await wingman.writePythonStatus();
+      el.textContent = st.ok
+        ? `Python ready: ${st.pythonPath}${st.inksplashDir ? ' · humaniser: ' + st.inksplashDir : ' · set a humaniser folder below'}`
+        : st.runnable
+          ? `Missing: ${(st.missing || []).join(', ')} — install them with pip, or set a Python path.`
+          : 'No suitable Python found. Install python3 and the humaniser deps (torch, transformers, spacy, nltk, textstat).';
+    } catch { el.textContent = 'Could not check Python.'; }
   }
   $('#clear-resume').addEventListener('click', async () => {
     $('#resume-context').value = '';
@@ -592,6 +728,19 @@ async function saveSettings() {
     if (!settings.models[settings.provider]) settings.models[settings.provider] = {};
     settings.models[settings.provider].fast = $('#model-fast').value.trim();
     settings.models[settings.provider].smart = $('#model-smart').value.trim();
+    settings.writeMode = settings.writeMode || {}; settings.writeMode.typing = settings.writeMode.typing || {};
+    const wmNum = (sel, def) => { const v = parseFloat($(sel).value); return Number.isFinite(v) ? v : def; };
+    settings.writeMode.humanizeEnabled = $('#wm-humanize').checked;
+    if (!settings.writeMode.detector) settings.writeMode.detector = 'local';
+    settings.writeMode.typing.wpm = wmNum('#wm-wpm', settings.writeMode.typing.wpm);
+    settings.writeMode.typing.typoRate = wmNum('#wm-typo', settings.writeMode.typing.typoRate);
+    settings.writeMode.typing.uncorrectedTypoRate = wmNum('#wm-untypo', settings.writeMode.typing.uncorrectedTypoRate);
+    settings.writeMode.typing.stutterRate = wmNum('#wm-stutter', settings.writeMode.typing.stutterRate);
+    settings.writeMode.typing.gapChance = wmNum('#wm-gap', settings.writeMode.typing.gapChance);
+    settings.writeMode.candidates = wmNum('#wm-candidates', settings.writeMode.candidates);
+    settings.writeMode.refine = wmNum('#wm-refine', settings.writeMode.refine);
+    settings.writeMode.pythonPath = $('#wm-python').value.trim();
+    settings.writeMode.inksplashDir = $('#wm-inksplash').value.trim();
     await wingman.settingsSet(settings);
     syncAutoRefreshIndicator();
   }

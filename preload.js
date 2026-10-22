@@ -12,6 +12,12 @@ contextBridge.exposeInMainWorld('wingman', {
   autoModeStart: (goal, options) => ipcRenderer.invoke('auto-mode:start', goal, { allowSubmit: options?.allowSubmit === true, target: options?.target || 'desktop', tabId: options?.tabId }),
   autoModeZenTabs: () => ipcRenderer.invoke('auto-mode:zen-tabs'),
   autoModeStop: () => ipcRenderer.send('auto-mode:stop'),
+  writePrepare: (payload) => ipcRenderer.invoke('write-mode:prepare', payload),
+  writeApprove: (text) => ipcRenderer.invoke('write-mode:approve', text),
+  writeType: (tabId, typingConfig) => ipcRenderer.invoke('write-mode:type', tabId, typingConfig),
+  writeStop: () => ipcRenderer.send('write-mode:stop'),
+  writeZenTabs: () => ipcRenderer.invoke('write-mode:zen-tabs'),
+  writePythonStatus: () => ipcRenderer.invoke('write-mode:python-status'),
   moveStart: () => ipcRenderer.invoke('window:move-start'),
   moveUpdate: () => ipcRenderer.send('window:move-update'),
   settingsGet: () => ipcRenderer.invoke('settings:get'),
@@ -39,7 +45,7 @@ contextBridge.exposeInMainWorld('wingman', {
   openPane: (url) => ipcRenderer.send('open-pane', url),
   log: (msg) => ipcRenderer.send('log', msg),
   on: (channel, cb) => {
-    const allowed = ['capture:state', 'capture:system-ended', 'llm:start', 'llm:phase', 'llm:token', 'llm:done', 'llm:error', 'llm:sources', 'auto-refresh:state', 'auto-mode:state', 'status', 'transcript'];
+    const allowed = ['capture:state', 'capture:system-ended', 'llm:start', 'llm:phase', 'llm:token', 'llm:done', 'llm:error', 'llm:sources', 'auto-refresh:state', 'auto-mode:state', 'write-mode:state', 'status', 'transcript'];
     if (!allowed.includes(channel)) return;
     ipcRenderer.on(channel, (_e, data) => cb(data));
   }

@@ -22,12 +22,81 @@ let autoRefreshChange = Promise.resolve();
 let autoRefreshActive = false;
 let autoSession = null;
 let zenControl = null;
+let writeSession = null;
 
 function codexProfileDir() { return path.join(app.getPath('userData'), 'codex-profile'); }
 
 function getZenControl() {
   if (!zenControl) zenControl = require('./src/zen-control').createZenControl();
   return zenControl;
+}
+
+// ---- Write mode: human-paced typing into a locked Zen tab ----
+function resolveInksplashDir() {
+  const fs = require('fs');
+  const s = store.getSettings().writeMode || {};
+  if (s.inksplashDir && fs.existsSync(path.join(s.inksplashDir, 'humanize_cli.py'))) return s.inksplashDir;
+  const guess = path.resolve(__dirname, '..', '..', 'inksplash'); // sibling checkout
+  return fs.existsSync(path.join(guess, 'humanize_cli.py')) ? guess : '';
+}
+function resolvePython(inksplashDir) {
+  const fs = require('fs');
+  const s = store.getSettings().writeMode || {};
+  if (s.pythonPath) return s.pythonPath;
+  if (inksplashDir) { const venv = path.join(inksplashDir, '.venv', 'bin', 'python'); if (fs.existsSync(venv)) return venv; }
+  return 'python3';
+}
+// Zen keystroke sink: connect, lock the tab, click to focus the editor once, then
+// stream keys. Keeps typing across desktop switches (browser-native, no OS cursor).
+function makeZenTyper(tabId, signal) {
+  const control = getZenControl();
+  let ready = null, target = null;
+  const ensure = () => ready || (ready = (async () => {
+    await control.connect(signal);
+    target = await control.lockTarget(tabId, signal);
+    await control.capture(target, signal);
+    await control.execute(target, { type: 'click', x: Math.floor(target.width * 0.5), y: Math.floor(target.height * 0.28) }, signal);
+    await control.focusTab(target, signal);
+  })());
+  return {
+    async key(v) { await ensure(); await control.writeKey(target, v, signal); },
+    async backspace() { await ensure(); await control.writeKey(target, '', signal); },
+    async release() { try { if (target) await control.release(target); } catch { /* best-effort */ } },
+  };
+}
+function getWriteSession() {
+  if (writeSession) return writeSession;
+  writeSession = require('./src/write-session').createWriteSession({
+    getSettings: () => store.getSettings(),
+    getCodexHome: settings => settings.codexSeparateAccount ? codexProfileDir() : undefined,
+    createLLM,
+    humanize: (text, opts, signal) => {
+      const wm = store.getSettings().writeMode || {};
+      if (!wm.humanizeEnabled) return Promise.resolve({ text });
+      const dir = resolveInksplashDir();
+      if (!dir) throw new Error('Set the InkSplash humaniser folder in Settings → Write mode.');
+      return require('./src/humanize').createHumanizer({ pythonPath: resolvePython(dir), scriptDir: dir })
+        .humanize(text, { candidates: wm.candidates, refine: wm.refine, ...opts }, signal);
+    },
+    detect: (text, opts, signal) => {
+      const wm = store.getSettings().writeMode || {};
+      const dir = resolveInksplashDir();
+      // Packaged: aether_detect.py lives under resources/ (real fs), not in app.asar.
+      const detectDir = app.isPackaged ? process.resourcesPath : __dirname;
+      return require('./src/detect').createDetector({ pythonPath: resolvePython(dir), scriptDir: detectDir, inksplashDir: dir })
+        .detect(text, { zerogpt: wm.detector === 'local+zerogpt', ...opts }, signal);
+    },
+    releaseModel: () => { try { require('./src/codex-server').stopCodexServer(codexProfileDir()); } catch { /* best-effort */ } },
+    createTyper: ({ tabId, signal }) => makeZenTyper(tabId, signal),
+    onUpdate: update => {
+      send('write-mode:state', { stage: update.stage, status: update.status, message: update.message,
+        aiScore: update.aiScore, pass: update.pass, detail: update.detail, text: update.text,
+        index: update.index, total: update.total, typed: update.typed });
+      updateDock({ write: { stage: update.stage, status: update.status, typed: update.typed, total: update.total } });
+    },
+    onEnd: () => { state.busy = false; },
+  });
+  return writeSession;
 }
 
 function stopForegroundAuto(reason) {
@@ -185,10 +254,10 @@ function createWindow() {
   }
   if (app.dock && isMac) app.dock.show();
 
-  win.webContents.on('did-start-loading', () => { autoSession?.stop('Auto stopped because Aether reloaded.'); autoRefreshPaused = true; autoRefresh?.cancelPending(); stopWindowGesture(); setCapturing(false); });
+  win.webContents.on('did-start-loading', () => { autoSession?.stop('Auto stopped because Aether reloaded.'); writeSession?.stop('Write stopped because Aether reloaded.'); autoRefreshPaused = true; autoRefresh?.cancelPending(); stopWindowGesture(); setCapturing(false); });
   win.on('show', () => updateDock({ panelVisible: true }));
   win.on('hide', () => updateDock({ panelVisible: false }));
-  win.on('closed', () => { autoSession?.stop('Auto stopped because Aether closed.'); stopWindowGesture(); setCapturing(false); });
+  win.on('closed', () => { autoSession?.stop('Auto stopped because Aether closed.'); writeSession?.stop('Write stopped because Aether closed.'); stopWindowGesture(); setCapturing(false); });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
   win.webContents.on('did-finish-load', () => {
@@ -202,7 +271,7 @@ function createWindow() {
     // following the user into fullscreen apps and across Spaces.
     assertOverlay();
   });
-  win.webContents.on('render-process-gone', (_e, d) => { autoSession?.stop('Auto stopped because the interface closed.'); setCapturing(false); console.log('[wingman] renderer gone', JSON.stringify(d)); });
+  win.webContents.on('render-process-gone', (_e, d) => { autoSession?.stop('Auto stopped because the interface closed.'); writeSession?.stop('Write stopped because the interface closed.'); setCapturing(false); console.log('[wingman] renderer gone', JSON.stringify(d)); });
 }
 
 function assertOverlay() {
@@ -471,6 +540,35 @@ ipcMain.handle('auto-mode:zen-tabs', async () => {
     await control.connect();
     return (await control.listTabs()).filter(tab => /^https?:\/\//i.test(tab.url));
   } catch (error) { await zenControl?.close(); zenControl = null; throw error; }
+});
+ipcMain.handle('write-mode:prepare', async (_event, payload) => {
+  if (state.busy) throw new Error('Wait for the current task or stop it first.');
+  state.busy = true;
+  try { return await getWriteSession().prepare(payload || {}); }
+  finally { state.busy = false; }
+});
+ipcMain.handle('write-mode:approve', (_event, text) => getWriteSession().approve(text));
+ipcMain.handle('write-mode:type', (_event, tabId, typingConfig) => {
+  if (state.busy) throw new Error('Wait for the current task or stop it first.');
+  if (typeof tabId !== 'string' || !tabId.trim()) throw new Error('Pick a Zen tab to type into.');
+  state.busy = true;
+  // Default the typing knobs from saved Write-mode settings when none are passed.
+  const cfg = (typingConfig && Object.keys(typingConfig).length) ? typingConfig : (store.getSettings().writeMode?.typing || {});
+  // Long-running; status flows through onUpdate and onEnd clears busy.
+  getWriteSession().typeInto(tabId, cfg).catch(() => {});
+  return { started: true };
+});
+ipcMain.on('write-mode:stop', () => writeSession?.stop());
+ipcMain.handle('write-mode:zen-tabs', async () => {
+  try { const control = getZenControl(); await control.connect(); return (await control.listTabs()).filter(tab => /^https?:\/\//i.test(tab.url)); }
+  catch (error) { await zenControl?.close(); zenControl = null; throw error; }
+});
+ipcMain.handle('write-mode:python-status', async () => {
+  const dir = resolveInksplashDir();
+  const candidates = [store.getSettings().writeMode?.pythonPath, dir && path.join(dir, '.venv', 'bin', 'python'), 'python3'].filter(Boolean);
+  const env = require('./src/python-env').createPythonEnv({ candidates });
+  const status = await env.detect();
+  return { ...status, inksplashDir: dir };
 });
 ipcMain.handle('settings:get', () => store.getSettings());
 ipcMain.handle('codex:login-status', () => require('./src/codex-login').codexLoginStatus(codexProfileDir()));
@@ -768,6 +866,7 @@ app.on('before-quit', event => {
   void autoSession.completion.finally(() => { quittingAfterAuto = true; app.quit(); });
 });
 app.on('will-quit', () => {
+  writeSession?.stop('Write stopped because Aether is quitting.');
   zenControl?.close();
   autoSession?.stop('Auto stopped because Aether is quitting.');
   autoRefresh?.stop(); activityWatcher?.stop();

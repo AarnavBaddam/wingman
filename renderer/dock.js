@@ -12,12 +12,19 @@
   }
   function paint(state) {
     last = state;
-    const auto = state.auto || {}, led = $('led');
+    const auto = state.auto || {}, write = state.write || {}, led = $('led');
     clearInterval(listenTimer); listenTimer = null;
     let step = '', text = 'AETHER · READY', sub = '', key = state.toggleLabel || '', ledClass = 'led';
     if (auto.active) {
       step = auto.step ? String(auto.step).padStart(2, '0') : '';
       text = short(auto.message) || 'AUTO'; sub = auto.target === 'zen' ? 'ZEN' : 'DESK'; key = 'ESC'; ledClass = 'led on';
+    } else if (write.status === 'typing') {
+      text = 'WRITE ' + (write.typed || 0) + (write.total ? '/' + write.total : ''); sub = 'ZEN'; key = 'ESC'; ledClass = 'led on';
+    } else if (write.status === 'done') {
+      text = 'WRITE DONE'; ledClass = 'led on';
+      clearTimeout(idleTimer); idleTimer = setTimeout(() => paint({ ...last, write: {} }), 8000);
+    } else if (['drafting', 'humanising', 'detecting', 'armed'].includes(write.status) && write.stage) {
+      text = 'WRITE · ' + String(write.status).toUpperCase(); key = 'OPEN'; ledClass = 'led on';
     } else if (['paused', 'error', 'skipped'].includes(auto.status) && auto.message) {
       text = short(auto.message); key = 'OPEN'; ledClass = 'led need';
     } else if (auto.status === 'done' && auto.message) {

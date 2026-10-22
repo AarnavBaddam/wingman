@@ -23,6 +23,18 @@ const DEFAULTS = {
     ollama: { fast: '', smart: '' },
     'claude-cli': { fast: '', smart: '' },
     'codex-cli': { fast: '', smart: '' }
+  },
+  // Write mode: human-paced typing into a locked Zen tab. All typing knobs come
+  // from the less-skilled-typist defaults in src/typing-plan.js and are editable
+  // in Settings → Write mode.
+  writeMode: {
+    typing: { ...require('./typing-plan').DEFAULTS },
+    humanizeEnabled: true,   // run Config C before typing
+    detector: 'local',       // 'local' | 'local+zerogpt'
+    candidates: 12,          // Config C best-of-N (slower, stronger)
+    refine: 12,
+    pythonPath: '',          // '' = auto-detect an interpreter with the deps
+    inksplashDir: ''         // humaniser/scorer location; '' = auto-resolve
   }
 };
 
