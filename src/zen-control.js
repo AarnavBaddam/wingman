@@ -367,12 +367,30 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
       }
     }
   }
+  // Write mode streams already-paced keystrokes into an already-focused field.
+  // Unlike act(), it never needs a fresh capture per key: one keyDown/keyUp per
+  // call, printable ASCII or Backspace () only, never a model-chosen key.
+  // The pacing (delays, typos, gaps) is decided upstream in src/typing-plan.js.
+  // ponytail: reselects the tab only via focusTab; if the user switches tabs
+  // mid-write, add a periodic select(target.id) inside this loop.
+  async function writeKey(target, token, signal) {
+    requireReady(); cancelled(signal);
+    if (!targets.has(target)) throw new Error('Lock an exact Zen tab first.');
+    if (token !== '' && !/^[\x20-\x7e]$/.test(token)) throw new Error('Write mode types printable ASCII or Backspace only.');
+    await command('WebDriver:PerformActions', { actions: [{ type: 'key', id: 'aether-keys', actions: [{ type: 'keyDown', value: token }, { type: 'keyUp', value: token }] }] }, signal);
+  }
+  async function focusTab(target, signal) {
+    requireReady(); if (!targets.has(target)) throw new Error('Lock an exact Zen tab first.');
+    await select(target.id, signal);
+  }
   return {
     connect: signal => enqueue(() => connectInternal(signal)),
     listTabs: signal => enqueue(() => listTabs(signal)),
     lockTarget: (id, signal) => enqueue(() => lockTarget(id, signal)),
     capture: (target, signal) => enqueue(() => capture(target, signal)),
     execute: (target, action, signal) => enqueue(() => execute(target, action, signal)),
+    writeKey: (target, token, signal) => enqueue(() => writeKey(target, token, signal)),
+    focusTab: (target, signal) => enqueue(() => focusTab(target, signal)),
     // Run end: take the second cursor off the page.
     release: target => enqueue(async () => { if (targets.has(target)) { try { await select(target.id); } catch { return; } await cursor('remove'); } }),
     // Dropping the transport releases Marionette's session; never Quit/DeleteSession.
