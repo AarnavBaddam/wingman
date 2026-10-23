@@ -39,10 +39,17 @@ function resolveInksplashDir() {
   const guess = path.resolve(__dirname, '..', '..', 'inksplash'); // sibling checkout
   return fs.existsSync(path.join(guess, 'humanize_cli.py')) ? guess : '';
 }
+// A user-set interpreter is honoured only when it is an existing regular file
+// named python/python3[.N], so a tampered setting can't turn the humaniser or
+// detector subprocess into an arbitrary-executable sink.
+function validPython(p) {
+  if (!p || typeof p !== 'string' || !path.isAbsolute(p) || !/^python(3(\.\d+)?)?$/.test(path.basename(p))) return null;
+  try { return require('fs').statSync(p).isFile() ? p : null; } catch { return null; }
+}
 function resolvePython(inksplashDir) {
   const fs = require('fs');
-  const s = store.getSettings().writeMode || {};
-  if (s.pythonPath) return s.pythonPath;
+  const vp = validPython((store.getSettings().writeMode || {}).pythonPath);
+  if (vp) return vp;
   if (inksplashDir) { const venv = path.join(inksplashDir, '.venv', 'bin', 'python'); if (fs.existsSync(venv)) return venv; }
   return 'python3';
 }
@@ -541,31 +548,40 @@ ipcMain.handle('auto-mode:zen-tabs', async () => {
     return (await control.listTabs()).filter(tab => /^https?:\/\//i.test(tab.url));
   } catch (error) { await zenControl?.close(); zenControl = null; throw error; }
 });
-ipcMain.handle('write-mode:prepare', async (_event, payload) => {
+// Only the panel renderer may drive Write mode; reject any other frame/window.
+function fromPanel(event) { if (win && !win.isDestroyed() && event.sender !== win.webContents) throw new Error('Unauthorized sender.'); }
+ipcMain.handle('write-mode:prepare', async (event, payload) => {
+  fromPanel(event);
   if (state.busy) throw new Error('Wait for the current task or stop it first.');
   state.busy = true;
   try { return await getWriteSession().prepare(payload || {}); }
   finally { state.busy = false; }
 });
-ipcMain.handle('write-mode:approve', (_event, text) => getWriteSession().approve(text));
-ipcMain.handle('write-mode:type', (_event, tabId, typingConfig) => {
-  if (state.busy) throw new Error('Wait for the current task or stop it first.');
+ipcMain.handle('write-mode:approve', (event, text) => { fromPanel(event); return getWriteSession().approve(text); });
+ipcMain.handle('write-mode:type', (event, tabId, typingConfig) => {
+  fromPanel(event);
   if (typeof tabId !== 'string' || !tabId.trim()) throw new Error('Pick a Zen tab to type into.');
+  const session = getWriteSession();
+  if (session.stage !== 'armed') throw new Error('Approve the final text before typing.');
+  if (state.busy) throw new Error('Wait for the current task or stop it first.');
   state.busy = true;
   // Default the typing knobs from saved Write-mode settings when none are passed.
   const cfg = (typingConfig && Object.keys(typingConfig).length) ? typingConfig : (store.getSettings().writeMode?.typing || {});
-  // Long-running; status flows through onUpdate and onEnd clears busy.
-  getWriteSession().typeInto(tabId, cfg).catch(() => {});
+  // Long-running; status flows through onUpdate and onEnd clears busy. The finally
+  // is a safety net so an early rejection can never strand the busy lock.
+  session.typeInto(tabId, cfg).catch(() => {}).finally(() => { if (!writeSession || !writeSession.active) state.busy = false; });
   return { started: true };
 });
-ipcMain.on('write-mode:stop', () => writeSession?.stop());
-ipcMain.handle('write-mode:zen-tabs', async () => {
+ipcMain.on('write-mode:stop', (event) => { try { fromPanel(event); } catch { return; } writeSession?.stop(); });
+ipcMain.handle('write-mode:zen-tabs', async (event) => {
+  fromPanel(event);
   try { const control = getZenControl(); await control.connect(); return (await control.listTabs()).filter(tab => /^https?:\/\//i.test(tab.url)); }
   catch (error) { await zenControl?.close(); zenControl = null; throw error; }
 });
-ipcMain.handle('write-mode:python-status', async () => {
+ipcMain.handle('write-mode:python-status', async (event) => {
+  fromPanel(event);
   const dir = resolveInksplashDir();
-  const candidates = [store.getSettings().writeMode?.pythonPath, dir && path.join(dir, '.venv', 'bin', 'python'), 'python3'].filter(Boolean);
+  const candidates = [validPython(store.getSettings().writeMode?.pythonPath), dir && path.join(dir, '.venv', 'bin', 'python'), 'python3'].filter(Boolean);
   const env = require('./src/python-env').createPythonEnv({ candidates });
   const status = await env.detect();
   return { ...status, inksplashDir: dir };
