@@ -86,7 +86,7 @@ function getWriteSession() {
       if (!wm.humanizeEnabled) return Promise.resolve({ text });
       const dir = resolveInksplashDir();
       if (!dir) throw new Error('Set the InkSplash humaniser folder in Settings → Write mode.');
-      return require('./src/humanize').createHumanizer({ pythonPath: resolvePython(dir), scriptDir: dir })
+      return require('./src/humanize').createHumanizer({ pythonPath: resolvePython(dir), scriptDir: dir, isolated: true })
         .humanize(text, { candidates: wm.candidates, refine: wm.refine, ...opts }, signal);
     },
     detect: (text, opts, signal) => {
@@ -94,7 +94,7 @@ function getWriteSession() {
       const dir = resolveInksplashDir();
       // Packaged: aether_detect.py lives under resources/ (real fs), not in app.asar.
       const detectDir = app.isPackaged ? process.resourcesPath : __dirname;
-      return require('./src/detect').createDetector({ pythonPath: resolvePython(dir), scriptDir: detectDir, inksplashDir: dir })
+      return require('./src/detect').createDetector({ pythonPath: resolvePython(dir), scriptDir: detectDir, inksplashDir: dir, isolated: true })
         .detect(text, { zerogpt: wm.detector === 'local+zerogpt', ...opts }, signal);
     },
     releaseModel: () => { try { require('./src/codex-server').stopCodexServer(codexProfileDir()); } catch { /* best-effort */ } },

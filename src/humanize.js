@@ -22,7 +22,7 @@ const CONFIG_C_ENV = {
   INKSPLASH_SCORE_MODE: 'real',
 };
 
-function createHumanizer({ pythonPath, scriptDir, script = 'humanize_cli.py', env = {}, spawn = nodeSpawn, timeoutMs = 600000 }) {
+function createHumanizer({ pythonPath, scriptDir, script = 'humanize_cli.py', env = {}, spawn = nodeSpawn, timeoutMs = 600000, isolated = false }) {
   // opts may override Config C knobs (candidates, refine) per run.
   function humanize(text, opts = {}, signal) {
     return new Promise((resolve, reject) => {
@@ -37,7 +37,9 @@ function createHumanizer({ pythonPath, scriptDir, script = 'humanize_cli.py', en
       if (opts.candidates != null) runEnv.INKSPLASH_CANDIDATES = String(opts.candidates);
       if (opts.refine != null) runEnv.INKSPLASH_REFINE = String(opts.refine);
 
-      const child = spawn(pythonPath, [path.join(scriptDir, script), inFile, outFile], {
+      // -I (isolated): ignore PYTHONPATH/cwd/user-site so env can't inject imports.
+      const argv = isolated ? ['-I', path.join(scriptDir, script), inFile, outFile] : [path.join(scriptDir, script), inFile, outFile];
+      const child = spawn(pythonPath, argv, {
         cwd: scriptDir, env: runEnv, stdio: ['ignore', 'ignore', 'pipe'],
       });
       let stderr = '', settled = false;

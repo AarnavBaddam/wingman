@@ -9,7 +9,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-function createDetector({ pythonPath, scriptDir, inksplashDir, script = 'scripts/aether_detect.py', spawn = nodeSpawn, timeoutMs = 120000 }) {
+function createDetector({ pythonPath, scriptDir, inksplashDir, script = 'scripts/aether_detect.py', spawn = nodeSpawn, timeoutMs = 120000, isolated = false }) {
   // opts: { source, zerogpt, aiMax, factMin }
   function detect(text, opts = {}, signal) {
     return new Promise((resolve, reject) => {
@@ -19,7 +19,8 @@ function createDetector({ pythonPath, scriptDir, inksplashDir, script = 'scripts
       const cleanup = () => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best-effort */ } };
       const textFile = path.join(dir, 'text.txt');
       fs.writeFileSync(textFile, text, 'utf8');
-      const args = [path.join(scriptDir, script), '--text', textFile];
+      // -I (isolated): ignore PYTHONPATH/cwd/user-site so env can't inject imports.
+      const args = isolated ? ['-I', path.join(scriptDir, script), '--text', textFile] : [path.join(scriptDir, script), '--text', textFile];
       if (typeof opts.source === 'string' && opts.source.trim()) {
         const srcFile = path.join(dir, 'source.txt');
         fs.writeFileSync(srcFile, opts.source, 'utf8');

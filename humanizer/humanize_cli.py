@@ -133,12 +133,12 @@ def main() -> int:
     # through to the rule/LLM pipeline if the model or Ollama isn't available.
     if os.environ.get("HUMANIZE_MODE", "").strip().lower() == "stealth":
         try:
-            # Resolve stealth_humanizer + train/* whether we're run from the project root
-            # or the deployed bin\Debug\net8.0-windows (3 levels below the root).
+            # Vendored into Aether: stealth_humanizer, humanizer and train/ all sit
+            # beside this file. Only the script's own directory goes on sys.path — do
+            # NOT inject a parent directory (untrusted module search path).
             _here = os.path.dirname(os.path.abspath(__file__))
-            for _p in (_here, os.path.abspath(os.path.join(_here, "..", "..", ".."))):
-                if _p not in sys.path:
-                    sys.path.insert(0, _p)
+            if _here not in sys.path:
+                sys.path.insert(0, _here)
             # PROMOTED 2026-07-14 as "Config C": the fine-tuned model path (direct_humanise) was proven
             # USELESS against real ZeroGPT (100%, = raw). The rule pipeline (stealth_humanise:
             # burstiness+perplexity) is the ONLY path that moves real ZeroGPT (~20% on the testset).

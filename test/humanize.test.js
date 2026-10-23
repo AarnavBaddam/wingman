@@ -48,6 +48,22 @@ test('abort kills the process and rejects', async () => {
   await assert.rejects(() => p, /Write stopped/);
 });
 
+test('isolated:true runs python with -I (no env/cwd import injection)', async () => {
+  const { EventEmitter } = require('node:events');
+  let argv;
+  const fakeSpawn = (file, args) => {
+    argv = args;
+    const child = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = () => {};
+    setImmediate(() => { fs.writeFileSync(args[args.length - 1], 'done'); child.emit('close', 0); });
+    return child;
+  };
+  const { humanize } = createHumanizer({ pythonPath: 'python3', scriptDir: '/x', spawn: fakeSpawn, isolated: true });
+  await humanize('hi', {}, new AbortController().signal);
+  assert.strictEqual(argv[0], '-I');
+});
+
 test('empty input rejects without spawning', async () => {
   const { humanize } = createHumanizer({ pythonPath: '/bin/false', scriptDir: '/nonexistent' });
   await assert.rejects(() => humanize('   ', {}, new AbortController().signal), /Nothing to humanise/);
