@@ -26,10 +26,26 @@ Write mode is code-complete and verified end-to-end except a full live run with 
 
 Self-contained humaniser (2026-10-22): the InkSplash Config C pipeline is now vendored into `humanizer/` (humanize_cli.py, humanizer.py, stealth_humanizer.py + train/{local_detector,prep_data,eval}.py), so Aether no longer needs a sibling InkSplash checkout. `resolveInksplashDir()` prefers the bundled copy (real fs in dev and packaged via extraResources — a subprocess can't read inside app.asar); a user override or sibling checkout still win/fall back. Both the humaniser and detector were re-smoke-tested against the vendored copy (exit 0; detector returned local 99.4% on near-raw text). The interpreter with the ML deps (torch/transformers/spacy/nltk/textstat) is still the user's — the Python wizard handles that.
 
+Shipped (2026-10-22): Write mode committed in phases and pushed to
+`origin/codex/wingman-hardening` (AarnavBaddam/wingman). Two automated security
+reviews addressed — (1) hardened Write-mode IPC: validate the user-set Python
+path (python* basename, absolute, existing file), stage-check before the busy
+lock + finally safety net, `fromPanel()` sender guard; (2) hardened the humaniser
+subprocess: dropped the `../../..` sys.path injection and run `python -I`. A live
+OpenRouter key found hardcoded in the vendored humanizer.py was removed (env-only)
+— **the user must rotate it**; it is still in InkSplash history. AppImage rebuilt
+hardened and secret-free: `dist/Aether-0.1.0.AppImage`, 140,114,815 bytes,
+SHA-256 `ba2ed707a940262244aca05b300fcc01c1347d933f9d749f9e993fa12b2bcf0b`; the
+packaged app ships `resources/humanizer/*.py` and `resources/scripts/aether_detect.py`
+on the real fs. InkSplash archived (Glitch-spec266/inksplash main + tag
+`inksplash-legacy`), key redacted there too. 242 tests pass.
+
 Remaining:
-- A full live Write run: real draft + Config C humanise (candidates=12, minutes) + detect, approve, type into the live Doc.
-- Python downloader wizard UI could add a one-click "build venv" action (currently detects + guides; `python-env.setupCommand` is ready to wire to a button).
-- Rebuild the AppImage; InkSplash legacy final commit (separate repo).
+- A full live Write run end-to-end: real draft + Config C humanise (candidates=12,
+  minutes) + detect, approve, type into the live Doc. Components each proven; the
+  full chain in one go is still untried.
+- Python downloader wizard UI could add a one-click "build venv" action
+  (`python-env.setupCommand` is ready to wire to a button).
 
 ## Current phase
 
