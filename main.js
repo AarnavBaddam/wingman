@@ -36,7 +36,11 @@ function resolveInksplashDir() {
   const fs = require('fs');
   const s = store.getSettings().writeMode || {};
   if (s.inksplashDir && fs.existsSync(path.join(s.inksplashDir, 'humanize_cli.py'))) return s.inksplashDir;
-  const guess = path.resolve(__dirname, '..', '..', 'inksplash'); // sibling checkout
+  // Bundled Config C humaniser (vendored from InkSplash). Lives on the real fs in
+  // both dev and packaged builds (shipped via extraResources, not inside asar).
+  const bundled = app.isPackaged ? path.join(process.resourcesPath, 'humanizer') : path.join(__dirname, 'humanizer');
+  if (fs.existsSync(path.join(bundled, 'humanize_cli.py'))) return bundled;
+  const guess = path.resolve(__dirname, '..', '..', 'inksplash'); // sibling checkout fallback
   return fs.existsSync(path.join(guess, 'humanize_cli.py')) ? guess : '';
 }
 // A user-set interpreter is honoured only when it is an existing regular file

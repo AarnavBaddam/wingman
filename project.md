@@ -24,10 +24,12 @@ Full suite 207→231 tests. Core engine + humaniser bridge all tested.
 
 Write mode is code-complete and verified end-to-end except a full live run with real Config C (candidates=12, minutes) into a live Doc, and `npm run pack`.
 
+Self-contained humaniser (2026-10-22): the InkSplash Config C pipeline is now vendored into `humanizer/` (humanize_cli.py, humanizer.py, stealth_humanizer.py + train/{local_detector,prep_data,eval}.py), so Aether no longer needs a sibling InkSplash checkout. `resolveInksplashDir()` prefers the bundled copy (real fs in dev and packaged via extraResources — a subprocess can't read inside app.asar); a user override or sibling checkout still win/fall back. Both the humaniser and detector were re-smoke-tested against the vendored copy (exit 0; detector returned local 99.4% on near-raw text). The interpreter with the ML deps (torch/transformers/spacy/nltk/textstat) is still the user's — the Python wizard handles that.
+
 Remaining:
-- A full live Write run: real draft + Config C humanise + detect, approve, type into the live Doc (user present; Config C is slow).
-- Python downloader wizard UI could add a one-click "build venv" action (currently detects + guides; `setupCommand` is ready to wire to a button).
-- InkSplash leftover changes → one final commit at the legacy step (separate repo, strict no-AI-markdown commit rule). Nothing committed/pushed without authorization.
+- A full live Write run: real draft + Config C humanise (candidates=12, minutes) + detect, approve, type into the live Doc.
+- Python downloader wizard UI could add a one-click "build venv" action (currently detects + guides; `python-env.setupCommand` is ready to wire to a button).
+- Rebuild the AppImage; InkSplash legacy final commit (separate repo).
 
 ## Current phase
 
