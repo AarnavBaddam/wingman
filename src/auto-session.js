@@ -10,7 +10,7 @@ function wait(ms, signal) {
 }
 
 function createAutoSession({ getSettings, createLLM, getCodexHome, createDesktopControl, createBrowserControl, createStopWatcher,
-  research, onUpdate = () => {}, onEnd = () => {}, countdownMs = 3000 }) {
+  createRunLog, research, onUpdate = () => {}, onEnd = () => {}, countdownMs = 3000 }) {
   let current = null, completion = Promise.resolve();
   let last = { active: false, status: 'idle', message: '' };
   const manager = {
@@ -30,6 +30,7 @@ function createAutoSession({ getSettings, createLLM, getCodexHome, createDesktop
       const session = { controller: new AbortController(), reason: 'Auto stopped.', targetType };
       current = session;
       const signal = session.controller.signal;
+      const record = event => { try { session.log?.write(event); } catch {} };
       const publish = update => { last = { ...update, active: true }; onUpdate(last); };
       completion = (async () => {
         let terminal = { status: 'stopped', message: 'Auto stopped.' }, skippedNote = '';
@@ -49,20 +50,31 @@ function createAutoSession({ getSettings, createLLM, getCodexHome, createDesktop
           const target = targetType === 'zen' ? await desktop.lockTarget(tabId, signal) : await desktop.lockTarget(signal);
           signal.throwIfAborted();
           session.release = () => desktop.release?.(target);
+          // A broken log (full disk, bad permissions) must never stop a run.
+          try { session.log = createRunLog?.(); } catch {}
+          record({ kind: 'start', goal, target: targetType, allowSubmit: allowSubmit === true });
           session.engine = createAutoMode({
             capture: innerSignal => desktop.capture(target, innerSignal),
             execute: (action, innerSignal) => {
+              record({ kind: 'execute', action });
               session.pendingInput = desktop.execute(target, action, innerSignal);
               return session.pendingInput;
             },
             research: (query, innerSignal) => research(query, settings, innerSignal),
-            decide: ({ goal, userRules, screen, history, sources, form, observation, allowSubmit, signal: innerSignal }) => llm.stream({
+            decide: async ({ goal, userRules, screen, history, sources, form, observation, allowSubmit, signal: innerSignal }) => {
+              let image = null;
+              try { image = session.log?.image(screen.imageDataUrl); } catch {}
+              const response = await llm.stream({
               system: AUTO_SYSTEM,
               turns: [{ role: 'user', text: JSON.stringify({ goal, userRules, screen: { width: screen.width, height: screen.height },
                 allowSubmit, form, observation, history, sources: sources.map(source => ({ ...source, content: String(source.content || '').slice(0, 4000) })) }) }],
               imageDataUrl: screen.imageDataUrl, maxTokens: 1200, signal: innerSignal, onToken() {}
-            }),
+              });
+              record({ kind: 'decide', image, observation, form, response });
+              return response;
+            },
             onUpdate(update) {
+              record({ kind: 'update', status: update.status, step: update.step, message: update.message });
               if (['done', 'paused', 'stopped', 'error'].includes(update.status)) terminal = update;
               if (update.skipped) skippedNote = update.message.slice(update.message.indexOf('\nSkipped for you'));
               publish(update);
@@ -82,7 +94,9 @@ function createAutoSession({ getSettings, createLLM, getCodexHome, createDesktop
           if (current === session) current = null;
           // Escape/errors replace the message; never lose skipped-question instructions.
           if (skippedNote && !terminal.message.includes(skippedNote)) terminal = { ...terminal, message: terminal.message + skippedNote };
-          last = { ...terminal, active: false }; onUpdate(last); onEnd();
+          record({ kind: 'end', status: terminal.status, message: terminal.message });
+          if (session.log && ['paused', 'error'].includes(terminal.status)) terminal = { ...terminal, message: `${terminal.message}\nRun log: ${session.log.dir}` };
+          last = { ...terminal, active: false, ...(session.log && { logDir: session.log.dir }) }; onUpdate(last); onEnd();
         }
       })();
       return { started: true };

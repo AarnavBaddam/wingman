@@ -177,7 +177,7 @@ function goalRules(goal) {
 }
 
 function createAutoMode({ capture, decide, execute, research, onUpdate = () => {}, delay = 300,
-  maxSteps = 80, maxDurationMs = 600000 }) {
+  maxSteps = 80, maxDurationMs = 600000, stallSteps = 15 }) {
   if (![capture, decide, execute].every(fn => typeof fn === 'function')) throw new Error('Auto requires capture, decide, and execute functions.');
   if (!Number.isInteger(maxSteps) || maxSteps < 1 || maxSteps > 80 || !Number.isFinite(maxDurationMs) || maxDurationMs <= 0 || maxDurationMs > 600000 || !Number.isFinite(delay) || delay < 0) throw new Error('Invalid Auto limits.');
   let controller = null;
@@ -189,7 +189,7 @@ function createAutoMode({ capture, decide, execute, research, onUpdate = () => {
       if (controller) throw new Error('Auto is already running.');
       const current = new AbortController(); controller = current;
       const signal = current.signal;
-      let step = 0, sources = [], history = [], lastAction = '', repeats = 0;
+      let step = 0, sources = [], history = [], lastAction = '', repeats = 0, progressStep = 0;
       let focusedLabel = null, fieldLabel = null;
       let form = null, lastType = null, mapRun = 0, submitted = false, submitPending = false, previousImage = null, previousAction = null, invalidResponses = 0, lastDecisionImage = null;
       const pendingFields = new Map();
@@ -234,6 +234,13 @@ function createAutoMode({ capture, decide, execute, research, onUpdate = () => {
       }
       try {
         for (step = 1; step <= maxSteps; step++) {
+          // Flailing (misses, re-reads, blocked actions) used to run all the way to the step cap.
+          if (step - progressStep > stallSteps) {
+            const lastFeedback = [...history].reverse().find(entry => entry.type === 'feedback');
+            update('paused', `No progress in ${stallSteps} steps: nothing was entered, answered or advanced. Check the screen, then start Auto again.` +
+              (lastFeedback ? `\nLast problem: ${lastFeedback.message.slice(0, 300)}` : ''), { sources });
+            return;
+          }
           check(); update('observing', 'Observing the current screen.');
           let screen = await operation(() => capture(signal));
           // Slow sites keep the old page, then flash white, for seconds after Next/Submit.
@@ -323,7 +330,7 @@ function createAutoMode({ capture, decide, execute, research, onUpdate = () => {
           }
           if (action.type === 'need_input') { update('paused', action.message, { action, sources }); return; }
           if (action.type === 'skip') {
-            skipped.push({ question: action.question, instructions: action.instructions }); skipCurrent = true;
+            skipped.push({ question: action.question, instructions: action.instructions }); skipCurrent = true; progressStep = step;
             update('skipped', 'Skipped a graphing question for you to answer.', { action }); remember(action); continue;
           }
           const mapAgain = action.type === 'map' && lastType === 'map' && !screenChanged; lastType = action.type;
@@ -427,6 +434,8 @@ function createAutoMode({ capture, decide, execute, research, onUpdate = () => {
             } else await operation(() => execute(action, signal));
             check();
             previousImage = screen.imageDataUrl; previousAction = action;
+            // ponytail: a sent answer click counts even if it missed; the repeat guards catch same-spot misses.
+            if (['type', 'drag'].includes(action.type) || (action.type === 'click' && action.intent !== 'focus')) progressStep = step;
             if (action.type === 'click' && ['navigate', 'submit'].includes(action.intent)) {
               if (action.intent === 'submit') submitted = true;
               submitPending = action.intent === 'submit';

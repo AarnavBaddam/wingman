@@ -530,3 +530,18 @@ test('"double click" in the goal upgrades every select click to clicks 2', async
     { execute: async a => plain.push(a) }).engine.run("Answer it, don't double click");
   assert.equal(plain[0].clicks, undefined);
 });
+test('a run with no real progress for stallSteps pauses early with the last feedback', async () => {
+  // Scrolling and focus clicks alone are not progress; the 80-step cap was the only stop before.
+  const actions = [];
+  for (let i = 0; i < 30; i++) actions.push(i % 2 ? { type: 'scroll', x: 5, y: 5, amount: 1, label: 'page' } : { type: 'click', x: 10 + i, y: 10, label: 'f' + i, intent: 'focus' });
+  const h = harness(actions, { stallSteps: 6 });
+  await h.engine.run('Fill form');
+  const last = h.updates.at(-1);
+  assert.equal(last.status, 'paused'); assert.equal(last.step, 7);
+  assert.match(last.message, /No progress in 6 steps/);
+  // A typed value resets the count.
+  const typed = [{ type: 'click', x: 1, y: 1, label: 'a', intent: 'focus' }, { type: 'type', text: '1', label: 'a', origin: 'user' }];
+  const g = harness([...actions.slice(0, 4), ...typed, ...actions.slice(0, 5), { type: 'done', message: 'ok' }], { stallSteps: 6 });
+  await g.engine.run('Fill form');
+  assert.equal(g.updates.at(-1).status, 'done');
+});

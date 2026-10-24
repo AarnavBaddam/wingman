@@ -84,3 +84,15 @@ test('invalid browser targets fail before starting a session', () => {
     assert.equal(h.manager.active,false);
   }
 });
+test('session writes a run log and a broken log never stops the run', async () => {
+  const events = [], images = [];
+  const h = setup({ createRunLog: () => ({ dir: '/runs/1', image: url => { images.push(url); return '001.png'; }, write: e => events.push(e) }) });
+  h.manager.start('Draft form'); await h.manager.completion;
+  assert.deepEqual(events.map(e => e.kind), ['start', 'update', 'update', 'decide', 'update', 'end']);
+  const decision = events.find(e => e.kind === 'decide');
+  assert.equal(decision.image, '001.png'); assert.match(decision.response, /done/);
+  assert.equal(images[0], 'image'); assert.equal(h.updates.at(-1).logDir, '/runs/1');
+  const broken = setup({ createRunLog: () => ({ dir: '/x', image() { throw Error('disk full'); }, write() { throw Error('disk full'); } }) });
+  broken.manager.start('Draft form'); await broken.manager.completion;
+  assert.equal(broken.updates.at(-1).status, 'done');
+});

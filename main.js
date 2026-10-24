@@ -535,6 +535,7 @@ async function startAutoMode(goal, options) {
     createDesktopControl: () => require('./src/desktop-control').createDesktopControl(),
     createBrowserControl: () => getZenControl(),
     createStopWatcher: options => require('./src/hypr-auto-stop').createHyprAutoStop(options),
+    createRunLog: () => require('./src/run-log').createRunLog(path.join(app.getPath('userData'), 'auto-runs')),
     research: (query, settings) => getEvidence(query, settings.apiKeys.tavily),
     onUpdate: update => {
       // Never expose screenshots, typed values or source bodies through status logs.

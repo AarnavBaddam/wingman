@@ -4,6 +4,9 @@
 
 User report: a click-only numpad form (Physics Classroom style; keyboard ignored, "Editing answer for: m" panel) filled 3 fields wrongly (3, 2.5, 2) and hit the 80-step limit. Causes: one model step per keypad press, and back-to-back presses of one button (the zeros in 3000) were blocked by the duplicate-selection guard.
 - `type.symbols` now accepts ASCII keys (keypad buttons, max 16). One type action presses every button in text order, repeats included, with a short gap per press. AUTO_SYSTEM tells the model to use this and the pad's Clear button. Typing with no visible change now gets a feedback hint pointing at the keypad.
+- **Run log** (`src/run-log.js`, wired in `auto-session.js`/`main.js`): every Auto run writes `~/.config/Aether/auto-runs/<UTC time>/trace.jsonl` (start, each decision with its observation/form/raw response, executed actions incl. typed values, status updates, end) plus one PNG per changed screenshot. Newest 5 runs kept. Log failures never stop a run. Paused/error messages show the folder.
+- **Stall stop**: `createAutoMode({ stallSteps = 15 })` pauses when 15 steps pass with no typed value, non-focus click, drag/vector or skip, and quotes the last feedback. 80-step cap stays.
+- Verified 2026-10-24: 274 tests; real Chromium page through `createAutoSession` with a flailing scripted model paused at step 16 and left trace + PNG on disk.
 - Verified: 271 tests (new keypad test); real headless Chromium page with a keyboard-blocked numpad got "3000" from one type action; `npm run pack` OK. Not yet run live with Codex on the real form.
 
 ## Write mode: Codex humaniser + Humanize button — 2026-10-23
