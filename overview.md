@@ -124,4 +124,4 @@ Release verification separates renderer checks with a mocked Electron bridge fro
 - Refresh the reference set with `node scripts/build-library.js`, inspect the content/license metadata, and run `npm test` and `npm run pack` so the package includes it.
 
 
-Write mode humanisers (src/humanize.js): `createModelHumanizer` rewrites the whole text with the answer model; `createSentenceHumanizer` scores sentences with `aether_detect.py --segments` (via `detect.js segments()`), asks the model for 3 alternatives for only the most AI-like ones, and lets the detector choose. Chosen in Settings → Write (`writeMode.humanizer`: sentences | model | local).
+Write mode humanisers (src/humanize.js): `createModelHumanizer` rewrites the whole text with the answer model; `createSentenceHumanizer` scores sentences with `aether_detect.py --segments` (via `detect.js segments()`), asks the model for 3 alternatives for only the most AI-like ones, and lets the detector choose. Chosen in Settings → Write (`writeMode.humanizer`: sentences (default) | model | local).
