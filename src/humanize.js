@@ -52,6 +52,8 @@ function createHumanizer({ pythonPath, scriptDir, script = 'humanize_cli.py', en
       child.on('close', code => {
         if (settled) return; settled = true; clearTimeout(timer); signal?.removeEventListener('abort', onAbort);
         try {
+          // 5 = the rewrite altered a quotation, so the CLI wrote the original text back.
+          if (code === 5) return resolve({ text: fs.readFileSync(outFile, 'utf8'), note: 'The humaniser could not keep every quotation exact, so your text was left un-humanised.' });
           if (code !== 0) return reject(new Error(`Humanise exited ${code}: ${stderr.trim().slice(-400) || 'no output'}`));
           const out = fs.readFileSync(outFile, 'utf8');
           if (!out.trim()) return reject(new Error('Humanise produced no output.'));

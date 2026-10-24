@@ -68,3 +68,11 @@ test('empty input rejects without spawning', async () => {
   const { humanize } = createHumanizer({ pythonPath: '/bin/false', scriptDir: '/nonexistent' });
   await assert.rejects(() => humanize('   ', {}, new AbortController().signal), /Nothing to humanise/);
 });
+
+test('exit 5 (a quotation changed) resolves with the original text and a note', async () => {
+  const dir = stubDir('cat "$1" > "$2"\necho "quotes-changed" 1>&2\nexit 5\n');
+  const { humanize } = createHumanizer({ pythonPath: '/bin/sh', scriptDir: dir });
+  const r = await humanize('He said "keep me exact please".', {}, new AbortController().signal);
+  assert.strictEqual(r.text, 'He said "keep me exact please".');
+  assert.match(r.note, /quotation/);
+});

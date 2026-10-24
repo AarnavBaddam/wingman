@@ -143,8 +143,51 @@ def _clean(text: str) -> str:
     return text.strip()
 
 
+# Quotations are frozen behind [[Qn: words]] markers for the whole rewrite and restored
+# byte-for-byte by number afterwards (user rule 2026-10-23: the humaniser never edits a
+# quote). The words stay visible so the model does not guess and paraphrase a hidden
+# quote; anything it changes inside a marker is thrown away on restore.
+# ponytail: single-quoted spans are not frozen; they collide with apostrophes.
+_QUOTE_RE = re.compile(r'“[^”\n]*”|"[^"\n]*"')
+_MARK_RE = re.compile(r"\[\[Q(\d+)(?::[^\[\]]*)?\]\]")
+_MARK_RULE = (" Text like [[Q1: some words]] is an exact quotation: copy every such marker "
+              "unchanged and exactly once, never put quotation marks around it, and never "
+              "repeat or paraphrase its words outside the marker.")
+
+
+def freeze_quotes(text: str):
+    quotes = []
+
+    def hold(m):
+        quotes.append(m.group(0))
+        words = re.sub(r"[\[\]]", "", m.group(0)[1:-1]).strip()
+        return f"[[Q{len(quotes)}: {words}]]"
+    return _QUOTE_RE.sub(hold, text), quotes
+
+
+def _mark_ids(text: str):
+    return sorted(int(n) for n in _MARK_RE.findall(text))
+
+
+def thaw_quotes(text: str, quotes):
+    """Restore frozen quotes. None if any marker was lost, duplicated, or invented."""
+    text = re.sub(r'["“”]+(\[\[Q\d+(?::[^\[\]]*)?\]\])["“”]+', r"\1", text)   # model re-wrapped a marker
+    if _mark_ids(text) != list(range(1, len(quotes) + 1)):
+        return None
+    return _MARK_RE.sub(lambda m: quotes[int(m.group(1)) - 1], text)
+
+
+def _keeps_marks(orig: str, new: str) -> bool:
+    return _mark_ids(orig) == _mark_ids(new)
+
+
+class ModelMissing(RuntimeError):
+    """The Ollama rewrite model is not installed. Raised, never swallowed: without it
+    every rewrite came back empty and the essay was returned unchanged as if humanised."""
+
+
 def _chat(system: str, user: str, temperature: float, model: str = None) -> str:
-    payload = {"model": model or STEALTH_MODEL, "keep_alive": -1, "stream": False,
+    payload = {"model": model or STEALTH_MODEL, "keep_alive": -1, "stream": False, "think": False,
                "options": {"temperature": temperature, "num_predict": 1024},
                "messages": [{"role": "system", "content": system},
                             {"role": "user", "content": user}]}
@@ -154,7 +197,13 @@ def _chat(system: str, user: str, temperature: float, model: str = None) -> str:
     for attempt in range(2):
         try:
             r = requests.post(f"{OLLAMA_URL}/api/chat", json=payload, timeout=300)
-            return _clean(r.json().get("message", {}).get("content") or "")
+            data = r.json()
+            if "not found" in str(data.get("error", "")):
+                raise ModelMissing(f"Ollama model '{payload['model']}' is not installed. Run "
+                                   f"`ollama pull {payload['model']}` or set STEALTH_LLM_MODEL.")
+            return _clean(data.get("message", {}).get("content") or "")
+        except ModelMissing:
+            raise
         except Exception:
             if attempt == 1:
                 return ""
@@ -177,21 +226,21 @@ _STEALTH_SYSTEM = (
     "FIDELITY: keep every fact, name, date and number, keep all paragraphs, and keep about the "
     "same length. Do not invent anything.\n"
     "No em-dashes (use commas, periods, semicolons). No Furthermore, Moreover, Additionally, "
-    "Consequently, In conclusion. Straight quotes only. Output ONLY the rewritten essay."
+    "Consequently, In conclusion. Straight quotes only. Output ONLY the rewritten essay." + _MARK_RULE
 )
 
 _SENTENCE_FIX = (
     "Reword this single sentence so its phrasing is less predictable and more distinctive, using "
     "richer, more specific vocabulary a well-read person would choose. Keep the EXACT meaning, all "
     "facts/names/numbers, and a formal collegiate register. Do not simplify, do not add or drop "
-    "information, do not add commentary. Output ONLY the reworded sentence."
+    "information, do not add commentary. Output ONLY the reworded sentence." + _MARK_RULE
 )
 
 _SENTENCE_SPLIT = (
     "Split this ONE long sentence into two or three grammatically COMPLETE sentences of very "
     "different lengths (make at least one short, 3-7 words). Every sentence must have a subject and "
     "a verb - no fragments. Keep the exact meaning, all facts, names and numbers, and a formal "
-    "collegiate tone. Output ONLY the rewritten sentences, nothing else."
+    "collegiate tone. Output ONLY the rewritten sentences, nothing else." + _MARK_RULE
 )
 
 # spaCy is used to *guarantee* grammar: a split is accepted only if every resulting
@@ -236,7 +285,7 @@ def _burst_split(text: str, min_words: int = 17) -> str:
                 nums_ok = all(n in r for n in re.findall(r"\b\d[\d,]*\b", s))
                 _sem_min = float(os.environ.get("INKSPLASH_SEM_MIN", "0"))
                 sem_ok = _sem_min <= 0 or _sem_sim(s, r) >= _sem_min
-                if r and nums_ok and sem_ok and _fragments(r) == 0 and len(r) >= 0.7 * len(s):
+                if r and nums_ok and sem_ok and _keeps_marks(s, r) and _fragments(r) == 0 and len(r) >= 0.7 * len(s):
                     pieces.append(r)
                     continue
             pieces.append(s)
@@ -255,6 +304,8 @@ def _facts(text: str):
 
 
 def _keeps_facts(orig: str, new: str) -> bool:
+    if not _keeps_marks(orig, new):             # a lost/duplicated quote marker is a hard fail
+        return False
     onums, oprops = _facts(orig)
     nnums, nprops = _facts(new)
     if not onums <= nnums:                      # every number must still be present
@@ -298,8 +349,15 @@ def _sem_sim(a: str, b: str) -> float:
         import numpy as np
         va, vb = _emb().encode([a, b], normalize_embeddings=True)
         return float(np.dot(va, vb))
-    except Exception:
+    except Exception as e:
+        global _SEM_WARNED
+        if not _SEM_WARNED:
+            _SEM_WARNED = True
+            sys.stderr.write(f"[stealth] meaning guard OFF, embeddings unavailable: {e}\n")
         return 1.0
+
+
+_SEM_WARNED = False
 
 
 def _restore_facts(src: str, best: str, model: str = None) -> str:
@@ -323,9 +381,9 @@ def _restore_facts(src: str, best: str, model: str = None) -> str:
         fix_sys = ("Revise the passage so it includes these exact terms from the original, which "
                    "are currently missing: " + "; ".join(sorted(missing)) + ". Weave each in "
                    "naturally, change nothing else, keep the same style and length. Output only "
-                   "the revised passage.")
+                   "the revised passage." + _MARK_RULE)
         fixed = _chat(fix_sys, best, temperature=0.4, model=model)
-        if fixed and 0.75 <= len(fixed) / max(1, len(src)) <= 1.4 \
+        if fixed and 0.75 <= len(fixed) / max(1, len(src)) <= 1.4 and _keeps_marks(best, fixed) \
                 and _fact_score(src, fixed) > _fact_score(src, best):
             best = fixed
         else:
@@ -473,7 +531,7 @@ def direct_humanise(text: str, model: str = None, instruction: str = None,
         fix_sys = ("Revise the passage so it includes these exact terms from the original, which "
                    "are currently missing: " + "; ".join(sorted(missing)) + ". Weave each in "
                    "naturally, change nothing else, keep the same style and length. Output only "
-                   "the revised passage.")
+                   "the revised passage." + _MARK_RULE)
         try:
             r = requests.post(f"{OLLAMA_URL}/api/chat", timeout=180, json={
                 "model": m, "keep_alive": -1, "stream": False, "think": False,
@@ -483,7 +541,7 @@ def direct_humanise(text: str, model: str = None, instruction: str = None,
             fixed = _clean(r.json().get("message", {}).get("content") or "")
         except Exception:
             fixed = ""
-        if fixed and 0.75 <= len(fixed) / max(1, len(text)) <= 1.4 \
+        if fixed and 0.75 <= len(fixed) / max(1, len(text)) <= 1.4 and _keeps_marks(best, fixed) \
                 and _fact_score(text, fixed) > _fact_score(text, best) \
                 and (detect is None or detect(fixed) < _o3cap):
             best = fixed
@@ -517,6 +575,13 @@ def stealth_humanise(text: str, candidates: int = 6, refine_sentences: int = 4,
         # FIDELITY GUARDS (protect O1/O2): reject candidates that compressed too far,
         # ballooned (a rambling/hallucinating small model), or dropped facts.
         if not cand or not (0.75 * len(text) <= len(cand) <= 1.30 * len(text)):
+            continue
+        if not _keeps_marks(text, cand):
+            continue
+        # Meaning guard. ponytail: MiniLM reads only the first ~256 tokens of each text;
+        # compare per paragraph if long essays drift late.
+        _doc_min = float(os.environ.get("INKSPLASH_DOC_SEM_MIN", "0"))
+        if _doc_min > 0 and _sem_sim(text, cand) < _doc_min:
             continue
         sc = StealthScorer.score(cand)
         len_ratio = min(len(cand) / len(text), 1.10)

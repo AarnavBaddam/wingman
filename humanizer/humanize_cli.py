@@ -14,6 +14,7 @@ Exit codes:
     2  bad arguments
     3  input file missing / empty
     4  pipeline error (missing spaCy model, etc.)
+    5  the rewrite altered a quotation; the original text was written instead
 """
 import sys
 import os
@@ -127,6 +128,25 @@ def main() -> int:
 
     _ensure_nltk()
 
+    # Freeze quotations for every engine below; restored byte-for-byte at the end.
+    from stealth_humanizer import freeze_quotes, thaw_quotes
+    original = text
+    text, quotes = freeze_quotes(text)
+
+    def finish(humanised: str, label: str) -> int:
+        humanised = _strip_ai_dashes(humanised)
+        humanised = _preserve_indentation(original, humanised)
+        restored = thaw_quotes(humanised, quotes)
+        if restored is None:
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(original)
+            print("quotes-changed: the rewrite lost or altered a quotation; original kept", file=sys.stderr)
+            return 5
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(restored)
+        print(f"ok ({label}): {len(original)} -> {len(restored)} chars", file=sys.stderr)
+        return 0
+
     # STEALTH mode: use the fine-tuned local model (humanizer-local) via best-of-N direct
     # invocation (train/*, stealth_humanizer.direct_humanise). This is the trained-model path;
     # it passes O1 (facts) + O3 (undetectable) far better than the rule/LLM pipeline. Falls
@@ -153,6 +173,9 @@ def main() -> int:
             os.environ.setdefault("INKSPLASH_REFINE_TOPK", "6")
             os.environ.setdefault("INKSPLASH_CANDIDATES", "12")
             os.environ.setdefault("INKSPLASH_REFINE", "12")
+            # Meaning guards (MiniLM cosine): drop rewrites that drift from the source.
+            os.environ.setdefault("INKSPLASH_SEM_MIN", "0.80")
+            os.environ.setdefault("INKSPLASH_DOC_SEM_MIN", "0.85")
             engine = os.environ.get("HUMANIZE_STEALTH_ENGINE", "rule").strip().lower()
             model = os.environ.get("HUMANIZE_LLM_MODEL", "humanizer-local")
             if engine == "rule":
@@ -165,14 +188,12 @@ def main() -> int:
                 from stealth_humanizer import direct_humanise
                 humanised = direct_humanise(text, model=model)
             if humanised and humanised.strip():
-                humanised = _strip_ai_dashes(humanised)
-                humanised = _preserve_indentation(text, humanised)
-                with open(out_path, "w", encoding="utf-8") as f:
-                    f.write(humanised)
-                print(f"ok (stealth/{model}): {len(text)} -> {len(humanised)} chars", file=sys.stderr)
-                return 0
+                return finish(humanised, f"stealth/{model}")
             print("stealth produced empty output; falling back to pipeline", file=sys.stderr)
         except Exception as e:  # noqa: BLE001
+            if type(e).__name__ == "ModelMissing":     # say so; never "humanise" by returning the input
+                print(f"humanise error: {e}", file=sys.stderr)
+                return 4
             print(f"stealth humanise unavailable, falling back: {e}", file=sys.stderr)
 
     try:
@@ -193,13 +214,7 @@ def main() -> int:
         print(f"humanise error: {e}", file=sys.stderr)
         return 4
 
-    humanised = _strip_ai_dashes(humanised)
-    humanised = _preserve_indentation(text, humanised)
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(humanised)
-
-    print(f"ok: {len(text)} -> {len(humanised)} chars, level={level}", file=sys.stderr)
-    return 0
+    return finish(humanised, f"level={level}")
 
 
 if __name__ == "__main__":

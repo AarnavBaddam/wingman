@@ -8,7 +8,7 @@
 // `exec` is injected (default execFile) so detection is unit-testable.
 const { execFile } = require('node:child_process');
 
-const DEFAULT_REQUIRES = ['torch', 'transformers', 'spacy', 'nltk', 'textstat'];
+const DEFAULT_REQUIRES = ['torch', 'transformers', 'spacy', 'nltk', 'textstat', 'sentence_transformers']; // last one powers the humaniser's meaning guard
 
 // Prints, one per line, each required module that is NOT importable.
 const CHECK = 'import importlib.util as u,sys\n[print(m) for m in sys.argv[1].split(",") if u.find_spec(m) is None]';
