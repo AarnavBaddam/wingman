@@ -266,3 +266,4 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
 #write-detector { font: 500 12px var(--mono); color: var(--oled-dim); }
 #write-detector.pass { color: oklch(0.8 0.15 150); }
 #write-detector.fail { color: var(--orange); }
+#write-notes { font: 500 12px/1.45 var(--mono); color: var(--warn); }

@@ -5,7 +5,7 @@ const store = require('./src/store');
 const { captureScreenshot } = require('./src/screen');
 const { createSTT } = require('./src/stt');
 const { createLLM } = require('./src/llm');
-const { getEvidence, searchWeb, researchPrompt, validateGroundedAnswer, needsWebFollowup, isScreenQuestion } = require('./src/research');
+const { getEvidence, searchWeb, researchPrompt, validateGroundedAnswer, needsWebFollowup, isScreenQuestion, extractUrls, openLinks, linkPrompt, verifyQuotes, quoteWarning } = require('./src/research');
 const { MODES, responseSystem } = require('./src/prompts');
 const { appendResumeContext } = require('./src/profile-context');
 const { rms16 } = require('./src/wav');
@@ -447,9 +447,12 @@ async function runFeature(mode, userText, capturePoint) {
     }
 
     const built = def.build({ transcript, userText: userText || '' });
-    const needsResearch = mode === 'research' || (mode === 'ask' && !isScreenQuestion(userText));
+    // Links the user pasted are opened directly; their page text is the evidence.
+    const links = extractUrls(userText || '').length ? (send('llm:phase', { message: 'Opening links…' }), await openLinks(userText)) : { sources: [], failures: [] };
+    if (links.failures.length) send('status', { message: 'Could not open: ' + links.failures.map(f => `${f.url} (${f.reason})`).join('; ') });
+    const needsResearch = !links.sources.length && (mode === 'research' || (mode === 'ask' && !isScreenQuestion(userText)));
     if (needsResearch) send('llm:phase', { message: 'Finding sources…' });
-    let sources = needsResearch ? await getEvidence(userText, settings.apiKeys.tavily) : [];
+    let sources = links.sources.length ? links.sources : needsResearch ? await getEvidence(userText, settings.apiKeys.tavily) : [];
     const publishSources = () => {
       if (sources.length) send('llm:sources', { sources: sources.map(({ number, title, url, origin }) => ({ number, title, url, origin })) });
     };
@@ -459,7 +462,7 @@ async function runFeature(mode, userText, capturePoint) {
       send('llm:phase', { message: sources.length ? 'Writing a sourced answer…' : 'Writing an answer…' });
       return llm.stream({
       system: appendResumeContext(responseSystem(def.system, settings.smart), settings.resumeContext),
-      turns: [{ role: 'user', text: built + (sources.length ? researchPrompt(sources) : '') }],
+      turns: [{ role: 'user', text: built + (sources.length ? researchPrompt(sources) : '') + linkPrompt(links.failures) }],
       imageDataUrl,
       onToken: (t) => { if (!sources.length) send('llm:token', { text: t }); }
       });
@@ -471,7 +474,11 @@ async function runFeature(mode, userText, capturePoint) {
       publishSources();
       fullText = await answer();
     }
-    if (sources.length) send('llm:token', { text: validateGroundedAnswer(fullText, sources) });
+    const checked = sources.length ? validateGroundedAnswer(fullText, sources) : fullText;
+    // Quotes are checked word-for-word against what was actually retrieved, never trusted.
+    const warning = sources.length || links.failures.length ? quoteWarning(verifyQuotes(checked, sources).unverified) : '';
+    if (sources.length) send('llm:token', { text: checked + warning });
+    else if (warning) send('llm:token', { text: warning });
     if (DEBUG) console.log('[DEBUG MAIN] Full LLM Output:\n', fullText);
     send('llm:done', {});
   } catch (e) {

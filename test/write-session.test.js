@@ -85,3 +85,33 @@ test('stop during typing halts keystrokes', async () => {
 
 // A wait() that resolves immediately (no real delays in tests).
 function instant() { return () => Promise.resolve(); }
+
+test('the user prompt is the spec: no hardcoded voice in the system prompt', () => {
+  const { WRITE_SYSTEM } = require('../src/write-session');
+  assert.doesNotMatch(WRITE_SYSTEM, /student voice|first-person/i);
+  assert.match(WRITE_SYSTEM, /instructions override every default/i);
+});
+
+test('links in the prompt are opened, fed to the model, and failures + invented quotes are reported', async () => {
+  let sent;
+  const { session } = harness({
+    createLLM: () => ({ ready: true, stream: async ({ turns }) => { sent = turns[0].text; return 'He wrote "the quick brown fox jumps" and "a sentence nobody ever wrote".'; } }),
+    openLinks: async () => ({ sources: [{ number: 1, title: 'Fox', url: 'https://good.com', content: 'The quick brown fox jumps over.' }], failures: [{ url: 'https://bad.com', reason: 'HTTP 403' }] }),
+    humanize: async t => ({ text: t }),
+  });
+  const review = await session.prepare({ prompt: 'quote https://good.com and https://bad.com' });
+  assert.match(sent, /The quick brown fox jumps over\./);
+  assert.match(sent, /could not be opened: https:\/\/bad\.com \(HTTP 403\)\. Still write the piece/);
+  assert.deepStrictEqual(review.unverifiedQuotes, ['a sentence nobody ever wrote']);
+  assert.deepStrictEqual(review.linkFailures, [{ url: 'https://bad.com', reason: 'HTTP 403' }]);
+  assert.ok(review.notes.some(n => /Could not open: https:\/\/bad\.com/.test(n)));
+});
+
+test('a humaniser that alters a quotation is overruled: the draft is kept', async () => {
+  const { session } = harness({
+    humanize: async () => ({ text: 'She said "the fast brown fox leaps" today.' }),
+  });
+  const review = await session.prepare({ pasted: 'She said "the quick brown fox jumps" today.' });
+  assert.strictEqual(review.text, 'She said "the quick brown fox jumps" today.');
+  assert.ok(review.notes.some(n => /changed a quotation/.test(n)));
+});

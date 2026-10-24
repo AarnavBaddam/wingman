@@ -197,6 +197,7 @@
     $('#write-input').classList.remove('hidden');
     $('#write-paste-row').classList.remove('hidden');
     $('#write-detector').classList.add('hidden');
+    $('#write-notes').classList.add('hidden');
     $('#write-zen-row').classList.add('hidden');
     $('#write-status').classList.add('hidden');
     showWriteButtons({ prepare: true });
@@ -226,6 +227,10 @@
       det.textContent = `AI: ${pct} · ${review.pass ? 'PASS' : 'FAIL'}${review.detail ? ' · ' + review.detail : ''}`;
       det.classList.toggle('pass', !!review.pass);
       det.classList.toggle('fail', !review.pass);
+      // Unopened links and unverifiable quotes are shown, never hidden.
+      const notes = $('#write-notes');
+      notes.textContent = (review.notes || []).join('\n');
+      notes.classList.toggle('hidden', !(review.notes || []).length);
       setWriteStage('review');
       writeStatus('Edit the text if you like, then Approve.');
       showWriteButtons({ rerun: true, approve: true });
