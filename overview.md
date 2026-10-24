@@ -20,7 +20,7 @@ Aether is an Electron desktop app. It has a main process that can call providers
 | `src/screen.js` | Captures the cursor or supplied interaction display; native Hyprland uses `grim` and monitor coordinates. |
 | `src/auto-refresh.js` | Debounces opt-in activity, retains the latest pending interaction and prevents overlapping generations. |
 | `src/hypr-activity.js` | Owns non-consuming Hyprland click/scroll bindings and a bounded event-socket listener, excluding Aether windows. |
-| `src/auto-mode.js` | Validates one desktop action per observation, tracks evidence and field focus, and bounds decisions/time. |
+| `src/auto-mode.js` | Validates one desktop action per observation, tracks evidence and field focus, and bounds decisions/time. `goalRules(goal)` turns instructions in the goal ("don't scroll", "double click") into rules the engine enforces itself. |
 | `src/auto-session.js` | Owns countdown, selected provider, cancellation, progress and input teardown before releasing the busy lock. |
 | `src/desktop-control.js` | Locks a native Hyprland window, captures its crop, and executes bounded ydotool click/type/scroll input. |
 | `src/zen-control.js` | Connects to existing Zen through loopback Marionette, locks a selected tab, captures its viewport and sends browser-native pointer/key actions without using the desktop cursor. Also `writeKey`/`focusTab`: a lightweight single-keystroke path (ASCII or Backspace, no fresh capture per key) for Write mode. |
@@ -32,7 +32,7 @@ Aether is an Electron desktop app. It has a main process that can call providers
 | `src/python-env.js` | Probes candidate Python interpreters for the humaniser/detector deps; backs the Write-mode setup wizard. |
 | `src/hypr-auto-stop.js` | Installs an owned, non-consuming Escape binding; stops Auto on disconnect or compositor reload. |
 | `src/library.js`, `data/library.json` | Loads and searches the bundled, attributed reference library. |
-| `src/research.js` | Fetches Tavily results when needed, builds dated source evidence, and validates/normalizes numeric citation groups against retrieved source IDs. |
+| `src/research.js` | Fetches Tavily results when needed, builds dated source evidence, and validates/normalizes numeric citation groups against retrieved source IDs. Also opens links the user pasted (`openLinks`, which names every link it could not open and why) and checks quotations word-for-word against fetched text (`verifyQuotes`). |
 | `src/prompts.js` | Defines Assist, meeting, Ask, Research, and coding tasks. |
 | `scripts/build-library.js` | Refreshes the library from Wikipedia's API. |
 | `electron-builder.cjs` | Linux, macOS, and Windows packaging settings. |
@@ -66,6 +66,12 @@ Cancellation aborts model/helper work and waits for in-flight native input to cl
 ## Write mode
 
 Write mode (the WRITE key on the panel) is a separate pipeline from Auto: Aether drafts from a prompt (or takes pasted text), humanises it with the InkSplash Config C subprocess, runs the detector (local AI% + fact score, optional ZeroGPT), and shows an editable review with the AI percentage and pass/fail. When the user approves, **the model is disengaged** (`write-session.approve()` drops the llm and stops the warm codex-server) and nothing after that calls a provider. The approved text is turned into a human-paced keystroke plan (`typing-plan.js`) and typed into a user-chosen Zen tab through `zen-control.writeKey`, which keeps going across desktop switches because it never uses the OS cursor. Escape/Stop, reload, close and quit cancel it. Typing knobs, the humaniser toggle, detector choice and the Python/humaniser paths live in Settings → Write mode; defaults model a slower, less-skilled typist. To extend: new typing behaviour goes in `typing-plan.js` (pure, unit-tested); new review/detector fields flow through `write-session.js`'s injected ports and the `write-mode:*` IPC.
+
+## Links, quotes, and the humaniser
+
+When a prompt contains links, `research.openLinks` fetches them (HTML to plain text) and that page text becomes the evidence instead of a web search. Links that fail are reported to the user by name and reason, and the model is told not to guess them. After the model answers, `research.verifyQuotes` checks every quotation of four or more words against the fetched text; anything not found word-for-word is flagged (a warning line in Ask/Research, amber notes on the Write review). In Write mode the user's prompt is the spec: the system prompt adds no voice of its own, and the model writes `[could not verify: …]` or `[could not open: …]` instead of inventing a quote or link.
+
+The humaniser never edits quotations. `humanize_cli.py` swaps each quoted span for a `[[Qn: words]]` marker before any engine runs and swaps the original back by number at the end. Every rewrite pass in `stealth_humanizer.py` rejects output that lost a marker; if the final text lost one anyway, the CLI exits 5 and the original text is kept. MiniLM meaning checks (sentence ≥ 0.80, whole text ≥ 0.85) drop rewrites that drift. A missing Ollama model is an error, never a silent pass-through. To extend: new quote formats go in `_QUOTE_RE` (Python) and `findQuotes` (JS); new link types go in `fetchPage`.
 
 ## Keyboard shortcuts
 Smart controls response depth as well as the model tier. Answer mode (`false`) uses Fast and requests only the answer/code; Work (`true`) uses Smart and requests brief supporting work/evidence; Deep (`'deep'`) uses Smart and requests a worked answer with an in-depth explanation. One click toggles Answer/Work, double-click or Alt+Enter selects Deep. `responseSystem()` appends the shared depth/evidence policy to each task before résumé context. All factual levels retain required citations/uncertainty, and meeting modes keep their specific formats.

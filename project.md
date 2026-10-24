@@ -1,5 +1,18 @@
 # Aether project state
 
+## Truthfulness + obedience round — 2026-10-23
+
+User report: models hallucinate quotes/links; Auto ignores "don't scroll" / "double click"; Write mode forced its own voice; the humaniser could mutate quotes and drift meaning.
+
+- **Links:** `research.openLinks` fetches every http(s) URL in an Ask/Research/Write prompt (max 5, 15 s, HTML→text, 20k chars). Failed links are named with the reason (HTTP 404, could not connect, not a web page, needs JavaScript) in the UI and in the prompt; the model is told never to guess their contents. Pasted links replace web search as the evidence.
+- **Quotes:** `research.verifyQuotes` checks every quotation of 4+ words word-for-word (case/whitespace/dash/curly-quote normalised, ellipsis pieces checked separately) against the fetched text. Ask/Research answers get a "⚠ Not found word-for-word" line; Write review shows amber notes. With no sources, every quote is unverified.
+- **Write obedience:** `WRITE_SYSTEM` no longer forces a "first-person student voice"; the user's instructions override every default. Unprovidable quotes/links become `[could not verify: …]` / `[could not open: …]` in the draft. The request is placed last in the message (after source text). maxTokens 2000→8000.
+- **Humaniser:** quotes are frozen as `[[Qn: words]]` markers for every engine and restored by number byte-for-byte (`humanize_cli.py`); any candidate/split/refine/restore pass that loses a marker is rejected; if the final text lost one, the CLI exits 5 and the original is kept (UI note). Write session double-checks quotes after humanising. Meaning guards on by default: MiniLM sentence ≥0.80, whole-text ≥0.85 (sentence-transformers installed in the InkSplash venv; added to the Python-env required deps).
+- **Auto obedience:** `goalRules(goal)` enforces "don't/no/never/without scroll" (scroll actions refused, form scroll gate lifted) and "double click" (every select click sent with clicks 2) in the engine. The rules are sent to the model as `userRules`, and AUTO_SYSTEM now says the goal outranks every default. Double click is now allowed on any intent except submit.
+- **Found and fixed:** the humaniser's default Ollama model `llama3.1:8b` is not installed on this machine, so every rewrite returned empty and the essay came back unchanged but labelled "ok". A missing model is now a loud error (exit 4, "run `ollama pull …`").
+- Verified: 257 tests + `test/test_quote_freeze.py`; live fetch (Wikipedia OK, 404 and dead host named); live Codex Write runs (verbatim quote from Wikipedia passed the check; a quote with no source became `[could not verify]`); live humaniser run with qwen3.5:9b kept both quotes byte-exact; headless Chromium render of the amber review notes.
+- Open: a model choice for the humaniser (`ollama pull llama3.1:8b`, ~4.9 GB, or set STEALTH_LLM_MODEL; the installed qwen3.5 models barely rewrite). Live Auto run with "don't scroll"/"double click" not yet done on a real form. Thinking models (qwen3.5) return empty drafts through the Ollama OpenAI endpoint.
+
 ## Write mode — 2026-10-22 (in progress)
 
 New feature: Aether drafts (or takes pasted) text, humanises it, lets the user approve a final version, then types it into a locked Zen tab at a human pace. Distinct from Auto mode — the model is switched off before any typing begins. User-directed, authorized (same personal-writing / detector-testing intent as InkSplash). Build order: (1) Docs keystroke test, (2) typing-plan engine, (3) Write-mode UI/settings, (4) humaniser subprocess + detector, (5) e2e Playwright + live Zen run, (6) InkSplash legacy README/commit/tag.
