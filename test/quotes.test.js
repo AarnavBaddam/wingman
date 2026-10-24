@@ -102,3 +102,13 @@ test('htmlToText stays linear on hostile markup', () => {
     assert.ok(Date.now() - t < 1000, `slow on ${hostile.slice(0, 8)}…`);
   }
 });
+
+test('the real connection refuses a name that resolves to a local address (DNS rebinding)', async () => {
+  const server = require('node:http').createServer((req, res) => res.end('secret')).listen(0, '127.0.0.1');
+  await new Promise(r => server.once('listening', r));
+  const { port } = server.address();
+  try {
+    // checkPublicUrl is bypassed here on purpose: this is the connect-time guard alone.
+    await assert.rejects(() => require('../src/research').pinnedFetch(`http://localhost:${port}/`), /private or local/);
+  } finally { server.close(); }
+});

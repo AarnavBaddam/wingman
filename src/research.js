@@ -2,7 +2,12 @@
 const SEARCH_URL = 'https://api.tavily.com/search';
 const { searchLibrary, isCurrentQuery, terms } = require('./library');
 const dns = require('node:dns').promises;
+const { lookup: dnsLookup } = require('node:dns');
 const net = require('node:net');
+const http = require('node:http');
+const https = require('node:https');
+const zlib = require('node:zlib');
+const { Readable } = require('node:stream');
 
 async function searchWeb(query, apiKey, fetcher = fetch) {
   if (!apiKey) throw new Error('Add a Tavily search API key in Settings to research the web.');
@@ -109,7 +114,38 @@ async function checkPublicUrl(url, lookup) {
   if (net.isIP(host)) addresses = [{ address: host }];
   else { try { addresses = await lookup(host, { all: true }); } catch { throw new Error('could not connect'); } }
   if (!addresses.length || addresses.some(a => isPrivateAddress(a.address))) throw new Error('link points to a private or local network address');
-  // ponytail: fetch re-resolves DNS, so a rebinding host could swap addresses between check and connect; pin the address with an undici dispatcher if this ever opens untrusted links unattended.
+}
+
+// The connection itself resolves through this lookup, so the address that is checked is
+// the address that is used: a host that re-resolves to 127.0.0.1 after the first check
+// (DNS rebinding) is refused at connect time.
+function publicOnlyLookup(hostname, options, callback) {
+  dnsLookup(hostname, { ...options, all: true }, (error, addresses) => {
+    if (error) return callback(error);
+    if (!addresses.length || addresses.some(a => isPrivateAddress(a.address))) {
+      return callback(Object.assign(new Error('link points to a private or local network address'), { code: 'EPRIVATE' }));
+    }
+    if (options.all) return callback(null, addresses);
+    callback(null, addresses[0].address, addresses[0].family);
+  });
+}
+
+function pinnedFetch(url, { headers = {}, signal } = {}) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(url);
+    const client = target.protocol === 'https:' ? https : http;
+    const request = client.request(target, { method: 'GET', headers, signal, lookup: publicOnlyLookup }, res => {
+      const out = new Headers();
+      for (let i = 0; i < res.rawHeaders.length; i += 2) out.append(res.rawHeaders[i], res.rawHeaders[i + 1]);
+      const decode = { gzip: zlib.createGunzip, deflate: zlib.createInflate, br: zlib.createBrotliDecompress }[String(res.headers['content-encoding'] || '').trim()];
+      const stream = decode ? res.pipe(decode()) : res;
+      const empty = [204, 205, 304].includes(res.statusCode);
+      if (empty) res.resume();
+      resolve(new Response(empty ? null : Readable.toWeb(stream), { status: res.statusCode, headers: out }));
+    });
+    request.on('error', error => reject(error));
+    request.end();
+  });
 }
 
 async function readCapped(response) {
@@ -126,7 +162,7 @@ async function readCapped(response) {
   return new TextDecoder().decode(Buffer.concat(chunks).subarray(0, MAX_BYTES));
 }
 
-async function fetchPage(url, fetcher = fetch, lookup = dns.lookup) {
+async function fetchPage(url, fetcher = pinnedFetch, lookup = dns.lookup) {
   let response, current = url;
   for (let hop = 0; ; hop++) {
     await checkPublicUrl(current, lookup);
@@ -135,7 +171,7 @@ async function fetchPage(url, fetcher = fetch, lookup = dns.lookup) {
         headers: { 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36', accept: 'text/html,text/plain;q=0.9' },
         redirect: 'manual', signal: AbortSignal.timeout(15000)
       });
-    } catch { throw new Error('could not connect'); }
+    } catch (error) { throw new Error(error?.code === 'EPRIVATE' ? error.message : 'could not connect'); }
     const location = response.status >= 300 && response.status < 400 && response.headers.get('location');
     if (!location) break;
     if (hop + 1 >= MAX_HOPS) throw new Error('too many redirects');
@@ -152,7 +188,7 @@ async function fetchPage(url, fetcher = fetch, lookup = dns.lookup) {
   return { title, text };
 }
 
-async function openLinks(text, fetcher = fetch, lookup = dns.lookup) {
+async function openLinks(text, fetcher = pinnedFetch, lookup = dns.lookup) {
   const sources = [], failures = [];
   await Promise.all(extractUrls(text).map(async (url, index) => {
     try {
@@ -269,4 +305,4 @@ function isScreenQuestion(query) {
     /^(?:what(?:'s| is) this|solve this|read this|explain this error)\??$/i.test(text);
 }
 
-module.exports = { extractUrls, htmlToText, fetchPage, isPrivateAddress, openLinks, linkPrompt, findQuotes, verifyQuotes, quoteWarning, searchWeb, researchPrompt, getEvidence, validateGroundedAnswer, needsWebFollowup, isScreenQuestion };
+module.exports = { extractUrls, htmlToText, fetchPage, pinnedFetch, isPrivateAddress, openLinks, linkPrompt, findQuotes, verifyQuotes, quoteWarning, searchWeb, researchPrompt, getEvidence, validateGroundedAnswer, needsWebFollowup, isScreenQuestion };
