@@ -19,6 +19,8 @@ test('run log writes trace lines, dedupes unchanged screenshots and keeps only t
   const lines = fs.readFileSync(path.join(log.dir, 'trace.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
   assert.deepEqual(lines.map(l => l.kind), ['goal', 'end']);
   assert.equal(fs.readFileSync(path.join(log.dir, '001.png'), 'utf8'), 'fake png');
+  assert.equal(fs.statSync(log.dir).mode & 0o777, 0o700);
+  assert.equal(fs.statSync(path.join(log.dir, 'trace.jsonl')).mode & 0o777, 0o600);
   for (let i = 0; i < 6; i++) createRunLog(root, { now, keep: 3 });
   assert.equal(fs.readdirSync(root).length, 3);
   assert.ok(!fs.existsSync(log.dir));
