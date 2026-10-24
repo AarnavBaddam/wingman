@@ -1,6 +1,8 @@
 // Search outside the model, so every research answer has a verifiable source set.
 const SEARCH_URL = 'https://api.tavily.com/search';
 const { searchLibrary, isCurrentQuery, terms } = require('./library');
+const dns = require('node:dns').promises;
+const net = require('node:net');
 
 async function searchWeb(query, apiKey, fetcher = fetch) {
   if (!apiKey) throw new Error('Add a Tavily search API key in Settings to research the web.');
@@ -43,45 +45,118 @@ function extractUrls(text) {
   return [...new Set(found.map(url => url.replace(/[.,;:!?)\]}]+$/, '')))].slice(0, MAX_LINKS);
 }
 
+const decodeEntities = s => s.replace(/&(#x[0-9a-f]{1,8}|#\d{1,8}|[a-z]{1,32});/gi, (m, e) => {
+  if (e[0] === '#') { const n = e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : Number(e.slice(1)); try { return String.fromCodePoint(n); } catch { return m; } }
+  return ENTITIES[e.toLowerCase()] ?? m;
+});
+const SKIP_TAGS = new Set(['script', 'style', 'noscript', 'svg', 'template', 'head']);
+const BLOCK_TAGS = new Set(['p', 'div', 'br', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'tr', 'section', 'article', 'blockquote', 'header', 'footer']);
+
+// One forward pass with indexOf, never a backtracking regex: a hostile page full of
+// unclosed "<!--" or "<p" cannot make this quadratic.
 function htmlToText(html) {
-  const title = (/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html) || [])[1] || '';
-  const decode = s => s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
-    if (e[0] === '#') { const n = e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : Number(e.slice(1)); try { return String.fromCodePoint(n); } catch { return m; } }
-    return ENTITIES[e.toLowerCase()] ?? m;
-  });
-  const body = String(html)
-    .replace(/<!--[\s\S]*?-->/g, ' ')
-    .replace(/<(script|style|noscript|svg|template|head)\b[\s\S]*?<\/\1>/gi, ' ')
-    .replace(/<\/?(p|div|br|li|h[1-6]|tr|section|article|blockquote|header|footer)\b[^>]*>/gi, '\n')
-    .replace(/<[^>]+>/g, ' ');
-  const text = decode(body).split('\n').map(line => line.replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n');
-  return { title: decode(title).replace(/\s+/g, ' ').trim(), text };
+  html = String(html);
+  const lower = html.toLowerCase();
+  const ts = lower.indexOf('<title'), tgt = ts < 0 ? -1 : lower.indexOf('>', ts), te = tgt < 0 ? -1 : lower.indexOf('</title', tgt);
+  const title = te < 0 ? '' : html.slice(tgt + 1, te);
+  let out = '', i = 0;
+  while (i < html.length) {
+    const lt = html.indexOf('<', i);
+    if (lt < 0) { out += html.slice(i); break; }
+    out += html.slice(i, lt);
+    if (html.startsWith('<!--', lt)) {
+      const end = html.indexOf('-->', lt + 4);
+      i = end < 0 ? html.length : end + 3; out += ' '; continue;
+    }
+    const gt = html.indexOf('>', lt + 1);
+    if (gt < 0) break;                                   // unterminated tag: drop the rest
+    const name = (/^\/?([a-z][a-z0-9]{0,15})/.exec(lower.slice(lt + 1, Math.min(gt, lt + 18))) || [])[1] || '';
+    const closing = html[lt + 1] === '/';
+    if (!closing && SKIP_TAGS.has(name)) {
+      const close = lower.indexOf('</' + name, gt + 1);
+      const closeEnd = close < 0 ? -1 : html.indexOf('>', close);
+      i = closeEnd < 0 ? html.length : closeEnd + 1; out += ' '; continue;
+    }
+    out += BLOCK_TAGS.has(name) ? '\n' : ' ';
+    i = gt + 1;
+  }
+  const text = decodeEntities(out).split('\n').map(line => line.replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n');
+  return { title: decodeEntities(title).replace(/\s+/g, ' ').trim(), text };
 }
 
-async function fetchPage(url, fetcher = fetch) {
-  let response;
-  try {
-    response = await fetcher(url, {
-      headers: { 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36', accept: 'text/html,text/plain;q=0.9' },
-      redirect: 'follow', signal: AbortSignal.timeout(15000)
-    });
-  } catch { throw new Error('could not connect'); }
+// ---- SSRF guard: user links may only reach public web servers. ----
+const MAX_BYTES = 1_000_000;
+const MAX_HOPS = 5;
+
+function isPrivateAddress(ip) {
+  if (net.isIPv4(ip)) {
+    const [a, b] = ip.split('.').map(Number);
+    return a === 0 || a === 10 || a === 127 || a >= 224 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || (a === 198 && (b === 18 || b === 19));
+  }
+  const v = ip.toLowerCase();
+  if (v.startsWith('::ffff:')) return net.isIPv4(v.slice(7)) ? isPrivateAddress(v.slice(7)) : true;   // mapped IPv4
+  return v === '::' || v === '::1' || /^f[cd]/.test(v) || /^fe[89ab]/.test(v) || v.startsWith('ff') || v.startsWith('64:ff9b');
+}
+
+async function checkPublicUrl(url, lookup) {
+  const u = new URL(url);
+  if (!['http:', 'https:'].includes(u.protocol)) throw new Error('unsupported link');
+  if (u.port && !['80', '443'].includes(u.port)) throw new Error('only standard web ports (80, 443) are allowed');
+  if (u.username || u.password) throw new Error('links with a username or password are not opened');
+  const host = u.hostname.replace(/^\[|\]$/g, '');
+  let addresses;
+  if (net.isIP(host)) addresses = [{ address: host }];
+  else { try { addresses = await lookup(host, { all: true }); } catch { throw new Error('could not connect'); } }
+  if (!addresses.length || addresses.some(a => isPrivateAddress(a.address))) throw new Error('link points to a private or local network address');
+  // ponytail: fetch re-resolves DNS, so a rebinding host could swap addresses between check and connect; pin the address with an undici dispatcher if this ever opens untrusted links unattended.
+}
+
+async function readCapped(response) {
+  if (Number(response.headers.get('content-length')) > MAX_BYTES) throw new Error('page is too large to read');
+  const reader = response.body?.getReader();
+  if (!reader) return '';
+  const chunks = []; let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value); size += value.byteLength;
+    if (size >= MAX_BYTES) { await reader.cancel().catch(() => {}); break; }   // ponytail: long pages are truncated at 1 MB
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks).subarray(0, MAX_BYTES));
+}
+
+async function fetchPage(url, fetcher = fetch, lookup = dns.lookup) {
+  let response, current = url;
+  for (let hop = 0; ; hop++) {
+    await checkPublicUrl(current, lookup);
+    try {
+      response = await fetcher(current, {
+        headers: { 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36', accept: 'text/html,text/plain;q=0.9' },
+        redirect: 'manual', signal: AbortSignal.timeout(15000)
+      });
+    } catch { throw new Error('could not connect'); }
+    const location = response.status >= 300 && response.status < 400 && response.headers.get('location');
+    if (!location) break;
+    if (hop + 1 >= MAX_HOPS) throw new Error('too many redirects');
+    await response.body?.cancel().catch(() => {});
+    current = new URL(location, current).href;
+  }
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const type = String(response.headers?.get?.('content-type') || '').split(';')[0].trim().toLowerCase();
+  const type = String(response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
   if (type && !/^(text\/html|text\/plain|application\/xhtml\+xml)$/.test(type)) throw new Error(`not a readable web page (${type})`);
-  const raw = (await response.text()).slice(0, 3_000_000);
+  const raw = await readCapped(response);
   const { title, text } = type === 'text/plain' ? { title: '', text: raw.trim() } : htmlToText(raw);
   // ponytail: no JS engine, so script-rendered pages come back empty; report that instead of guessing.
   if (text.length < 200) throw new Error('page has no readable text (it may need JavaScript or a login)');
   return { title, text };
 }
 
-async function openLinks(text, fetcher = fetch) {
+async function openLinks(text, fetcher = fetch, lookup = dns.lookup) {
   const sources = [], failures = [];
   await Promise.all(extractUrls(text).map(async (url, index) => {
     try {
-      if (!['http:', 'https:'].includes(new URL(url).protocol)) throw new Error('unsupported link');
-      const { title, text: content } = await fetchPage(url, fetcher);
+      const { title, text: content } = await fetchPage(url, fetcher, lookup);
       sources[index] = { title: (title || new URL(url).hostname).slice(0, 160), url, content: content.slice(0, PAGE_CHARS), origin: 'page' };
     } catch (error) { failures[index] = { url, reason: error.message }; }
   }));
@@ -194,4 +269,4 @@ function isScreenQuestion(query) {
     /^(?:what(?:'s| is) this|solve this|read this|explain this error)\??$/i.test(text);
 }
 
-module.exports = { extractUrls, htmlToText, fetchPage, openLinks, linkPrompt, findQuotes, verifyQuotes, quoteWarning, searchWeb, researchPrompt, getEvidence, validateGroundedAnswer, needsWebFollowup, isScreenQuestion };
+module.exports = { extractUrls, htmlToText, fetchPage, isPrivateAddress, openLinks, linkPrompt, findQuotes, verifyQuotes, quoteWarning, searchWeb, researchPrompt, getEvidence, validateGroundedAnswer, needsWebFollowup, isScreenQuestion };

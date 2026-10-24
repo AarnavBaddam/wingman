@@ -1,13 +1,12 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { extractUrls, htmlToText, openLinks, findQuotes, verifyQuotes, linkPrompt } = require('../src/research');
+const { extractUrls, htmlToText, openLinks, fetchPage, isPrivateAddress, findQuotes, verifyQuotes, linkPrompt } = require('../src/research');
 
-const page = (html, { status = 200, type = 'text/html; charset=utf-8' } = {}) => async () => ({
-  ok: status >= 200 && status < 300, status,
-  headers: { get: name => (name.toLowerCase() === 'content-type' ? type : null) },
-  text: async () => html,
-});
+const page = (html, { status = 200, type = 'text/html; charset=utf-8', headers = {} } = {}) => async () =>
+  new Response(status === 204 || (status >= 300 && status < 400) ? null : html, { status, headers: { 'content-type': type, ...headers } });
+const publicDns = async () => [{ address: '93.184.216.34', family: 4 }];
+const BODY = '<title>Good page</title><p>The quick brown fox jumps over the lazy dog.</p>' + '<p>Filler sentence for a realistic page body.</p>'.repeat(6);
 
 test('extractUrls finds http(s) links and trims trailing punctuation', () => {
   assert.deepStrictEqual(
@@ -24,11 +23,12 @@ test('htmlToText drops script/style and decodes entities', () => {
 
 test('openLinks returns page sources and names every link it could not open', async () => {
   const fetcher = async (url) => {
-    if (url.includes('good')) return page('<title>Good page</title><p>The quick brown fox jumps over the lazy dog.</p>' + '<p>Filler sentence for a realistic page body.</p>'.repeat(6))();
+    if (url.includes('good')) return page(BODY)();
     if (url.includes('blocked')) return page('', { status: 403 })();
     throw new Error('getaddrinfo ENOTFOUND');
   };
-  const { sources, failures } = await openLinks('read https://good.com/a and https://blocked.com/b and https://gone.invalid/c', fetcher);
+  const lookup = async host => { if (host.endsWith('.invalid')) throw new Error('ENOTFOUND'); return publicDns(); };
+  const { sources, failures } = await openLinks('read https://good.com/a and https://blocked.com/b and https://gone.invalid/c', fetcher, lookup);
   assert.strictEqual(sources.length, 1);
   assert.deepStrictEqual({ number: sources[0].number, title: sources[0].title, url: sources[0].url, origin: sources[0].origin },
     { number: 1, title: 'Good page', url: 'https://good.com/a', origin: 'page' });
@@ -39,7 +39,7 @@ test('openLinks returns page sources and names every link it could not open', as
 });
 
 test('openLinks refuses non-text pages instead of pretending to read them', async () => {
-  const { sources, failures } = await openLinks('https://x.com/file.pdf', page('%PDF', { type: 'application/pdf' }));
+  const { sources, failures } = await openLinks('https://x.com/file.pdf', page('%PDF', { type: 'application/pdf' }), publicDns);
   assert.strictEqual(sources.length, 0);
   assert.match(failures[0].reason, /application\/pdf/);
 });
@@ -67,4 +67,38 @@ test('linkPrompt tells the model which links failed and forbids guessing', () =>
   assert.match(p, /HTTP 403/);
   assert.match(p, /could not open/i);
   assert.strictEqual(linkPrompt([]), '');
+});
+
+test('private, local, and odd-port links are refused before any request is sent', async () => {
+  let fetched = 0;
+  const fetcher = async () => { fetched++; return page(BODY)(); };
+  for (const url of ['http://127.0.0.1/', 'http://[::1]/', 'http://169.254.169.254/latest/meta-data', 'http://10.0.0.5/', 'http://192.168.1.1/', 'https://good.com:8080/', 'https://user:pw@good.com/'])
+    await assert.rejects(() => fetchPage(url, fetcher, publicDns), /private|local|port|password/);
+  await assert.rejects(() => fetchPage('https://intranet.example/', fetcher, async () => [{ address: '10.1.2.3', family: 4 }]), /private or local/);
+  assert.strictEqual(fetched, 0);
+  for (const ip of ['127.0.0.1', '10.0.0.1', '172.16.0.1', '192.168.0.1', '169.254.1.1', '::1', 'fd00::1', 'fe80::1', '::ffff:127.0.0.1']) assert.ok(isPrivateAddress(ip), ip);
+  for (const ip of ['93.184.216.34', '8.8.8.8', '2606:4700::1111']) assert.ok(!isPrivateAddress(ip), ip);
+});
+
+test('every redirect hop is re-checked, and redirect chains are capped', async () => {
+  const toLocal = async url => url.includes('good.com') ? page('', { status: 302, headers: { location: 'http://127.0.0.1/admin' } })() : page(BODY)();
+  await assert.rejects(() => fetchPage('https://good.com/', toLocal, publicDns), /private or local/);
+  const loop = async () => page('', { status: 301, headers: { location: 'https://good.com/again' } })();
+  await assert.rejects(() => fetchPage('https://good.com/', loop, publicDns), /too many redirects/);
+  const ok = async url => url.endsWith('/final') ? page(BODY)() : page('', { status: 302, headers: { location: '/final' } })();
+  assert.match((await fetchPage('https://good.com/', ok, publicDns)).text, /quick brown fox/);
+});
+
+test('oversized pages are refused or truncated while streaming, not after', async () => {
+  await assert.rejects(() => fetchPage('https://good.com/', page(BODY, { headers: { 'content-length': '50000000' } }), publicDns), /too large/);
+  const huge = BODY + '<p>' + 'x'.repeat(3_000_000) + '</p>';
+  const { text } = await fetchPage('https://good.com/', page(huge), publicDns);
+  assert.ok(text.length <= 1_000_000);
+});
+
+test('htmlToText stays linear on hostile markup', () => {
+  for (const hostile of ['<!--'.repeat(200000), '<p'.repeat(200000), '<script>'.repeat(100000), '<title>'.repeat(100000), '&' + 'a'.repeat(400000)]) {
+    const t = Date.now(); htmlToText(hostile);
+    assert.ok(Date.now() - t < 1000, `slow on ${hostile.slice(0, 8)}…`);
+  }
 });
