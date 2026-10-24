@@ -206,7 +206,7 @@ function createAutoMode({ capture, decide, execute, research, locate, onUpdate =
       if (controller) throw new Error('Auto is already running.');
       const current = new AbortController(); controller = current;
       const signal = current.signal;
-      let step = 0, sources = [], history = [], lastAction = '', repeats = 0, progressStep = 0, inputUsed = false;
+      let step = 0, sources = [], history = [], lastAction = '', repeats = 0, progressStep = 0, inputUsed = false, noEffect = 0, lastObserved = null;
       let focusedLabel = null, fieldLabel = null;
       let form = null, lastType = null, mapRun = 0, submitted = false, submitPending = false, previousImage = null, previousAction = null, invalidResponses = 0, lastDecisionImage = null;
       const pendingFields = new Map();
@@ -295,6 +295,21 @@ function createAutoMode({ capture, decide, execute, research, locate, onUpdate =
               `Screen changed. Values entered: ${(previousAction.fields || [previousAction]).map(f => `${f.label} = ${f.text}`).join('; ')}. Read each box in the screenshot digit by digit against these; re-enter any mismatch (with clearButton on keypad fields) before moving on.` :
               'Screen changed; verify the intended result.'
           } : null;
+          // Retrying the same way after inputs that changed nothing was the commonest stall. Count
+          // ineffective inputs once each, and after two in a row tell the model to change method.
+          if (observation && previousAction !== lastObserved) { lastObserved = previousAction; noEffect = observation.changed ? 0 : noEffect + 1; }
+          if (observation && !observation.changed && noEffect >= 2) {
+            const kind = previousAction.type === 'click' ? previousAction.intent : previousAction.type;
+            observation.message += ` ${noEffect} inputs in a row changed nothing. Do not retry the same way; change method. ` + ({
+              select: 'Click the exact center of the control, use clicks 2 if the widget needs a double click, scroll it fully into view, or close whatever covers it.',
+              focus: 'Click the center of the field box itself. If it takes input only from an on-screen keypad, use fill with keypad true.',
+              insert: 'Check that the button you clicked is really the one you meant in the current screenshot; the keypad or palette may have moved or closed.',
+              type: 'The field ignores the keyboard: use fill with keypad true and the keypad buttons in symbols, or click the field center first.',
+              fill: 'Check the field and keypad points in the current screenshot; set keypad true on keypad fields.',
+              scroll: 'This area does not scroll further. Stop scrolling it; act on what is visible or scroll a different area.',
+              drag: 'Try clicking the item and then clicking its destination, or drag from the item center.'
+            }[kind] || 'Pick a different action, or use need_input if you are blocked.');
+          }
           check(); update('deciding', 'Choosing the next step.');
           const response = await operation(() => decide({ goal: goal.trim(), userRules: userRules.rules, knownButtons: { ...knownButtons }, screen, form: form && { ...form }, observation, allowSubmit: allowSubmit === true, history: [...history], sources: [...sources], signal }));
           check();

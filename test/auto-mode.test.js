@@ -628,3 +628,12 @@ test('a clearButton is replaced by the page Clear button when found', async () =
   await h.engine.run('Fill');
   assert.deepEqual(io.executed, ['focus@10,10', 'insert@348,93', 'insert@70,70']);
 });
+test('two inputs in a row that change nothing tell the model to switch method', async () => {
+  const seen = [], acts = [{ type: 'scroll', x: 5, y: 5, amount: 1, label: 'page' }, { type: 'scroll', x: 5, y: 5, amount: 2, label: 'page' },
+    { type: 'scroll', x: 5, y: 5, amount: 3, label: 'page' }, { type: 'done', message: 'ok' }];
+  const h = harness(acts, { decide: async ({ observation }) => { seen.push(observation?.message || ''); return JSON.stringify(acts[seen.length - 1]); } });
+  await h.engine.run('Read');
+  assert.doesNotMatch(seen[1], /change method/);
+  assert.match(seen[2], /2 inputs in a row changed nothing.*does not scroll further/);
+  assert.match(seen[3], /3 inputs in a row/);
+});
