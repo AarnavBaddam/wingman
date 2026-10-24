@@ -60,14 +60,16 @@ function createAutoSession({ getSettings, createLLM, getCodexHome, createDesktop
               session.pendingInput = desktop.execute(target, action, innerSignal);
               return session.pendingInput;
             },
+            // Zen reads keypad button positions from the page; desktop has no page to read.
+            locate: desktop.findButtons ? (keys, innerSignal) => desktop.findButtons(target, keys, innerSignal) : undefined,
             research: (query, innerSignal) => research(query, settings, innerSignal),
-            decide: async ({ goal, userRules, screen, history, sources, form, observation, allowSubmit, signal: innerSignal }) => {
+            decide: async ({ goal, userRules, knownButtons, screen, history, sources, form, observation, allowSubmit, signal: innerSignal }) => {
               let image = null;
               try { image = session.log?.image(screen.imageDataUrl); } catch {}
               const response = await llm.stream({
               system: AUTO_SYSTEM,
               turns: [{ role: 'user', text: JSON.stringify({ goal, userRules, screen: { width: screen.width, height: screen.height },
-                allowSubmit, form, observation, history, sources: sources.map(source => ({ ...source, content: String(source.content || '').slice(0, 4000) })) }) }],
+                allowSubmit, form, observation, knownButtons: Object.keys(knownButtons || {}).length ? knownButtons : undefined, history, sources: sources.map(source => ({ ...source, content: String(source.content || '').slice(0, 4000) })) }) }],
               imageDataUrl: screen.imageDataUrl, maxTokens: 1200, signal: innerSignal, onToken() {}
               });
               record({ kind: 'decide', image, observation, form, response });

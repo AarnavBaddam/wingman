@@ -576,3 +576,55 @@ test('fill enters several fields from one decision: focus click then value, in o
     assert.throws(() => parseAutoAction(JSON.stringify({ type: 'fill', fields }), bounds));
   }
 });
+test('clearButton empties a keypad field before entry, and pressed buttons are remembered for later decisions', async () => {
+  // Live run 2026-10-24: positions for the same keypad key drifted between decisions (5 sent as the 2 and 8 keys),
+  // and retyping without Clear appended digits.
+  const io = strictIO(), seen = [];
+  const k = { '5': { x: 50, y: 50 }, '0': { x: 0, y: 40 } };
+  const acts = [{ type: 'fill', fields: [{ x: 100, y: 100, label: 'Fapp', text: '50', origin: 'user', symbols: k, clearButton: { x: 70, y: 5 } }] },
+    { type: 'scroll', x: 5, y: 5, amount: 1, label: 'page' }, { type: 'done', message: 'ok' }];
+  const h = harness(acts, { ...io, decide: async ({ knownButtons }) => { seen.push(knownButtons); return JSON.stringify(acts[seen.length - 1]); } });
+  await h.engine.run('Fill');
+  assert.deepEqual(io.executed, ['focus@100,100', 'insert@70,5', 'insert@50,50', 'insert@0,40', 'undefined@5,5']); // the scroll
+  assert.deepEqual(seen[0], {});
+  assert.deepEqual(seen[1], k);
+  assert.deepEqual(seen[2], {}, 'a scroll moves the keypad, so remembered points are dropped');
+  assert.throws(() => parseAutoAction(JSON.stringify({ type: 'type', text: '1', label: 'a', origin: 'user', clearButton: { x: 900, y: 1 } }), { width: 800, height: 600 }));
+});
+test('after entering values the model is told exactly what was entered, to compare digit by digit', async () => {
+  // Live run 2026-10-24: 24000 went in as 84000 (the 8 key pressed for 2) and the model's check missed it.
+  const fill = { type: 'fill', fields: [{ x: 100, y: 100, label: 'Fnorm', text: '24000', origin: 'calculation' }, { x: 100, y: 200, label: 'm', text: '2400', origin: 'user' }] };
+  const seen = [], acts = [fill, { type: 'done', message: 'ok' }];
+  let n = 0;
+  const h = harness(acts, { capture: async () => ({ imageDataUrl: 'data:image/png;base64,' + (n++ ? 'BB==' : 'AA=='), width: 800, height: 600 }),
+    decide: async ({ observation }) => { seen.push(observation?.message); return JSON.stringify(acts[seen.length - 1]); } });
+  await h.engine.run('Fill');
+  assert.match(seen[1], /Fnorm = 24000; m = 2400/);
+  assert.match(seen[1], /digit by digit/);
+});
+test('keypad buttons found on the page replace the model points; a keypad field with a missing key is not started', async () => {
+  const io = strictIO(), asked = [];
+  const page = { '2': { x: 200, y: 200 }, '4': { x: 100, y: 100 }, '0': { x: 0, y: 300 } };
+  const acts = [{ type: 'fill', fields: [
+      { x: 10, y: 10, label: 'Fnorm', text: '24000', origin: 'calculation', symbols: { '2': { x: 200, y: 50 }, '4': { x: 1, y: 1 }, '0': { x: 2, y: 2 } } },
+      { x: 10, y: 60, label: 'a', text: '20', origin: 'user', keypad: true }] },
+    { type: 'fill', fields: [{ x: 10, y: 90, label: 'v', text: '9', origin: 'user', keypad: true }] },
+    { type: 'done', message: 'ok' }];
+  const h = harness(acts, { ...io, locate: async chars => { asked.push(chars.join('')); return Object.fromEntries(chars.filter(c => page[c]).map(c => [c, page[c]])); } });
+  await h.engine.run('Fill');
+  assert.deepEqual(asked, ['240', '9']); // one page lookup per action
+  assert.deepEqual(io.executed, ['focus@10,10', 'insert@200,200', 'insert@100,100', 'insert@0,300', 'insert@0,300', 'insert@0,300',
+    'focus@10,60', 'insert@200,200', 'insert@0,300']);
+  assert.ok(h.updates.some(u => /not found on the page: 9/.test(u.message)));
+  // Without a page lookup (desktop mode), a keypad field needs symbols.
+  const d = harness([{ type: 'fill', fields: [{ x: 10, y: 60, label: 'a', text: '20', origin: 'user', keypad: true }] }, { type: 'done', message: 'ok' }], strictIO());
+  await d.engine.run('Fill');
+  assert.ok(d.updates.some(u => /not found on the page: 2, 0/.test(u.message)));
+});
+test('a clearButton is replaced by the page Clear button when found', async () => {
+  const io = strictIO();
+  const h = harness([{ type: 'fill', fields: [{ x: 10, y: 10, label: 'a', text: '7', origin: 'user', keypad: true, clearButton: { x: 431, y: 93 } }] }, { type: 'done', message: 'ok' }],
+    { ...io, locate: async keys => { assert.deepEqual(keys, ['7', 'Clear']); return { '7': { x: 70, y: 70 }, Clear: { x: 348, y: 93 } }; } });
+  await h.engine.run('Fill');
+  assert.deepEqual(io.executed, ['focus@10,10', 'insert@348,93', 'insert@70,70']);
+});

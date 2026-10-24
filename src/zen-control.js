@@ -24,6 +24,51 @@ for (let depth=0;el && depth<100;depth++,el=el.parentElement || el.getRootNode()
   }
 }
 return {scrolled:false};`;
+// Read-only keypad lookup: visible elements whose own text is exactly one wanted key (or Clear), with their
+// viewport centers. Walks open shadow roots and same-origin frames; never clicks or changes the page.
+const BUTTONS_SCRIPT = `
+const [chars] = arguments;
+if (!Array.isArray(chars) || !chars.length || chars.length > 16 || chars.some(c => typeof c !== 'string' || !c.length || c.length > 12)) throw Error('Invalid keys');
+const want = new Set(chars), found = {};
+function visit(root, ox, oy, depth) {
+  if (depth > 4) return;
+  for (const el of root.querySelectorAll('*')) {
+    if (el.shadowRoot) visit(el.shadowRoot, ox, oy, depth + 1);
+    if (el.localName === 'iframe' || el.localName === 'frame') {
+      let doc = null; try { doc = el.contentDocument; } catch {}
+      const r = el.getBoundingClientRect();
+      if (doc) visit(doc, ox + r.left + el.clientLeft, oy + r.top + el.clientTop, depth + 1);
+      continue;
+    }
+    const label = ((el.localName === 'input' ? el.value : el.textContent) || '').trim() || (el.getAttribute('aria-label') || '').trim();
+    if (!want.has(label) || [...el.children].some(child => (child.textContent || '').trim() === label)) continue;
+    const r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    if (r.width < 4 || r.height < 4 || ox + cx < 0 || oy + cy < 0 || ox + cx >= innerWidth || oy + cy >= innerHeight) continue;
+    const scope = el.getRootNode().elementFromPoint ? el.getRootNode() : el.ownerDocument, hit = scope.elementFromPoint(cx, cy);
+    if (!hit || !(hit === el || el.contains(hit) || hit.contains(el))) continue;
+    const clickable = !!el.closest('button,a,input,select,summary,[role=button],[onclick]') || el.ownerDocument.defaultView.getComputedStyle(el).cursor === 'pointer';
+    (found[label] = found[label] || []).push({ x: ox + cx, y: oy + cy, clickable });
+  }
+}
+visit(document, 0, 0, 0);
+return found;`;
+// One point per key. A keypad is a cluster: keys with a single match anchor it, and a key with
+// several matches (a "2" in m/s², an answer box showing 7) takes the one nearest the anchors.
+// Clickability only breaks ties when nothing anchors the cluster: answer boxes are often the
+// clickable ones while crude keypads use plain divs.
+function pickButtons(found) {
+  const picks = {};
+  const pools = Object.entries(found || {}).map(([key, list]) => [key, (Array.isArray(list) ? list : []).filter(c => c && [c.x, c.y].every(Number.isFinite))]);
+  for (const [key, list] of pools) if (list.length === 1) picks[key] = list[0];
+  const anchors = Object.values(picks);
+  const cx = anchors.reduce((sum, p) => sum + p.x, 0) / anchors.length, cy = anchors.reduce((sum, p) => sum + p.y, 0) / anchors.length;
+  for (const [key, list] of pools) {
+    if (list.length < 2) continue;
+    if (anchors.length) picks[key] = list.reduce((best, c) => Math.hypot(c.x - cx, c.y - cy) < Math.hypot(best.x - cx, best.y - cy) ? c : best);
+    else if (list.filter(c => c.clickable).length === 1) picks[key] = list.find(c => c.clickable);
+  }
+  return Object.fromEntries(Object.entries(picks).map(([key, p]) => [key, { x: p.x, y: p.y }]));
+}
 // Hidden Gecko tabs start native HTML drags without completing drop. Keep this
 // fixed adapter limited to explicit HTML draggable elements, not arbitrary code.
 const HTML_DRAG_SCRIPT = `
@@ -367,6 +412,18 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
       }
     }
   }
+  // Screenshot-pixel centers of keypad buttons, from the page instead of the model's pixel guesses.
+  async function findButtons(target, chars, signal) {
+    const state = await validate(target, signal);
+    if (!state.width) throw new Error('Capture the locked Zen tab first.');
+    const found = await command('WebDriver:ExecuteScript', { script: BUTTONS_SCRIPT, args: [chars], newSandbox: true, sandbox: 'aether-buttons' }, signal);
+    const points = {};
+    for (const [key, p] of Object.entries(pickButtons(found))) {
+      const x = Math.round(p.x * state.scale), y = Math.round(p.y * state.scale);
+      if (chars.includes(key) && x >= 0 && y >= 0 && x < state.width && y < state.height) points[key] = { x, y };
+    }
+    return points;
+  }
   // Write mode streams already-paced keystrokes into an already-focused field.
   // Unlike act(), it never needs a fresh capture per key: one keyDown/keyUp per
   // call, printable ASCII or Backspace () only, never a model-chosen key.
@@ -389,6 +446,7 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
     lockTarget: (id, signal) => enqueue(() => lockTarget(id, signal)),
     capture: (target, signal) => enqueue(() => capture(target, signal)),
     execute: (target, action, signal) => enqueue(() => execute(target, action, signal)),
+    findButtons: (target, chars, signal) => enqueue(() => findButtons(target, chars, signal)),
     writeKey: (target, token, signal) => enqueue(() => writeKey(target, token, signal)),
     focusTab: (target, signal) => enqueue(() => focusTab(target, signal)),
     // Run end: take the second cursor off the page.
@@ -398,4 +456,4 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
   };
 }
 
-module.exports = { createZenControl };
+module.exports = { createZenControl, pickButtons, BUTTONS_SCRIPT };

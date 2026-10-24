@@ -5,7 +5,7 @@ Return exactly one JSON object, with no prose, using one of these schemas:
 {"type":"drag","x":0,"y":0,"toX":100,"toY":100,"label":"tile name to destination bin"}
 {"type":"map","layout":"single-page|multi-step|per-question|unknown","question":"current question or section","navigation":"next|submit-answer|submit-form|none|unknown","scroll":"up|down|none","status":"incomplete|answer-verified|complete"}
 {"type":"type","work":"short calculation steps, before the answer","text":"printable ASCII field value","label":"field name","origin":"user|calculation|sources","citations":[1],"symbols":{"π":{"x":0,"y":0}}}
-{"type":"fill","fields":[{"x":0,"y":0,"label":"field name","text":"value","origin":"user|calculation|sources","work":"optional steps","citations":[1],"symbols":{"3":{"x":0,"y":0}}}]}
+{"type":"fill","fields":[{"x":0,"y":0,"label":"field name","text":"value","origin":"user|calculation|sources","work":"optional steps","citations":[1],"symbols":{"3":{"x":0,"y":0}},"keypad":true,"clearButton":{"x":0,"y":0}}]}
 Fastest way to enter text: when one or more empty text/number fields are visible, send ONE fill listing every visible field you can answer now (max 10), each with the center x/y of the field box itself and the same keys as type. The engine clicks each field and enters its value in order, so no separate focus click is needed. Check every value before sending; then verify all of them on the next screenshot and fix any wrong one with focus, clear (or the keypad Clear button) and type.
 {"type":"clear","label":"field name"}
 {"type":"scroll","x":0,"y":0,"amount":-2,"label":"scroll area"}
@@ -23,7 +23,7 @@ clicks is optional: 1 (default) or 2 for a double click, any intent except submi
 Coordinates are integer screenshot coordinates. Scroll amount is a nonzero integer from -5 through 5: positive scrolls down, negative scrolls up. Labels are at most 120 characters. Type text is at most 1000 printable ASCII characters, without newlines, tabs, or controls.
 For a form, first map its visible structure. Determine whether it shows all questions, multiple sections with Next, or one question with Submit answer. Do not assume a button called Submit ends the form: read nearby instructions and progress. Unknown details stay unknown until observed. If the question/options are cut off, scroll with overlapping views to read the whole question before answering. Use the persistent form map and history; remap after navigation or a changed question. A map describes what you SEE, not what you expect.
 Prefer including an optional form object on a click, type, scroll, or done response instead of spending a separate turn mapping. The form object contains layout, question, navigation, scroll, and status with the same values as the map schema, but without type. It describes the current screenshot BEFORE the action. For example, return a verified form map together with the Next/Submit click after visually verifying the selected answer. Use standalone map only when no action is ready. Do not keep returning an unchanged map. After selecting an answer, inspect it once, then find Next/Submit; scroll down to locate navigation outside the view. Never select the same checked option again merely to verify it.
-Before typing EACH field, click it with intent focus, then use the identical label for typing. Typing appends text. To replace a wrong or prefilled value, focus the field, send clear with the same label (it selects all inside that field and deletes it), inspect that it is empty, then type the whole value again. More typing or an insert into the same field continues at the caret without a new focus click. Scrolling, selection, navigation, or switching fields requires a new field focus click before typing. To refocus a field that already has text, click just right of its last character so the caret lands at the end. Use action history to track fields already entered and options selected. Complete the currently visible field, then scroll the screen yourself to review earlier fields and options that are offscreen. Do not ask the user to supply screenshots merely because a field is offscreen. After answering, inspect a fresh screenshot and map status answer-verified only when the entered value or selected option is visible and correct. Then click Next with intent navigate, or Submit with intent submit. Read validation errors and recover rather than skipping a question. Math answer boxes: type digits, letters and operators. When the box has a symbol palette or keyboard button (often at its right edge), enter symbols such as pi, roots, fractions and exponents from that palette: open it and click the symbol with intent insert, and do not type their names. insert keeps the field focused, so continue typing with the same field label right after it, without a new focus click. A mistake costs a clear and a full retype, so work out and double-check the whole answer before entering anything: for calculated answers, write each arithmetic step in work first, then copy the final result into text. Best: open the palette, then send ONE type action with the complete answer, writing palette symbols as the real characters (π, √, θ) and giving each one's visible palette button in symbols, e.g. text 2(cos(π/3)) with symbols {"π":{"x":62,"y":176}}. The engine types and clicks in order. Each symbols point must be that symbol's own button inside the palette as visible in the CURRENT screenshot, never the palette or keyboard toggle button. If the palette is not open in the current screenshot, first click the toggle with intent insert, inspect, then send the type action. Never insert a symbol before the text that comes before it. On-screen keypads: some fields ignore the keyboard and take input only from an on-screen number pad (typed text does not appear, or a keypad shows "Editing answer for" a field). For those, give every character's keypad button in symbols, in fill (preferred, all fields at once) or in ONE type action after a focus click, e.g. text 3000 with symbols {"3":{"x":1147,"y":535},"0":{"x":957,"y":605}}; the engine presses each button in order, repeats included. Never press keypad buttons one per turn. To fix a keypad field, click its Clear button, then type the whole value again. Without a palette, type ASCII names: pi, sqrt(x), x^2, theta. Math editors may reformat while typing (fractions, auto-closed brackets); inspect the rendered box once before navigating. Do not click the same radio/checkbox again if already selected.
+Before typing EACH field, click it with intent focus, then use the identical label for typing. Typing appends text. To replace a wrong or prefilled value, focus the field, send clear with the same label (it selects all inside that field and deletes it), inspect that it is empty, then type the whole value again. More typing or an insert into the same field continues at the caret without a new focus click. Scrolling, selection, navigation, or switching fields requires a new field focus click before typing. To refocus a field that already has text, click just right of its last character so the caret lands at the end. Use action history to track fields already entered and options selected. Complete the currently visible field, then scroll the screen yourself to review earlier fields and options that are offscreen. Do not ask the user to supply screenshots merely because a field is offscreen. After answering, inspect a fresh screenshot and map status answer-verified only when the entered value or selected option is visible and correct. Then click Next with intent navigate, or Submit with intent submit. Read validation errors and recover rather than skipping a question. Math answer boxes: type digits, letters and operators. When the box has a symbol palette or keyboard button (often at its right edge), enter symbols such as pi, roots, fractions and exponents from that palette: open it and click the symbol with intent insert, and do not type their names. insert keeps the field focused, so continue typing with the same field label right after it, without a new focus click. A mistake costs a clear and a full retype, so work out and double-check the whole answer before entering anything: for calculated answers, write each arithmetic step in work first, then copy the final result into text. Best: open the palette, then send ONE type action with the complete answer, writing palette symbols as the real characters (π, √, θ) and giving each one's visible palette button in symbols, e.g. text 2(cos(π/3)) with symbols {"π":{"x":62,"y":176}}. The engine types and clicks in order. Each symbols point must be that symbol's own button inside the palette as visible in the CURRENT screenshot, never the palette or keyboard toggle button. If the palette is not open in the current screenshot, first click the toggle with intent insert, inspect, then send the type action. Never insert a symbol before the text that comes before it. On-screen keypads: some fields ignore the keyboard and take input only from an on-screen number pad (typed text does not appear, or a keypad shows "Editing answer for" a field). For those, set keypad true on the field: the engine finds each button by its label on the page when it can (Zen tabs) and uses your symbols only as the fallback, so still give every character's keypad button in symbols, in fill (preferred, all fields at once) or in ONE type action after a focus click, e.g. text 3000 with symbols {"3":{"x":1147,"y":535},"0":{"x":957,"y":605}}; the engine presses each button in order, repeats included. Never press keypad buttons one per turn. Find each keypad button by its own digit in the current screenshot; keypads are grids, so buttons in one column share x and buttons in one row share y. knownButtons lists the points pressed earlier this run: reuse them exactly, and correct an entry only if the screenshot shows that point is a different button or a value came out wrong. A field that already holds any value (wrong or not) gets clearButton = the keypad's Clear button: the engine presses it after clicking the field and before entering, so the new value never appends to old digits. Never re-enter a filled field without clearButton. Without a palette, type ASCII names: pi, sqrt(x), x^2, theta. Math editors may reformat while typing (fractions, auto-closed brackets); inspect the rendered box once before navigating. Do not click the same radio/checkbox again if already selected.
 The trusted allowSubmit flag controls submission. If false, stop with done for user review before any Submit/Send action, including submitting one answer. If true, you may submit answers and the final form for this run. Never use intent navigate to disguise submission. After final submission, inspect the next screenshot and map status complete ONLY for a visible success/receipt/thank-you confirmation. A button click or vanished form alone does not prove success. Never claim done while still awaiting confirmation. Never publish, pay, purchase, delete, confirm orders, enter passwords, answer CAPTCHA/security challenges, supply payment details, or invent personal information. Use need_input when information or safe direction is missing.
 Observation feedback reports whether pixels changed after the last action. Unchanged pixels can mean a missed click, scroll boundary, or no visible focus change. Inspect the target and retry carefully; never assume the next question loaded. Coordinates always refer to the current cropped image, not the whole display. Choose the center of the actual control.
 Research informational factual questions before choosing or typing answers. User-given values and calculations may be used directly. For origin sources, citations must list supporting supplied source number IDs; keep citations separate from the entered field text. Other origins must omit citations. Source IDs identify supplied evidence; their presence does not guarantee that the evidence supports a claim. No keyboard shortcuts, shell, or evaluation actions.`;
@@ -84,7 +84,7 @@ function parseAutoAction(text, { width, height, sourceIds = [], allowSubmit = fa
   try { action = JSON.parse(json); } catch { throw new Error('Auto response must contain exactly one JSON object.'); }
   if (!action || typeof action !== 'object' || Array.isArray(action)) throw new Error('Invalid Auto action.');
   const schemas = {
-    click: ['type', 'x', 'y', 'label', 'intent', 'clicks', 'form'], type: ['type', 'work', 'text', 'label', 'origin', 'citations', 'symbols', 'form'],
+    click: ['type', 'x', 'y', 'label', 'intent', 'clicks', 'form'], type: ['type', 'work', 'text', 'label', 'origin', 'citations', 'symbols', 'clearButton', 'keypad', 'form'],
     scroll: ['type', 'x', 'y', 'amount', 'label', 'form'], research: ['type', 'query'], clear: ['type', 'label', 'form'],
     drag: ['type', 'x', 'y', 'toX', 'toY', 'label', 'form'],
     vector: ['type', 'label', 'magnitude', 'angle', 'origin', 'tick', 'readout', 'tip', 'form'],
@@ -145,6 +145,10 @@ function parseAutoAction(text, { width, height, sourceIds = [], allowSubmit = fa
     } else if (Array.isArray(action.citations) && !action.citations.length) delete action.citations;
     else if ('citations' in action) throw new Error('Only source text may include citations.');
     if ('work' in action && !string(action.work, 1000)) throw new Error('Invalid work.');
+    if ('keypad' in action && action.keypad !== true) throw new Error('keypad must be true when present.');
+    const p = action.clearButton;
+    if ('clearButton' in action && (!p || typeof p !== 'object' || Array.isArray(p) || Object.keys(p).length !== 2 ||
+        !Number.isInteger(p.x) || p.x < 0 || p.x >= width || !Number.isInteger(p.y) || p.y < 0 || p.y >= height)) throw new Error('Invalid clearButton.');
   }
   if (action.type === 'vector') {
     const point = p => p && typeof p === 'object' && !Array.isArray(p) && Number.isInteger(p.x) && p.x >= 0 && p.x < width && Number.isInteger(p.y) && p.y >= 0 && p.y < height;
@@ -189,7 +193,7 @@ function goalRules(goal) {
   return { noScroll, doubleClick, rules };
 }
 
-function createAutoMode({ capture, decide, execute, research, onUpdate = () => {}, delay = 300,
+function createAutoMode({ capture, decide, execute, research, locate, onUpdate = () => {}, delay = 300,
   maxSteps = 80, maxDurationMs = 600000, stallSteps = 15 }) {
   if (![capture, decide, execute].every(fn => typeof fn === 'function')) throw new Error('Auto requires capture, decide, and execute functions.');
   if (!Number.isInteger(maxSteps) || maxSteps < 1 || maxSteps > 80 || !Number.isFinite(maxDurationMs) || maxDurationMs <= 0 || maxDurationMs > 600000 || !Number.isFinite(delay) || delay < 0) throw new Error('Invalid Auto limits.');
@@ -208,6 +212,8 @@ function createAutoMode({ capture, decide, execute, research, onUpdate = () => {
       const pendingFields = new Map();
       const skipped = []; let skipCurrent = false;
       const vectors = new Map();
+      // Keypad/palette points used this run, fed back so the model stops re-guessing them (latest wins).
+      let knownButtons = {};
       const userRules = goalRules(goal);
       const normalizeLabel = label => label.trim().replace(/\s+/g, ' ').toLowerCase();
       const remember = action => { history.push(action); history = history.slice(-20); };
@@ -283,10 +289,14 @@ function createAutoMode({ capture, decide, execute, research, onUpdate = () => {
               'Screen unchanged after Submit: usually no answer is actually selected. Check that the answer marker is visibly filled; if not, select it on its control, then submit again.' :
               previousAction.type === 'type' && !previousAction.symbols ?
               'Screen unchanged after typing: the text did not appear. If the field has an on-screen keypad, refocus it and send the value again with every character mapped to its keypad button in symbols.' :
-              'Screen unchanged after the last action. Inspect before retrying or advancing.') : 'Screen changed; verify the intended result.'
+              'Screen unchanged after the last action. Inspect before retrying or advancing.') :
+              ['type', 'fill'].includes(previousAction.type) ?
+              // A glance missed 84000 for 24000 live; name the intended values so the check is exact.
+              `Screen changed. Values entered: ${(previousAction.fields || [previousAction]).map(f => `${f.label} = ${f.text}`).join('; ')}. Read each box in the screenshot digit by digit against these; re-enter any mismatch (with clearButton on keypad fields) before moving on.` :
+              'Screen changed; verify the intended result.'
           } : null;
           check(); update('deciding', 'Choosing the next step.');
-          const response = await operation(() => decide({ goal: goal.trim(), userRules: userRules.rules, screen, form: form && { ...form }, observation, allowSubmit: allowSubmit === true, history: [...history], sources: [...sources], signal }));
+          const response = await operation(() => decide({ goal: goal.trim(), userRules: userRules.rules, knownButtons: { ...knownButtons }, screen, form: form && { ...form }, observation, allowSubmit: allowSubmit === true, history: [...history], sources: [...sources], signal }));
           check();
           let action;
           try {
@@ -407,6 +417,31 @@ function createAutoMode({ capture, decide, execute, research, onUpdate = () => {
             action = { type: 'drag', x: grab.x, y: grab.y, toX: tip.x, toY: tip.y,
               label: `${action.label} vector ${action.magnitude} at ${action.angle} deg${action.readout ? ' (correction)' : ''}`.slice(0, 120) };
           }
+          if (['type', 'fill'].includes(action.type)) {
+            // Keypad points from the page (Zen) beat the model's pixel guesses, which drifted onto
+            // neighbouring keys live. The model's symbols stay as the fallback for keys not found.
+            const missing = [], fields = [], list = action.type === 'fill' ? action.fields : [action];
+            const keys = [...new Set(list.flatMap(field => [...field.text].filter(c => /[\x21-\x7e]/.test(c) && (field.keypad || field.symbols?.[c]))))];
+            // Clear and Backspace sit side by side on keypads; a drifted Clear click deleted one digit live.
+            if (list.some(field => field.clearButton)) keys.push('Clear');
+            let found = {};
+            if (keys.length && typeof locate === 'function') {
+              try { found = await operation(() => locate(keys, signal)) || {}; } catch (error) { if (signal.aborted) throw error; }
+              check();
+            }
+            for (let field of list) {
+              const symbols = { ...field.symbols };
+              if (field.clearButton && found.Clear) field = { ...field, clearButton: { x: found.Clear.x, y: found.Clear.y } };
+              for (const c of field.text) if (found[c] && (field.keypad || field.symbols?.[c])) symbols[c] = { x: found[c].x, y: found[c].y };
+              if (field.keypad) missing.push(...[...field.text].filter((c, i, all) => !symbols[c] && all.indexOf(c) === i));
+              fields.push(Object.keys(symbols).length ? { ...field, symbols } : field);
+            }
+            if (missing.length) {
+              feedback(`Nothing was entered. Keypad buttons not found on the page: ${missing.join(', ')}. Send symbols with each button's point from the current screenshot.`);
+              continue;
+            }
+            action = action.type === 'fill' ? { ...action, fields } : fields[0];
+          }
           if (action.type === 'research') {
             update('researching', 'Looking up supporting information.', { action });
             let found;
@@ -445,6 +480,10 @@ function createAutoMode({ capture, decide, execute, research, onUpdate = () => {
                 await settleDelay(Math.min(delay, 150));
                 value = { type: 'type', text: field.text, label: field.label, origin: field.origin };
               }
+              if (field.clearButton) {
+                await input({ type: 'click', ...field.clearButton, label: `Clear ${field.label}`.slice(0, 120), intent: 'insert' });
+                await settleDelay(Math.min(delay, 150));
+              }
               if (!field.symbols) { await input(value); continue; }
               // Type each run of other characters and click each symbol/keypad button, strictly in text order.
               // Repeated buttons (the zeros in 3000) are clicked here, outside the duplicate-click guard.
@@ -480,6 +519,8 @@ function createAutoMode({ capture, decide, execute, research, onUpdate = () => {
             if (action.type === 'type') pendingFields.delete(normalizeLabel(action.label));
             if (action.type === 'fill') for (const field of action.fields) pendingFields.delete(normalizeLabel(field.label));
             if (drawn) vectors.set(drawn.key, drawn);
+            if (action.type === 'scroll') knownButtons = {};
+            for (const field of action.type === 'fill' ? action.fields : [action]) if (field.symbols) Object.assign(knownButtons, field.symbols);
             // Navigation and submission load new content; a short settle captured blank transition frames.
             await settleDelay(action.type === 'click' && ['navigate', 'submit'].includes(action.intent) ? Math.max(delay, 1000) : delay);
             if (step === maxSteps) {

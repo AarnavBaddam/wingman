@@ -296,3 +296,23 @@ test('a failing cursor script never blocks the real click', async t => {
   await control.execute(target, { type: 'click', x: 100, y: 200 });
   assert.equal(commands.filter(c => c.name === 'WebDriver:PerformActions').length, 1);
 });
+test('findButtons reads keypad points from the page in screenshot pixels without consuming the input capture', async t => {
+  const found = { '2': [{ x: 10, y: 10, clickable: false }, { x: 150, y: 100, clickable: true }], '4': [{ x: 100, y: 100, clickable: true }], Clear: [{ x: 120, y: 20, clickable: true }] };
+  const { control, commands } = await fixture(t, (name, params) => params?.sandbox === 'aether-buttons' ? found : undefined);
+  const target = await control.lockTarget('tab-a');
+  await assert.rejects(control.findButtons(target, ['2']), /Capture/);
+  await control.capture(target);
+  assert.deepEqual(await control.findButtons(target, ['2', '4', 'Clear']), { '2': { x: 300, y: 200 }, '4': { x: 200, y: 200 }, Clear: { x: 240, y: 40 } });
+  assert.deepEqual(commands.find(c => c.params?.sandbox === 'aether-buttons').params.args, [['2', '4', 'Clear']]);
+  await control.execute(target, { type: 'click', x: 300, y: 200 });
+  assert.equal(commands.filter(c => c.name === 'WebDriver:PerformActions').length, 1);
+});
+test('pickButtons anchors on unambiguous keys instead of trusting clickability', () => {
+  const { pickButtons } = require('../src/zen-control');
+  // Replica of the live form: the answer box showing 7 is clickable, the keypad 7 is a plain div.
+  const picks = pickButtons({ '7': [{ x: 700, y: 600, clickable: true }, { x: 925, y: 330, clickable: false }],
+    '4': [{ x: 925, y: 400, clickable: false }], '0': [{ x: 925, y: 530, clickable: false }], '2': [{ x: 300, y: 30, clickable: false }, { x: 1020, y: 465, clickable: false }] });
+  assert.deepEqual(picks, { '4': { x: 925, y: 400 }, '0': { x: 925, y: 530 }, '7': { x: 925, y: 330 }, '2': { x: 1020, y: 465 } });
+  assert.deepEqual(pickButtons({ '7': [{ x: 1, y: 1, clickable: true }, { x: 2, y: 2, clickable: false }] }), { '7': { x: 1, y: 1 } });
+  assert.deepEqual(pickButtons({ '7': [{ x: 1, y: 1, clickable: false }, { x: 2, y: 2, clickable: false }] }), {});
+});
