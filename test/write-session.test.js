@@ -22,25 +22,7 @@ function harness(overrides = {}) {
   return { deps, calls, sink, session: createWriteSession(deps) };
 }
 
-test('prepare drafts from a prompt, humanises, runs the detector', async () => {
-  const { session, calls } = harness();
-  const review = await session.prepare({ prompt: 'write about foxes', humanizeOpts: {}, detectOpts: {} });
-  assert.strictEqual(calls.llm, 1);
-  assert.strictEqual(calls.humanize, 1);
-  assert.strictEqual(calls.detect, 1);
-  assert.match(review.text, /humanised/);
-  assert.strictEqual(review.aiScore, 0.21);
-  assert.strictEqual(review.pass, true);
-  assert.strictEqual(session.stage, 'review');
-});
 
-test('pasted text skips the drafting model but still humanises + detects', async () => {
-  const { session, calls } = harness();
-  await session.prepare({ pasted: 'my own words here.', humanizeOpts: {}, detectOpts: {} });
-  assert.strictEqual(calls.llm, 0, 'no model call for pasted text');
-  assert.strictEqual(calls.humanize, 1);
-  assert.strictEqual(calls.detect, 1);
-});
 
 test('approve releases the model and arms the chosen text', async () => {
   const { session, calls } = harness();
@@ -107,11 +89,83 @@ test('links in the prompt are opened, fed to the model, and failures + invented 
   assert.ok(review.notes.some(n => /Could not open: https:\/\/bad\.com/.test(n)));
 });
 
-test('a humaniser that alters a quotation is overruled: the draft is kept', async () => {
-  const { session } = harness({
-    humanize: async () => ({ text: 'She said "the fast brown fox leaps" today.' }),
-  });
-  const review = await session.prepare({ pasted: 'She said "the quick brown fox jumps" today.' });
-  assert.strictEqual(review.text, 'She said "the quick brown fox jumps" today.');
-  assert.ok(review.notes.some(n => /changed a quotation/.test(n)));
+test('prepare shows the finished draft without humanising it', async () => {
+  const { session, calls } = harness();
+  const review = await session.prepare({ prompt: 'write about foxes' });
+  assert.strictEqual(calls.llm, 1);
+  assert.strictEqual(calls.humanize, 0, 'humanising waits for the Humanize button');
+  assert.strictEqual(calls.detect, 1);
+  assert.strictEqual(review.text, 'DRAFTED ESSAY.');
+  assert.strictEqual(review.aiScore, 0.21);
+  assert.strictEqual(session.stage, 'review');
+});
+
+test('pasted text skips the drafting model and is only scored', async () => {
+  const { session, calls } = harness();
+  const review = await session.prepare({ pasted: 'my own words here.' });
+  assert.strictEqual(calls.llm, 0);
+  assert.strictEqual(calls.humanize, 0);
+  assert.strictEqual(review.text, 'my own words here.');
+});
+
+// Detector fake: AI% is read from a "[ai=NN]" tag in the text; meaning/facts are fine unless tagged.
+const tagDetect = async (text, opts = {}) => {
+  const ai = Number((/\[ai=(\d+)\]/.exec(text) || [])[1] ?? 90);
+  return { aiScore: ai, pass: ai < 20, detail: `local ${ai}%`, meaning: /\[drift\]/.test(text) ? 0.4 : opts.source ? 0.97 : null, factScore: opts.source ? 1 : null };
+};
+
+test('Humanize runs rounds on the best text until the score is under 20%', async () => {
+  const inputs = [];
+  const replies = ['Essay A [ai=60]', 'Essay B [ai=35]', 'Essay C [ai=12]', 'never used'];
+  const { session } = harness({ detect: tagDetect, humanize: async t => { inputs.push(t); return { text: replies.shift() }; } });
+  await session.prepare({ pasted: 'Essay [ai=90]' });
+  const review = await session.humanizeLoop({ text: 'Essay [ai=90]' });
+  assert.strictEqual(review.text, 'Essay C [ai=12]');
+  assert.strictEqual(review.runs, 3);
+  assert.strictEqual(review.reached, true);
+  assert.deepStrictEqual(inputs, ['Essay [ai=90]', 'Essay A [ai=60]', 'Essay B [ai=35]'], 'each round rewrites the best so far');
+  assert.strictEqual(session.stage, 'review');
+});
+
+test('Humanize discards rounds that change a quote or drift, judged against the starting text', async () => {
+  const start = 'He said "keep this exact now" [ai=90]';
+  const replies = ['He said "keep this changed now" [ai=5]', 'Off topic [drift] "keep this exact now" [ai=5]', 'He noted "keep this exact now" [ai=15]'];
+  const sources = [];
+  const { session } = harness({ detect: async (t, o) => { sources.push(o.source); return tagDetect(t, o); }, humanize: async () => ({ text: replies.shift() }) });
+  await session.prepare({ pasted: start });
+  const review = await session.humanizeLoop({ text: start });
+  assert.strictEqual(review.text, 'He noted "keep this exact now" [ai=15]');
+  assert.ok(sources.filter(Boolean).every(s => s === start), 'meaning is always checked against the starting text');
+  assert.ok(review.notes.some(n => /round 1: a quotation changed/.test(n) && /round 2: drifted/.test(n)));
+});
+
+test('Humanize stops at the round cap and says it missed the target', async () => {
+  let n = 0;
+  const { session } = harness({ detect: tagDetect, humanize: async () => ({ text: `Try ${++n} [ai=${60 - n}]` }) });
+  await session.prepare({ pasted: 'Essay [ai=90]' });
+  const review = await session.humanizeLoop({ text: 'Essay [ai=90]', maxRuns: 3 });
+  assert.strictEqual(review.runs, 3);
+  assert.strictEqual(review.reached, false);
+  assert.strictEqual(review.text, 'Try 3 [ai=57]');
+  assert.ok(review.notes.some(n => /Stopped after 3 rounds at 57\.0% AI/.test(n)));
+});
+
+test('a text already under target is not rewritten', async () => {
+  const { session, calls } = harness({ detect: tagDetect });
+  await session.prepare({ pasted: 'Fine [ai=10]' });
+  const review = await session.humanizeLoop({ text: 'Fine [ai=10]' });
+  assert.strictEqual(calls.humanize, 0);
+  assert.strictEqual(review.runs, 0);
+  assert.strictEqual(review.text, 'Fine [ai=10]');
+});
+
+test('Stop during Humanize aborts, keeps the review stage, and reports a clean stop', async () => {
+  let release;
+  const { session } = harness({ detect: tagDetect, humanize: (t, o, signal) => new Promise((_, reject) => { release = () => reject(new Error('aborted')); signal.addEventListener('abort', release); }) });
+  await session.prepare({ pasted: 'Essay [ai=90]' });
+  const run = session.humanizeLoop({ text: 'Essay [ai=90]' });
+  await new Promise(r => setTimeout(r, 5));
+  session.stop();
+  await assert.rejects(run, /Humanize stopped/);
+  assert.strictEqual(session.stage, 'review');
 });

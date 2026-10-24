@@ -83,7 +83,11 @@ function getWriteSession() {
     createLLM,
     humanize: (text, opts, signal) => {
       const wm = store.getSettings().writeMode || {};
-      if (!wm.humanizeEnabled) return Promise.resolve({ text });
+      if (wm.humanizer !== 'local') {
+        const settings = store.getSettings();
+        const llm = createLLM({ ...settings, codexHome: settings.codexSeparateAccount ? codexProfileDir() : undefined });
+        return require('./src/humanize').createModelHumanizer({ llm }).humanize(text, opts, signal);
+      }
       const dir = resolveInksplashDir();
       if (!dir) throw new Error('Set the InkSplash humaniser folder in Settings → Write mode.');
       return require('./src/humanize').createHumanizer({ pythonPath: resolvePython(dir), scriptDir: dir, isolated: true })
@@ -566,6 +570,13 @@ ipcMain.handle('write-mode:prepare', async (event, payload) => {
   if (state.busy) throw new Error('Wait for the current task or stop it first.');
   state.busy = true;
   try { return await getWriteSession().prepare(payload || {}); }
+  finally { state.busy = false; }
+});
+ipcMain.handle('write-mode:humanize', async (event, text) => {
+  fromPanel(event);
+  if (state.busy) throw new Error('Wait for the current task or stop it first.');
+  state.busy = true;
+  try { return await getWriteSession().humanizeLoop({ text }); }
   finally { state.busy = false; }
 });
 ipcMain.handle('write-mode:approve', (event, text) => { fromPanel(event); return getWriteSession().approve(text); });

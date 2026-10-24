@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('wingman', {
   autoModeZenTabs: () => ipcRenderer.invoke('auto-mode:zen-tabs'),
   autoModeStop: () => ipcRenderer.send('auto-mode:stop'),
   writePrepare: (payload) => ipcRenderer.invoke('write-mode:prepare', payload),
+  writeHumanize: (text) => ipcRenderer.invoke('write-mode:humanize', text),
   writeApprove: (text) => ipcRenderer.invoke('write-mode:approve', text),
   writeType: (tabId, typingConfig) => ipcRenderer.invoke('write-mode:type', tabId, typingConfig),
   writeStop: () => ipcRenderer.send('write-mode:stop'),

@@ -75,8 +75,8 @@
             <div class="screen">
               <div class="screen-hdr"><span>WRITE</span><span id="write-stage">PROMPT</span></div>
               <div id="write-display">
-                <textarea id="write-input" rows="4" spellcheck="false" placeholder="Prompt to draft from — or paste your own text to humanise and type."></textarea>
-                <label class="s-check" id="write-paste-row"><input id="write-paste-mode" type="checkbox" />Paste mode: humanise my own text, don't draft</label>
+                <textarea id="write-input" rows="4" spellcheck="false" placeholder="Prompt to draft from — or paste your own text to review, humanise, and type."></textarea>
+                <label class="s-check" id="write-paste-row"><input id="write-paste-mode" type="checkbox" />Paste mode: use my own text, don't draft</label>
                 <textarea id="write-review" class="hidden" rows="6" spellcheck="false" aria-label="Approve the final text"></textarea>
                 <div id="write-detector" class="status-line hidden"></div>
                 <div id="write-notes" class="status-line hidden" role="alert" style="white-space: pre-line"></div>
@@ -86,6 +86,7 @@
             <div class="write-actions" role="group" aria-label="Write steps">
               <button id="write-prepare" class="act run" type="button"><span class="f">PREP</span><span class="n">Draft + humanise</span></button>
               <button id="write-rerun" class="act hidden" type="button"><span class="f">↻</span><span class="n">Re-run</span></button>
+              <button id="write-humanize" class="act run hidden" type="button" title="Rewrite in rounds until the detector reads under 20%, keeping quotes, thesis, and purpose"><span class="f">HUM</span><span class="n">Humanize</span></button>
               <button id="write-approve" class="act blue hidden" type="button"><span class="f">OK</span><span class="n">Approve</span></button>
               <button id="write-type" class="act run hidden" type="button"><span class="f">TYPE</span><span class="n">Type it</span></button>
               <button id="write-stop" class="act dark hidden" type="button"><span class="f">ESC</span><span class="n">Stop</span></button>
@@ -168,7 +169,11 @@
         <div class="s-hint" id="auto-refresh-hint">Off by default. After interaction pauses, a screenshot goes to your selected provider and uses its allowance.</div>
 
         <label class="s-label">Write mode <span class="s-hint">human-paced typing into a Zen tab</span></label>
-        <label class="s-check"><input id="wm-humanize" type="checkbox" />Humanise with Config C before typing</label>
+        <div class="s-hint">Humaniser used by the Humanize button</div>
+        <div class="s-seg" id="wm-humanizer-seg">
+          <button data-humanizer="model">Answer model (Codex)</button>
+          <button data-humanizer="local">Local Config C</button>
+        </div>
         <div class="s-seg" id="wm-detector-seg">
           <button data-detector="local">Local detector</button>
           <button data-detector="local+zerogpt">Local + ZeroGPT</button>

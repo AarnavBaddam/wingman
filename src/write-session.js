@@ -16,6 +16,14 @@ const { createTypingPlan } = require('./typing-plan');
 const { runTyping, defaultWait } = require('./write-typer');
 const research = require('./research');
 
+const MEANING_MIN = 0.85;   // MiniLM similarity of a humanised run to the text it started from
+const FACT_MIN = 0.9;       // share of numbers and names kept
+const AI_TARGET = 20;       // Humanize stops once the detector reads below this %
+const MAX_RUNS = 10;        // ponytail: hard cap so a stubborn text cannot loop forever; raise if 10 rounds rarely suffice
+
+// ZeroGPT, when enabled, is the authoritative score; otherwise the local detector.
+const verdict = d => (d.zerogpt != null ? d.zerogpt : d.aiScore);
+
 // The user's words are the spec. Defaults apply only where they say nothing
 // (user report 2026-10-23: a fixed "student voice" overrode what they asked for).
 const WRITE_SYSTEM = [
@@ -51,7 +59,7 @@ function createWriteSession(deps) {
   let lastTypedCount = 0;
   const publish = update => onUpdate({ stage, ...update });
 
-  async function prepare({ prompt, pasted, humanizeOpts = {}, detectOpts = {} } = {}) {
+  async function prepare({ prompt, pasted, detectOpts = {} } = {}) {
     if (stage !== 'idle' && stage !== 'review') throw new Error('Finish or stop the current Write task first.');
     if (current) throw new Error('Write is busy.');
     const controller = new AbortController(); current = { controller };
@@ -85,23 +93,65 @@ function createWriteSession(deps) {
         if (linkFailures.length) notes.push('Could not open: ' + linkFailures.map(f => `${f.url} (${f.reason})`).join('; '));
         if (unverifiedQuotes.length) notes.push('Quotes not found word-for-word in any opened link: ' + unverifiedQuotes.map(q => `“${q}”`).join('; '));
       }
-      publish({ status: 'humanising', message: 'Humanising…' });
-      const h = await humanize(draft, humanizeOpts, signal);
-      let text = (h && h.text) || draft;
-      if (h && h.note) notes.push(h.note);
-      // Belt and braces over the humaniser's own quote freeze: an altered quote voids the rewrite.
-      const altered = changedQuotes(draft, text);
-      if (altered.length) { text = draft; notes.push('The humaniser changed a quotation, so the un-humanised draft was kept.'); }
+      // The finished text is shown as-is; humanising is a separate, user-started step.
       publish({ status: 'detecting', message: 'Checking the detector…' });
-      const d = (await detect(text, detectOpts, signal)) || {};
+      const d = (await detect(draft, detectOpts, signal)) || {};
       stage = 'review';
-      const review = { draft, text, aiScore: d.aiScore, pass: d.pass !== false, detail: d.detail, sources: sources.map(({ number, title, url }) => ({ number, title, url })), linkFailures, unverifiedQuotes, notes };
+      const review = { draft, text: draft, aiScore: verdict(d), pass: d.pass !== false, detail: d.detail, sources: sources.map(({ number, title, url }) => ({ number, title, url })), linkFailures, unverifiedQuotes, notes };
       publish({ status: 'review', ...review });
       return review;
     } catch (error) {
       stage = 'idle'; llm = null;
       publish({ status: signal.aborted ? 'stopped' : 'error', message: signal.aborted ? 'Write stopped.' : error.message });
       throw error;
+    } finally {
+      current = null;
+    }
+  }
+
+  // Rewrite in rounds until the detector reads below `target`. Each round rewrites the
+  // best text so far, but is always judged against `text` as it was when the user
+  // clicked: quotes byte-exact, meaning and facts intact. Failing rounds are discarded,
+  // so drift cannot accumulate across rounds.
+  async function humanizeLoop({ text, target = AI_TARGET, maxRuns = MAX_RUNS, humanizeOpts = {}, detectOpts = {} } = {}) {
+    if (stage !== 'review') throw new Error('Prepare a draft before humanising.');
+    if (current) throw new Error('Write is busy.');
+    if (typeof text !== 'string' || !text.trim()) throw new Error('Nothing to humanise.');
+    const controller = new AbortController(); current = { controller };
+    const signal = controller.signal;
+    stage = 'humanising';
+    const notes = [], rejected = [];
+    try {
+      publish({ status: 'humanising', message: 'Scoring the current text…' });
+      const start = (await detect(text, detectOpts, signal)) || {};
+      let best = { text, ai: verdict(start), d: start }, runs = 0;
+      while (runs < maxRuns && !(best.ai < target)) {
+        runs++;
+        publish({ status: 'humanising', message: `Round ${runs} of up to ${maxRuns}: rewriting (best so far ${fmt(best.ai)})…`, run: runs, maxRuns, best: best.ai });
+        const h = (await humanize(best.text, { ...humanizeOpts, aiScore: best.ai }, signal)) || {};
+        if (h.note || !h.text || h.text === best.text) { rejected.push(`round ${runs}: ${h.note || 'no change'}`); continue; }
+        if (changedQuotes(text, h.text).length) { rejected.push(`round ${runs}: a quotation changed`); continue; }
+        publish({ status: 'humanising', message: `Round ${runs}: checking the detector…`, run: runs, maxRuns, best: best.ai });
+        const d = (await detect(h.text, { ...detectOpts, source: text }, signal)) || {};
+        if ((d.meaning != null && d.meaning < MEANING_MIN) || (d.factScore != null && d.factScore < FACT_MIN)) {
+          rejected.push(`round ${runs}: drifted (${d.detail})`); continue;
+        }
+        const ai = verdict(d);
+        if (!(ai >= best.ai)) best = { text: h.text, ai, d };
+      }
+      const reached = best.ai < target;
+      notes.push(reached
+        ? `Reached ${fmt(best.ai)} AI after ${runs} round${runs === 1 ? '' : 's'}.`
+        : `Stopped after ${runs} rounds at ${fmt(best.ai)} AI (target under ${target}%). Click Humanize again to keep going.`);
+      if (rejected.length) notes.push('Discarded rounds: ' + rejected.join('; ') + '.');
+      stage = 'review';
+      const review = { text: best.text, aiScore: best.ai, pass: best.d.pass !== false, detail: best.d.detail, runs, reached, notes };
+      publish({ status: 'review', ...review });
+      return review;
+    } catch (error) {
+      stage = 'review';   // the shown text is still valid; the user can retry or approve it
+      publish({ status: signal.aborted ? 'stopped' : 'error', message: signal.aborted ? 'Humanize stopped.' : error.message });
+      throw signal.aborted ? new Error('Humanize stopped.') : error;
     } finally {
       current = null;
     }
@@ -154,11 +204,13 @@ function createWriteSession(deps) {
   function stop(reason = 'Write stopped.') { if (current) current.controller.abort(); }
 
   return {
-    prepare, approve, typeInto, stop,
+    prepare, humanizeLoop, approve, typeInto, stop,
     get stage() { return stage; },
     get active() { return current !== null; },
     get lastTypedCount() { return lastTypedCount; },
   };
 }
 
-module.exports = { createWriteSession, WRITE_SYSTEM };
+const fmt = n => (n == null ? '—' : Number(n).toFixed(1) + '%');
+
+module.exports = { createWriteSession, WRITE_SYSTEM, AI_TARGET, MAX_RUNS };

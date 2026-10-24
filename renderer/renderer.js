@@ -184,9 +184,10 @@
   const writeView = $('#write-view');
   const panelEl = $('#panel');
   const setWriteStage = (stage) => { $('#write-stage').textContent = (stage || 'prompt').toUpperCase(); };
-  function showWriteButtons({ prepare, rerun, approve, type, stop }) {
+  function showWriteButtons({ prepare, rerun, humanize, approve, type, stop }) {
     $('#write-prepare').classList.toggle('hidden', !prepare);
     $('#write-rerun').classList.toggle('hidden', !rerun);
+    $('#write-humanize').classList.toggle('hidden', !humanize);
     $('#write-approve').classList.toggle('hidden', !approve);
     $('#write-type').classList.toggle('hidden', !type);
     $('#write-stop').classList.toggle('hidden', !stop);
@@ -209,31 +210,55 @@
   $('#write-back').addEventListener('click', exitWrite);
   $('#write-settings').addEventListener('click', openSettings);
 
+  let prepNotes = [];
+  function showReview(review, notesBefore = []) {
+    $('#write-review').value = review.text || '';
+    $('#write-review').classList.remove('hidden');
+    $('#write-input').classList.add('hidden');
+    $('#write-paste-row').classList.add('hidden');
+    const det = $('#write-detector');
+    det.classList.remove('hidden');
+    const pct = review.aiScore == null ? '—' : Number(review.aiScore).toFixed(1) + '%';
+    det.textContent = `AI: ${pct} · ${review.pass ? 'PASS' : 'FAIL'}${review.detail ? ' · ' + review.detail : ''}`;
+    det.classList.toggle('pass', !!review.pass);
+    det.classList.toggle('fail', !review.pass);
+    // Unopened links, unverifiable quotes, and discarded rounds are shown, never hidden.
+    const all = review.notes === notesBefore ? notesBefore : [...notesBefore, ...(review.notes || [])];
+    const notes = $('#write-notes');
+    notes.textContent = all.join('\n');
+    notes.classList.toggle('hidden', !all.length);
+    setWriteStage('review');
+  }
+  async function runHumanize() {
+    const text = $('#write-review').value.trim();
+    if (!text) return writeStatus('Nothing to humanise.', true);
+    showWriteButtons({ stop: true });
+    $('#write-review').readOnly = true;
+    writeStatus('Humanising…');
+    try {
+      const review = await wingman.writeHumanize(text);
+      showReview(review, prepNotes);
+      writeStatus(review.reached ? 'Under target. Edit if you like, then Approve.' : 'Not under target yet. Humanize again, or Approve as is.');
+    } catch (e) {
+      writeStatus(/stopped/i.test(e?.message || '') ? 'Humanize stopped. The text shown is unchanged.' : (e?.message || 'Could not humanise.'), !/stopped/i.test(e?.message || ''));
+    } finally {
+      $('#write-review').readOnly = false;
+      showWriteButtons({ rerun: true, humanize: true, approve: true });
+    }
+  }
+  $('#write-humanize').addEventListener('click', runHumanize);
   async function runPrepare() {
     const text = $('#write-input').value.trim();
     if (!text) return writeStatus('Enter a prompt or paste text.', true);
     const paste = $('#write-paste-mode').checked;
     showWriteButtons({});
-    writeStatus(paste ? 'Humanising…' : 'Drafting…');
+    writeStatus(paste ? 'Scoring your text…' : 'Drafting…');
     try {
       const review = await wingman.writePrepare(paste ? { pasted: text } : { prompt: text });
-      $('#write-review').value = review.text || '';
-      $('#write-review').classList.remove('hidden');
-      $('#write-input').classList.add('hidden');
-      $('#write-paste-row').classList.add('hidden');
-      const det = $('#write-detector');
-      det.classList.remove('hidden');
-      const pct = review.aiScore == null ? '—' : Number(review.aiScore).toFixed(1) + '%';
-      det.textContent = `AI: ${pct} · ${review.pass ? 'PASS' : 'FAIL'}${review.detail ? ' · ' + review.detail : ''}`;
-      det.classList.toggle('pass', !!review.pass);
-      det.classList.toggle('fail', !review.pass);
-      // Unopened links and unverifiable quotes are shown, never hidden.
-      const notes = $('#write-notes');
-      notes.textContent = (review.notes || []).join('\n');
-      notes.classList.toggle('hidden', !(review.notes || []).length);
-      setWriteStage('review');
-      writeStatus('Edit the text if you like, then Approve.');
-      showWriteButtons({ rerun: true, approve: true });
+      prepNotes = review.notes || [];
+      showReview(review, prepNotes);
+      writeStatus('Here is the finished text. Humanize it, edit it, or Approve it as is.');
+      showWriteButtons({ rerun: true, humanize: true, approve: true });
     } catch (e) {
       writeStatus(e?.message || 'Could not prepare the text.', true);
       showWriteButtons({ prepare: true });
@@ -288,6 +313,8 @@
   $('#write-stop').addEventListener('click', () => wingman.writeStop());
   wingman.on('write-mode:state', (s) => {
     if (!s) return;
+    if (s.status === 'humanising') { setWriteStage('humanising'); if (s.message) writeStatus(s.message); return; }
+    if (s.stage === 'review') return;   // Humanize results and failures are shown by runHumanize
     if (s.stage) setWriteStage(s.stage);
     if (s.status === 'typing' && s.total) { writeStatus(`Typing… ${s.typed || 0}/${s.total}`); showWriteButtons({ stop: true }); }
     else if (s.status === 'done') { resetWrite(); writeStatus(s.message || 'Typed the approved text.'); }
@@ -629,8 +656,8 @@ function fillSettings() {
     $('#model-fast').value = m.fast; $('#model-smart').value = m.smart;
     updateModelHint(settings.provider);
     const wm = settings.writeMode || {}; const t = wm.typing || {};
-    $('#wm-humanize').checked = wm.humanizeEnabled !== false;
     document.querySelectorAll('#wm-detector-seg button').forEach(b => b.classList.toggle('on', b.dataset.detector === (wm.detector || 'local')));
+    document.querySelectorAll('#wm-humanizer-seg button').forEach(b => b.classList.toggle('on', b.dataset.humanizer === (wm.humanizer || 'model')));
     $('#wm-wpm').value = t.wpm ?? ''; $('#wm-typo').value = t.typoRate ?? '';
     $('#wm-untypo').value = t.uncorrectedTypoRate ?? ''; $('#wm-stutter').value = t.stutterRate ?? '';
     $('#wm-gap').value = t.gapChance ?? ''; $('#wm-candidates').value = wm.candidates ?? '';
@@ -644,6 +671,11 @@ function fillSettings() {
     settings.writeMode = settings.writeMode || {};
     settings.writeMode.detector = b.dataset.detector;
     document.querySelectorAll('#wm-detector-seg button').forEach(x => x.classList.toggle('on', x === b));
+  }));
+  document.querySelectorAll('#wm-humanizer-seg button').forEach(b => b.addEventListener('click', () => {
+    settings.writeMode = settings.writeMode || {};
+    settings.writeMode.humanizer = b.dataset.humanizer;
+    document.querySelectorAll('#wm-humanizer-seg button').forEach(x => x.classList.toggle('on', x === b));
   }));
   async function refreshPythonStatus() {
     const el = $('#wm-python-status'); if (!el) return; el.textContent = 'Checking Python…';
@@ -735,7 +767,6 @@ async function saveSettings() {
     settings.models[settings.provider].smart = $('#model-smart').value.trim();
     settings.writeMode = settings.writeMode || {}; settings.writeMode.typing = settings.writeMode.typing || {};
     const wmNum = (sel, def) => { const v = parseFloat($(sel).value); return Number.isFinite(v) ? v : def; };
-    settings.writeMode.humanizeEnabled = $('#wm-humanize').checked;
     if (!settings.writeMode.detector) settings.writeMode.detector = 'local';
     settings.writeMode.typing.wpm = wmNum('#wm-wpm', settings.writeMode.typing.wpm);
     settings.writeMode.typing.typoRate = wmNum('#wm-typo', settings.writeMode.typing.typoRate);

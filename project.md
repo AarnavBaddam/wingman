@@ -1,5 +1,15 @@
 # Aether project state
 
+## Write mode: Codex humaniser + Humanize button — 2026-10-23
+
+User decision: Codex (the answer provider) does both the writing and the humanising, and humanising is a button, not automatic.
+
+- Prepare now only drafts (or takes the paste) and shows the finished text with its detector score. **Humanize** runs `write-session.humanizeLoop`: each round Codex rewrites the best text so far (told the last AI score), then the detector checks it against the text as it was when Humanize was clicked. A round is discarded if a quote changed (byte check), meaning < 0.85 (MiniLM, min over paragraphs) or facts < 90%. It stops under 20% AI or after 10 rounds; Stop aborts and keeps the shown text. Settings → Write → Humaniser: "Answer model (Codex)" (default) or "Local Config C". The old "Humanise before typing" checkbox is gone.
+- Detector (`scripts/aether_detect.py`) now reports `meaning`, and has its own fact score: numbers plus capitalised words that are not sentence or quote openers ("Mr. Jones" counts Jones). InkSplash's score counted "Yet"/"This" as dropped facts and falsely rejected good rewrites.
+- Link fetching is pinned: requests go through node http/https with a lookup that refuses private addresses at connect time (DNS rebinding), on top of the pre-check, manual redirects (5 hops), ports 80/443, a 1 MB streamed cap, and a linear HTML scanner.
+- Verified: 270 tests + both Python self-checks; headless Chromium run of Prepare → Humanize (buttons, Stop, read-only during rounds, notes); live Codex loop with the real detector kept the Wikipedia quote byte-exact with facts 100% / meaning 0.98.
+- **Open, honest result:** live Codex rounds lowered the local detector score slowly (98.6% → 91.5% in 5 rounds; one earlier single pass hit 29%). Sub-20% on the local GPT-2/RoBERTa detector is not reliably reached by whole-text Codex rewrites. Next lever if wanted: sentence-level rewriting of the most AI-scored sentences (the Config C approach) with Codex instead of Ollama, or ZeroGPT as the judge.
+
 ## Truthfulness + obedience round — 2026-10-23
 
 User report: models hallucinate quotes/links; Auto ignores "don't scroll" / "double click"; Write mode forced its own voice; the humaniser could mutate quotes and drift meaning.
