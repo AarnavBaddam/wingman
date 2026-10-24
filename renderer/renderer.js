@@ -657,7 +657,7 @@ function fillSettings() {
     updateModelHint(settings.provider);
     const wm = settings.writeMode || {}; const t = wm.typing || {};
     document.querySelectorAll('#wm-detector-seg button').forEach(b => b.classList.toggle('on', b.dataset.detector === (wm.detector || 'local')));
-    document.querySelectorAll('#wm-humanizer-seg button').forEach(b => b.classList.toggle('on', b.dataset.humanizer === (wm.humanizer || 'model')));
+    document.querySelectorAll('#wm-humanizer-seg button').forEach(b => b.classList.toggle('on', b.dataset.humanizer === (wm.humanizer || 'sentences')));
     $('#wm-wpm').value = t.wpm ?? ''; $('#wm-typo').value = t.typoRate ?? '';
     $('#wm-untypo').value = t.uncorrectedTypoRate ?? ''; $('#wm-stutter').value = t.stutterRate ?? '';
     $('#wm-gap').value = t.gapChance ?? ''; $('#wm-candidates').value = wm.candidates ?? '';

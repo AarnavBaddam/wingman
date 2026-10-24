@@ -111,3 +111,43 @@ test('the humaniser prompt keeps the author voice instead of imposing one', () =
   assert.strictEqual(thawQuotes(masked, quotes), 'a "b c" d');
   assert.strictEqual(thawQuotes('a d', quotes), null);
 });
+test('splitSentences round-trips text and keeps decimals and abbreviations whole', () => {
+  const { splitSentences } = require('../src/humanize');
+  const text = 'Mr. Jones paid 3.5 dollars. It was hot!\nNew line here? Yes.  End without stop';
+  const parts = splitSentences(text);
+  assert.equal(parts.join(''), text);
+  assert.deepEqual(parts.map(p => p.trim()), ['Mr. Jones paid 3.5 dollars.', 'It was hot!', 'New line here?', 'Yes.', 'End without stop']);
+  assert.deepEqual(splitSentences(''), []);
+});
+test('sentenceFacts keeps numbers and names, and a sentence-opening name the essay uses elsewhere', () => {
+  const { sentenceFacts } = require('../src/humanize');
+  assert.deepEqual(sentenceFacts('The war in Europe ended in 1945.'), ['Europe', '1945']);
+  assert.deepEqual(sentenceFacts('Napoleon lost at Waterloo.', 'In 1815 the army of Napoleon fell.'), ['Napoleon', 'Waterloo']);
+  assert.deepEqual(sentenceFacts('However I think so.'), []);
+});
+test('sentence humaniser rewrites only the most AI-like sentences and keeps the detector choice', async () => {
+  const { createSentenceHumanizer } = require('../src/humanize');
+  const text = 'The Industrial Revolution fundamentally transformed the economic landscape of Europe. It was hot. ' +
+    'He said "this stays exactly as written" to the crowd today. Moreover, factories played a pivotal role in shaping society in 1850.';
+  const calls = [];
+  const scoreSegments = async (segments, options) => {
+    calls.push({ segments: [...segments], options });
+    return Object.keys(options).length ? { scores: segments.map(() => 0), choice: { 0: 1, 3: -1 } } : { scores: [90, 99, 95, 80] };
+  };
+  let prompt = '';
+  const llm = { ready: true, stream: async ({ turns }) => { prompt = turns[0].text; return '```json\n' + JSON.stringify({
+    0: ['The Industrial Revolution changed Europe — fast.', 'Europe\'s economy looked very different after the Industrial Revolution was done with it.', 'It changed things.'],
+    3: ['Factories shaped society in 1850.', 'Factories mattered a lot.'] }) + '\n```'; } };
+  const h = createSentenceHumanizer({ llm, scoreSegments });
+  const out = await h.humanize(text);
+  // Short sentence (It was hot.) and the quotation are never sent.
+  assert.match(prompt, /"id":0/); assert.match(prompt, /"id":3/); assert.doesNotMatch(prompt, /"id":1|"id":2/);
+  // Alternatives that drop a fact (Europe, 1850) or lose the sentence shape are filtered before scoring.
+  assert.deepEqual(calls[1].options[0].map(a => a.trim()), ['The Industrial Revolution changed Europe, fast.', 'Europe\'s economy looked very different after the Industrial Revolution was done with it.']);
+  assert.deepEqual(calls[1].options[3].map(a => a.trim()), ['Factories shaped society in 1850.']);
+  assert.equal(out.changed, 1);
+  assert.equal(out.text, text.replace('The Industrial Revolution fundamentally transformed the economic landscape of Europe. ',
+    'Europe\'s economy looked very different after the Industrial Revolution was done with it. '));
+  const none = await createSentenceHumanizer({ llm: { ready: true, stream: async () => 'no json' }, scoreSegments }).humanize(text);
+  assert.equal(none.text, text); assert.match(none.note, /did not return/);
+});

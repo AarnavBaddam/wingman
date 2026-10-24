@@ -29,7 +29,7 @@ const DEFAULTS = {
   // in Settings → Write mode.
   writeMode: {
     typing: { ...require('./typing-plan').DEFAULTS },
-    humanizer: 'model',      // 'model' = the answer provider (Codex) rewrites; 'local' = Config C via Ollama
+    humanizer: 'sentences',  // 'sentences' = Codex rewrites the most AI-scored sentences, detector picks; 'model' = Codex rewrites the whole text; 'local' = Config C via Ollama
     detector: 'local',       // 'local' | 'local+zerogpt'
     candidates: 12,          // Config C best-of-N (slower, stronger)
     refine: 12,

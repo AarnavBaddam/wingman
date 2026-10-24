@@ -1,5 +1,14 @@
 # Aether project state
 
+## Write mode: sentence-level humaniser — 2026-10-24
+
+Open lever from 2026-10-23 (whole-text Codex rounds only lowered the local detector 98.6% to 91.5% in 5 rounds).
+- `scripts/aether_detect.py --segments FILE.json`: scores each sentence in context (window = it plus neighbours; the RoBERTa classifier is unreliable on one short sentence) and, given options, greedily keeps the lowest-scoring alternative per sentence when it beats the original.
+- `src/detect.js`: shared subprocess runner; new `segments(list, options)`.
+- `src/humanize.js` `createSentenceHumanizer`: `splitSentences` (round-trips exactly; decimals and Mr./e.g. stay whole), targets up to 8 eligible sentences scoring >= 40 (>= 6 words, no quotation), Codex writes 3 alternatives each (JSON), alternatives must keep `sentenceFacts` (numbers, mid-sentence capitals, and a sentence-opening name the essay capitalises elsewhere), stay one sentence, 0.4-1.8x length, no em dashes; the detector picks. The existing `humanizeLoop` still does the whole-text check plus meaning/fact guards.
+- Settings → Write → Humaniser: new "Codex, sentence by sentence" (`writeMode.humanizer = 'sentences'`), now the default. `main.js` `writeDetector()` shared by detect and the sentence humaniser.
+- 286 tests. **Live result** (ww2_essay.txt, 427 words, real Codex on the separate profile, real detector, the real humanizeLoop): **99.3% → 61.0% (round 1) → 15.5% (round 2)**, target reached in 69 s, facts 100%, meaning 0.97; output reads naturally, every name/date/number kept, 398 words. Whole-text Codex for comparison (2026-10-23): 98.6% → 91.5% in 5 rounds. Made `sentences` the default humaniser. One essay, local RoBERTa only; ZeroGPT not tested.
+
 ## Auto: on-screen keypad fields — 2026-10-24
 
 User report: a click-only numpad form (Physics Classroom style; keyboard ignored, "Editing answer for: m" panel) filled 3 fields wrongly (3, 2.5, 2) and hit the 80-step limit. Causes: one model step per keypad press, and back-to-back presses of one button (the zeros in 3000) were blocked by the duplicate-selection guard.

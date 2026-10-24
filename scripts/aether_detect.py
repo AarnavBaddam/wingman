@@ -6,6 +6,7 @@ preservation score vs the source, and optional authoritative ZeroGPT.
 Usage:
   aether_detect.py --text OUT.txt [--source SRC.txt] [--zerogpt]
                    [--inksplash-dir DIR] [--ai-max 35] [--fact-min 0.9]
+  aether_detect.py --segments SEGS.json [--inksplash-dir DIR]   (sentence scores / choices)
 
 Prints one JSON line: {"aiScore":float, "factScore":float|null,
 "zerogpt":float|null, "pass":bool, "detail":str}. Exit 0 on success, 2 on error.
@@ -66,9 +67,38 @@ def _meaning(fs, src, out):
     return float(min(fs._sem_sim(a, b) for a, b in pairs))
 
 
+def _segments(det, path):
+    """Sentence-level scoring for the sentence humaniser. Input JSON:
+    {"segments": [str, ...], "options": {"3": [alt, ...]}}. Segments concatenate back to the text.
+    A sentence is scored in context: the window of it plus its neighbours, since the classifier is
+    unreliable on one short sentence. Options are chosen greedily in order, each window seeing the
+    choices already made, and only replace a sentence when they score lower than it does.
+    Output: {"scores": [window score per segment], "choice": {"3": index or -1}}."""
+    with open(path, "r", encoding="utf-8") as fh:
+        data = json.load(fh)
+    segs = [str(x) for x in data.get("segments", [])]
+    window = lambda i, own: "".join(segs[max(0, i - 1):i] + [own] + segs[i + 1:i + 2]).strip()
+    scores = [float(det.ai_prob(window(i, s))) if s.strip() else 0.0 for i, s in enumerate(segs)]
+    choice = {}
+    for key in sorted(data.get("options", {}), key=int):
+        i = int(key)
+        if not 0 <= i < len(segs):
+            continue
+        best, best_score = -1, float(det.ai_prob(window(i, segs[i])))
+        for k, alt in enumerate(data["options"][key]):
+            sc = float(det.ai_prob(window(i, str(alt))))
+            if sc < best_score:
+                best, best_score = k, sc
+        choice[key] = best
+        if best >= 0:
+            segs[i] = str(data["options"][key][best])
+    return {"scores": scores, "choice": choice}
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--text", required=True)
+    ap.add_argument("--text")
+    ap.add_argument("--segments")
     ap.add_argument("--source")
     ap.add_argument("--zerogpt", action="store_true")
     ap.add_argument("--inksplash-dir", default=os.environ.get("INKSPLASH_DIR", ""))
@@ -84,6 +114,20 @@ def main():
     for p in (root, os.path.join(root, "train")):
         if p not in sys.path:
             sys.path.insert(0, p)
+
+    if args.segments:
+        try:
+            ld = importlib.import_module("local_detector")
+            Det = next(v for v in vars(ld).values()
+                       if isinstance(v, type) and hasattr(v, "ai_prob_chunked"))
+            print(json.dumps(_segments(Det, args.segments)))
+            return 0
+        except Exception as e:  # noqa: BLE001
+            print(json.dumps({"error": f"sentence scoring failed: {e}"}))
+            return 2
+    if not args.text:
+        print(json.dumps({"error": "--text or --segments is required"}))
+        return 2
 
     out = _read(args.text)
     src = _read(args.source)

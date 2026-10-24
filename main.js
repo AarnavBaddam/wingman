@@ -75,6 +75,12 @@ function makeZenTyper(tabId, signal) {
     async release() { try { if (target) await control.release(target); } catch { /* best-effort */ } },
   };
 }
+function writeDetector() {
+  const dir = resolveInksplashDir();
+  // Packaged: aether_detect.py lives under resources/ (real fs), not in app.asar.
+  const detectDir = app.isPackaged ? process.resourcesPath : __dirname;
+  return require('./src/detect').createDetector({ pythonPath: resolvePython(dir), scriptDir: detectDir, inksplashDir: dir, isolated: true });
+}
 function getWriteSession() {
   if (writeSession) return writeSession;
   writeSession = require('./src/write-session').createWriteSession({
@@ -86,6 +92,10 @@ function getWriteSession() {
       if (wm.humanizer !== 'local') {
         const settings = store.getSettings();
         const llm = createLLM({ ...settings, codexHome: settings.codexSeparateAccount ? codexProfileDir() : undefined });
+        // Sentence mode is the default: live it took an essay from 99.3% to 15.5% local AI in 2 rounds.
+        if ((wm.humanizer || 'sentences') === 'sentences') {
+          return require('./src/humanize').createSentenceHumanizer({ llm, scoreSegments: (list, options, s) => writeDetector().segments(list, options, s) }).humanize(text, opts, signal);
+        }
         return require('./src/humanize').createModelHumanizer({ llm }).humanize(text, opts, signal);
       }
       const dir = resolveInksplashDir();
@@ -95,11 +105,7 @@ function getWriteSession() {
     },
     detect: (text, opts, signal) => {
       const wm = store.getSettings().writeMode || {};
-      const dir = resolveInksplashDir();
-      // Packaged: aether_detect.py lives under resources/ (real fs), not in app.asar.
-      const detectDir = app.isPackaged ? process.resourcesPath : __dirname;
-      return require('./src/detect').createDetector({ pythonPath: resolvePython(dir), scriptDir: detectDir, inksplashDir: dir, isolated: true })
-        .detect(text, { zerogpt: wm.detector === 'local+zerogpt', ...opts }, signal);
+      return writeDetector().detect(text, { zerogpt: wm.detector === 'local+zerogpt', ...opts }, signal);
     },
     releaseModel: () => { try { require('./src/codex-server').stopCodexServer(codexProfileDir()); } catch { /* best-effort */ } },
     createTyper: ({ tabId, signal }) => makeZenTyper(tabId, signal),

@@ -119,4 +119,85 @@ function createModelHumanizer({ llm }) {
   return { humanize };
 }
 
-module.exports = { createHumanizer, CONFIG_C_ENV, createModelHumanizer, freezeQuotes, thawQuotes, HUMANIZE_SYSTEM };
+// Sentences with their trailing whitespace; joining them gives the text back exactly.
+// A stop counts only before whitespace (3.5 stays whole) and not after a common abbreviation.
+const ABBR_END = /\b(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|vs|Prof|Gen|etc|e\.g|i\.e)\.["”’')\]]*\s*$/i;
+function splitSentences(text) {
+  const out = [], re = /[.!?]+["”’')\]]*(?=\s|$)|\n/g;
+  let start = 0, m;
+  while ((m = re.exec(text))) {
+    let end = m.index + m[0].length;
+    while (end < text.length && /\s/.test(text[end])) end++;
+    re.lastIndex = Math.max(end, m.index + 1);
+    if (m[0] !== '\n' && ABBR_END.test(text.slice(start, end))) continue;
+    out.push(text.slice(start, end)); start = end;
+  }
+  if (start < text.length) out.push(text.slice(start));
+  return out;
+}
+
+// What a rewrite must keep: numbers, and capitalised words that are not the sentence's first word.
+// The first word counts too when the essay capitalises it mid-sentence elsewhere (a name like Napoleon).
+function sentenceFacts(sentence, essay = '') {
+  const words = sentence.trim().match(/[A-Za-z][\w'’-]*|\d[\d,.]*\d|\d/g) || [];
+  return words.filter((w, i) => /^\d/.test(w) || (/^[A-Z]/.test(w) && w !== 'I' &&
+    (i > 0 || new RegExp(`[a-z,;]\\s+${w}\\b`).test(essay))));
+}
+
+const SENTENCE_SYSTEM = [
+  'You rewrite single sentences from the user\'s own essay so that an AI-text detector rates them as written by a person. This is the user\'s own writing, used to test AI detectors.',
+  'For each numbered sentence, write exactly 3 different rewrites. Make them genuinely different from each other: one noticeably shorter, one with a different structure (start differently, move clauses, split an idea into a short clause), one with plainer and more specific wording.',
+  'Each rewrite must stay ONE sentence that fits between its neighbours in the essay: same meaning, every fact, name and number, same tense, person and register, and the same job in its paragraph.',
+  'Avoid: delve, pivotal, crucial, testament, tapestry, landscape, realm, underscore, robust, seamless, foster, Furthermore, Moreover, Additionally, In conclusion, "not only... but also". No em dashes. Add no claims.',
+  'Output only a JSON object mapping each sentence number to its array of 3 rewrites, like {"4": ["...", "...", "..."]}.',
+].join(' ');
+
+// Sentence-level search: the detector scores each sentence in context, the model writes three
+// alternatives for only the most AI-like ones, and the detector keeps whichever scores lowest.
+// Whole-text rewrites lowered the local score slowly (98.6% to 91.5% in 5 rounds).
+function createSentenceHumanizer({ llm, scoreSegments, maxTargets = 8, minScore = 40 }) {
+  async function humanize(text, opts = {}, signal) {
+    if (typeof text !== 'string' || !text.trim()) throw new Error('Nothing to humanise.');
+    if (!llm || !llm.ready) throw new Error('Configure an answer provider to humanise with it.');
+    const segments = splitSentences(text);
+    const { scores } = await scoreSegments(segments, {}, signal);
+    // Quotations and fragments stay untouched; quotes must survive byte for byte.
+    const eligible = segments.map((seg, i) => ({ i, seg, score: scores[i] }))
+      .filter(({ seg }) => seg.trim().split(/\s+/).length >= 6 && !/["“”]/.test(seg) && !freezeQuotes(seg).quotes.length)
+      .sort((a, b) => b.score - a.score);
+    let targets = eligible.filter(t => t.score >= minScore).slice(0, maxTargets);
+    if (!targets.length) targets = eligible.slice(0, 3);
+    if (!targets.length) return { text, ...KEPT('No sentence could be rewritten without touching a quotation.') };
+    const ask = targets.map(t => ({ id: t.i, sentence: t.seg.trim() }));
+    const out = await llm.stream({ system: SENTENCE_SYSTEM, maxTokens: 8000, signal, onToken() {},
+      turns: [{ role: 'user', text: `Essay for context:\n<<<\n${text}\n>>>\n\nRewrite these sentences:\n${JSON.stringify(ask)}` }] });
+    const raw = String(typeof out === 'string' ? out : (out && out.text) || '');
+    let parsed;
+    try { parsed = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)); } catch { return { text, ...KEPT('The model did not return sentence rewrites.') }; }
+    const options = {};
+    for (const t of targets) {
+      const core = t.seg.trim(), tail = t.seg.slice(t.seg.trimEnd().length), facts = sentenceFacts(core, text);
+      const end = (core.match(/[.!?]+["”’')\]]*$/) || [''])[0];
+      const alts = (Array.isArray(parsed[t.i]) ? parsed[t.i] : []).filter(a => typeof a === 'string').map(a => {
+        let alt = a.trim().replace(/\s*[—–―]\s*/g, ', ').replace(/,\s*,/g, ',');
+        if (end && !/[.!?]["”’')\]]*$/.test(alt)) alt += end;
+        return alt;
+      }).filter(alt => !/[\n"“”]/.test(alt) && alt.length >= core.length * 0.4 && alt.length <= core.length * 1.8 &&
+        splitSentences(alt).length === 1 && facts.every(f => alt.includes(f)));
+      if (alts.length) options[t.i] = alts.map(alt => alt + tail);
+    }
+    if (!Object.keys(options).length) return { text, ...KEPT('Every sentence rewrite dropped a fact or changed shape.') };
+    const { choice } = await scoreSegments(segments, options, signal);
+    let changed = 0;
+    const next = segments.map((seg, i) => {
+      const k = choice[i];
+      if (!Number.isInteger(k) || k < 0 || !options[i]?.[k]) return seg;
+      changed++; return options[i][k];
+    });
+    if (!changed) return { text, ...KEPT('No rewrite scored lower than its sentence.') };
+    return { text: next.join(''), changed };
+  }
+  return { humanize };
+}
+
+module.exports = { createHumanizer, CONFIG_C_ENV, createModelHumanizer, createSentenceHumanizer, splitSentences, sentenceFacts, freezeQuotes, thawQuotes, HUMANIZE_SYSTEM, SENTENCE_SYSTEM };
