@@ -545,3 +545,34 @@ test('a run with no real progress for stallSteps pauses early with the last feed
   await g.engine.run('Fill form');
   assert.equal(g.updates.at(-1).status, 'done');
 });
+// Real executors (zen-control, desktop-control) accept one input per capture.
+function strictIO() {
+  let fresh = false; const executed = [];
+  return { executed,
+    capture: async () => { fresh = true; return { imageDataUrl: 'data:image/png;base64,AA==', width: 800, height: 600 }; },
+    execute: async a => { if (!fresh) throw new Error('Capture the locked Zen tab before acting.'); fresh = false; executed.push(a.type === 'type' ? a.text : `${a.intent}@${a.x},${a.y}`); } };
+}
+test('keypad presses each get a fresh capture, as the real executors require', async () => {
+  const io = strictIO(), k = { '3': { x: 30, y: 30 }, '0': { x: 0, y: 40 } };
+  const h = harness([{ type: 'click', x: 10, y: 10, label: 'F', intent: 'focus' },
+    { type: 'type', text: '300', label: 'F', origin: 'calculation', symbols: k }, { type: 'done', message: 'ok' }], io);
+  await h.engine.run('Fill F');
+  assert.equal(h.updates.at(-1).status, 'done');
+  assert.deepEqual(io.executed, ['focus@10,10', 'insert@30,30', 'insert@0,40', 'insert@0,40']);
+});
+test('fill enters several fields from one decision: focus click then value, in order', async () => {
+  const io = strictIO(), k = { '2': { x: 20, y: 20 }, '5': { x: 50, y: 50 }, '0': { x: 0, y: 40 } };
+  const fill = { type: 'fill', fields: [
+    { x: 100, y: 100, label: 'm', text: '250', origin: 'calculation', symbols: k },
+    { x: 100, y: 200, label: 'note', text: 'ok', origin: 'user' }] };
+  let decisions = 0;
+  const h = harness([fill, { type: 'done', message: 'ok' }], { ...io, decide: async () => JSON.stringify([fill, { type: 'done', message: 'ok' }][decisions++]) });
+  await h.engine.run('Fill the form');
+  assert.equal(decisions, 2); assert.equal(h.updates.at(-1).status, 'done');
+  assert.deepEqual(io.executed, ['focus@100,100', 'insert@20,20', 'insert@50,50', 'insert@0,40', 'focus@100,200', 'ok']);
+  const bounds = { width: 800, height: 600 };
+  for (const fields of [[], [{ x: 900, y: 1, label: 'a', text: '1', origin: 'user' }], [{ x: 1, y: 1, label: 'Password', text: 'x', origin: 'user' }],
+    [{ x: 1, y: 1, label: 'a', text: '1' }], Array(11).fill({ x: 1, y: 1, label: 'a', text: '1', origin: 'user' })]) {
+    assert.throws(() => parseAutoAction(JSON.stringify({ type: 'fill', fields }), bounds));
+  }
+});
