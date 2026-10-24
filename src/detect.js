@@ -46,7 +46,7 @@ function createDetector({ pythonPath, scriptDir, inksplashDir, script = 'scripts
         try { json = JSON.parse(stdout.trim().split('\n').filter(Boolean).pop() || '{}'); }
         catch { return reject(new Error(`Detector output unparseable: ${(stderr || stdout).trim().slice(-300)}`)); }
         if (code !== 0 || json.error) return reject(new Error(`Detector failed: ${json.error || stderr.trim().slice(-300) || 'exit ' + code}`));
-        resolve({ aiScore: json.aiScore, factScore: json.factScore, zerogpt: json.zerogpt, pass: json.pass !== false, detail: json.detail });
+        resolve({ aiScore: json.aiScore, factScore: json.factScore, meaning: json.meaning ?? null, zerogpt: json.zerogpt, pass: json.pass !== false, detail: json.detail });
       }));
     });
   }

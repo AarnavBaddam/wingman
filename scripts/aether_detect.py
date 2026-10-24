@@ -12,7 +12,7 @@ Prints one JSON line: {"aiScore":float, "factScore":float|null,
 The InkSplash humaniser dir (default: $INKSPLASH_DIR) supplies local_detector,
 stealth_humanizer and the optional zerogpt_detect module.
 """
-import argparse, importlib, json, os, sys
+import argparse, importlib, json, os, re, sys
 
 
 def _read(path):
@@ -20,6 +20,50 @@ def _read(path):
         return ""
     with open(path, "r", encoding="utf-8") as fh:
         return fh.read()
+
+
+_ABBR = ("Mr.", "Mrs.", "Ms.", "Dr.", "St.", "Jr.", "Sr.", "vs.", "Prof.", "Gen.")
+_OPENERS = ("“", '"', "‘", "'", "(", "[")
+
+
+def _facts(text):
+    """Numbers and names. A capitalised word counts only mid-sentence: "Yet" opening a
+    reworded sentence, or "The" opening a quotation, is not a fact (InkSplash's score
+    counted those). "Mr. Jones" still counts Jones.
+    ponytail: a name that only ever opens sentences is not counted; add spaCy NER if that matters."""
+    nums = set(re.findall(r"\b\d[\d,.]*\b", text))
+    names = set()
+    for m in re.finditer(r"\b[A-Z][a-zA-Z]+\b", text):
+        window = text[max(0, m.start() - 40):m.start()].rstrip(" \t")
+        if not window or window.endswith("\n") or window.endswith(_OPENERS):
+            continue
+        before = window.rstrip("”\"’')]")
+        words = before.split()
+        if before and before[-1] in ".!?:" and (words[-1] if words else "") not in _ABBR:
+            continue
+        names.add(m.group())
+    return nums | names
+
+
+def _fact_score(src, out):
+    want = _facts(src)
+    if not want:
+        return 1.0
+    have = set(re.findall(r"\b\d[\d,.]*\b|\b[A-Z][a-zA-Z]+\b", out))
+    return len(want & have) / len(want)
+
+
+def _meaning(fs, src, out):
+    """MiniLM similarity of the rewrite to its source; None if embeddings are unavailable.
+    MiniLM reads ~256 tokens, so paragraphs are compared pairwise when counts match."""
+    try:
+        fs._emb()
+    except Exception:  # noqa: BLE001 - no sentence-transformers: no meaning score
+        return None
+    sp = [p for p in src.split("\n") if p.strip()]
+    op = [p for p in out.split("\n") if p.strip()]
+    pairs = list(zip(sp, op)) if len(sp) == len(op) and len(sp) > 1 else [(src, out)]
+    return float(min(fs._sem_sim(a, b) for a, b in pairs))
 
 
 def main():
@@ -30,6 +74,7 @@ def main():
     ap.add_argument("--inksplash-dir", default=os.environ.get("INKSPLASH_DIR", ""))
     ap.add_argument("--ai-max", type=float, default=35.0)
     ap.add_argument("--fact-min", type=float, default=0.9)
+    ap.add_argument("--meaning-min", type=float, default=0.85)
     args = ap.parse_args()
 
     root = args.inksplash_dir
@@ -55,13 +100,15 @@ def main():
         print(json.dumps({"error": f"local detector failed: {e}"}))
         return 2
 
-    fact = None
+    fact = meaning = None
     if src.strip():
         try:
             fs = importlib.import_module("stealth_humanizer")
-            fact = float(fs._fact_score(src, out))
+            fact = _fact_score(src, out)
         except Exception:  # noqa: BLE001 - fact score is advisory
-            fact = None
+            fs = None
+        if fs is not None:
+            meaning = _meaning(fs, src, out)
 
     zg = None
     if args.zerogpt:
@@ -73,13 +120,16 @@ def main():
             zg = None
 
     verdict = (zg if zg is not None else ai)
-    passed = verdict <= args.ai_max and (fact is None or fact >= args.fact_min)
+    passed = verdict <= args.ai_max and (fact is None or fact >= args.fact_min) \
+        and (meaning is None or meaning >= args.meaning_min)
     detail = f"local {ai:.1f}%"
     if zg is not None:
         detail += f", ZeroGPT {zg:.1f}%"
     if fact is not None:
         detail += f", facts {fact*100:.0f}%"
-    print(json.dumps({"aiScore": ai, "factScore": fact, "zerogpt": zg,
+    if meaning is not None:
+        detail += f", meaning {meaning:.2f}"
+    print(json.dumps({"aiScore": ai, "factScore": fact, "meaning": meaning, "zerogpt": zg,
                       "pass": bool(passed), "detail": detail}))
     return 0
 

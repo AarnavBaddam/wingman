@@ -76,3 +76,38 @@ test('exit 5 (a quotation changed) resolves with the original text and a note', 
   assert.strictEqual(r.text, 'He said "keep me exact please".');
   assert.match(r.note, /quotation/);
 });
+
+const { createModelHumanizer, freezeQuotes, thawQuotes, HUMANIZE_SYSTEM } = require('../src/humanize');
+const fakeLLM = reply => ({ ready: true, sent: null, async stream(a) { this.sent = a; return typeof reply === 'function' ? reply(a) : reply; } });
+
+test('model humaniser: quotes reach the model as markers and come back byte-exact', async () => {
+  const llm = fakeLLM(({ turns }) => turns[0].text.replace('Orwell wrote', 'Orwell, famously, put it as').replace(' — ', ' — '));
+  const src = 'Orwell wrote “All animals are equal — but some are more equal.” in 1945.';
+  const { text, note } = await createModelHumanizer({ llm }).humanize(src);
+  assert.match(llm.sent.turns[0].text, /\[\[Q1: All animals are equal — but some are more equal\.\]\]/);
+  assert.strictEqual(llm.sent.system, HUMANIZE_SYSTEM);
+  assert.strictEqual(text, 'Orwell, famously, put it as “All animals are equal — but some are more equal.” in 1945.');
+  assert.strictEqual(note, undefined);
+});
+
+test('model humaniser keeps the original when a quote marker is lost or length balloons', async () => {
+  const src = 'He said "keep me exact please" and left the room quietly.';
+  let r = await createModelHumanizer({ llm: fakeLLM('He said something and left the room quietly, okay.') }).humanize(src);
+  assert.strictEqual(r.text, src); assert.match(r.note, /quotation/);
+  r = await createModelHumanizer({ llm: fakeLLM('x'.repeat(500)) }).humanize(src);
+  assert.strictEqual(r.text, src); assert.match(r.note, /length/);
+});
+
+test('model humaniser strips em dashes outside quotes only', async () => {
+  const src = 'It rained — a lot. She said "wait — stop" twice.';
+  const { text } = await createModelHumanizer({ llm: fakeLLM(({ turns }) => turns[0].text) }).humanize(src);
+  assert.strictEqual(text, 'It rained, a lot. She said "wait — stop" twice.');
+});
+
+test('the humaniser prompt keeps the author voice instead of imposing one', () => {
+  assert.match(HUMANIZE_SYSTEM, /Keep the author's voice/);
+  assert.doesNotMatch(HUMANIZE_SYSTEM, /college|student/i);
+  const { masked, quotes } = freezeQuotes('a "b c" d');
+  assert.strictEqual(thawQuotes(masked, quotes), 'a "b c" d');
+  assert.strictEqual(thawQuotes('a d', quotes), null);
+});
