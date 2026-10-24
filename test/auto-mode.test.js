@@ -466,9 +466,26 @@ test('type with palette symbols types ASCII runs and clicks each symbol in text 
   { execute: async a => executed.push(a.type === 'type' ? a.text : `${a.intent}@${a.x},${a.y}`) });
   await h.engine.run('Answer z');
   assert.deepEqual(executed, ['focus@10,10', '15(cos(5', 'insert@62,176', '/12))']);
-  for (const symbols of [{ a: pi }, { 'π': { x: 900, y: 1 } }, { 'ππ': pi }, {}]) {
+  for (const symbols of [{ '\n': pi }, { ' ': pi }, { 'π': { x: 900, y: 1 } }, { 'ππ': pi }, {}]) {
     assert.throws(() => parseAutoAction(JSON.stringify({ type: 'type', text: 'π', label: 'z', origin: 'calculation', symbols }), bounds));
   }
+});
+test('on-screen keypad: one type action clicks every keypad button in order, repeated digits included', async () => {
+  // User report 2026-10-24: a numpad-only form (keyboard ignored) burned the 80-step limit on 3 fields,
+  // and repeated digits (the zeros in 3000) were blocked as duplicate selection clicks.
+  const k = { '3': { x: 30, y: 30 }, '0': { x: 0, y: 40 }, '.': { x: 20, y: 40 } }, executed = [];
+  const h = harness([{ type: 'click', x: 10, y: 10, label: 'Ftens', intent: 'focus' },
+    { type: 'type', text: '30.03', label: 'Ftens', origin: 'calculation', symbols: k }, { type: 'need_input', message: 'stop' }],
+  { execute: async a => executed.push(a.type === 'type' ? a.text : `${a.intent}@${a.x},${a.y}`) });
+  await h.engine.run('Fill the form with the keypad');
+  assert.deepEqual(executed, ['focus@10,10', 'insert@30,30', 'insert@0,40', 'insert@20,40', 'insert@0,40', 'insert@30,30']);
+  // Keyboard typing that changes nothing points the model at the keypad.
+  const seen = [];
+  const typed = harness([{ type: 'click', x: 10, y: 10, label: 'm', intent: 'focus' },
+    { type: 'type', text: '250', label: 'm', origin: 'calculation' }, { type: 'need_input', message: 'stop' }],
+  { decide: async ({ observation }) => { seen.push(observation?.message); return JSON.stringify([{ type: 'click', x: 10, y: 10, label: 'm', intent: 'focus' }, { type: 'type', text: '250', label: 'm', origin: 'calculation' }, { type: 'need_input', message: 'stop' }][seen.length - 1]); } });
+  await typed.engine.run('Fill m');
+  assert.match(seen[2], /on-screen keypad/);
 });
 test('a second Submit with no answer change since the first is not sent', async () => {
   const verified = { layout: 'per-question', question: 'Q1', navigation: 'submit-answer', scroll: 'none', status: 'answer-verified' };

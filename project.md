@@ -1,5 +1,11 @@
 # Aether project state
 
+## Auto: on-screen keypad fields — 2026-10-24
+
+User report: a click-only numpad form (Physics Classroom style; keyboard ignored, "Editing answer for: m" panel) filled 3 fields wrongly (3, 2.5, 2) and hit the 80-step limit. Causes: one model step per keypad press, and back-to-back presses of one button (the zeros in 3000) were blocked by the duplicate-selection guard.
+- `type.symbols` now accepts ASCII keys (keypad buttons, max 16). One type action presses every button in text order, repeats included, with a short gap per press. AUTO_SYSTEM tells the model to use this and the pad's Clear button. Typing with no visible change now gets a feedback hint pointing at the keypad.
+- Verified: 271 tests (new keypad test); real headless Chromium page with a keyboard-blocked numpad got "3000" from one type action; `npm run pack` OK. Not yet run live with Codex on the real form.
+
 ## Write mode: Codex humaniser + Humanize button — 2026-10-23
 
 User decision: Codex (the answer provider) does both the writing and the humanising, and humanising is a button, not automatic.
