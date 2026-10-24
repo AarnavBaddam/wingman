@@ -369,10 +369,11 @@ test('vector draws from axis calibration and corrects from the tool readout', as
   assert.match(seen.at(-1).history.at(-1).message, /correction limit/);
   assert.equal(h.updates.at(-1).status, 'done');
 });
-test('double click is accepted only for select intent', () => {
+test('double click is accepted for any intent except submit', () => {
   const dbl = { type: 'click', x: 20, y: 30, label: 'Mass and weight have different units', intent: 'select', clicks: 2 };
   assert.deepEqual(parseAutoAction(JSON.stringify(dbl), bounds), dbl);
-  for (const patch of [{ intent: 'submit' }, { intent: 'navigate' }, { clicks: 3 }, { clicks: '2' }]) {
+  for (const intent of ['focus', 'navigate', 'insert']) assert.equal(parseAutoAction(JSON.stringify({ ...dbl, intent }), bounds).clicks, 2);
+  for (const patch of [{ intent: 'submit', label: 'Submit' }, { clicks: 3 }, { clicks: '2' }]) {
     assert.throws(() => parseAutoAction(JSON.stringify({ ...dbl, ...patch }), { ...bounds, allowSubmit: true }));
   }
   assert.match(AUTO_SYSTEM, /clicks 2/);
@@ -486,4 +487,29 @@ test('clear runs only on the field just focused, and typing may follow it', asyn
   await h.engine.run('Fix z');
   assert.deepEqual(executed, ['click', 'clear', 'type']);
   assert.ok(h.updates.some(u => /Clear was not performed/.test(u.message)));
+});
+
+test('"don\'t scroll" in the goal is enforced by the engine, not left to the model', async () => {
+  const seen = [], executed = [];
+  const actions = [{ type: 'scroll', x: 10, y: 10, amount: 3, label: 'page' },
+    { type: 'click', x: 20, y: 30, label: 'Next', intent: 'navigate', form: { layout: 'multi-step', question: 'Q1', navigation: 'next', scroll: 'down', status: 'answer-verified' } },
+    { type: 'done', message: 'ok' }];
+  const h = harness([], { decide: async c => { seen.push(c); return JSON.stringify(actions.shift()); }, execute: async a => executed.push(a.type) });
+  await h.engine.run("Answer the quiz. Don't scroll.");
+  assert.deepEqual(seen[0].userRules, ['Never scroll. Work only with what is visible; use need_input if something required is off screen.']);
+  assert.ok(seen[1].history.some(a => a.type === 'feedback' && /user told you not to scroll/.test(a.message)));
+  // form.scroll "down" would normally block Next; with scrolling forbidden it cannot.
+  assert.deepEqual(executed, ['click']);
+});
+
+test('"double click" in the goal upgrades every select click to clicks 2', async () => {
+  const sent = [];
+  const h = harness([{ type: 'click', x: 20, y: 30, label: 'Answer B', intent: 'select' }, { type: 'done', message: 'ok' }],
+    { execute: async a => sent.push(a) });
+  await h.engine.run('Double click each answer to mark it sure');
+  assert.equal(sent[0].clicks, 2);
+  const plain = [];
+  await harness([{ type: 'click', x: 20, y: 30, label: 'Answer B', intent: 'select' }, { type: 'done', message: 'ok' }],
+    { execute: async a => plain.push(a) }).engine.run("Answer it, don't double click");
+  assert.equal(plain[0].clicks, undefined);
 });

@@ -56,9 +56,9 @@ function createAutoSession({ getSettings, createLLM, getCodexHome, createDesktop
               return session.pendingInput;
             },
             research: (query, innerSignal) => research(query, settings, innerSignal),
-            decide: ({ goal, screen, history, sources, form, observation, allowSubmit, signal: innerSignal }) => llm.stream({
+            decide: ({ goal, userRules, screen, history, sources, form, observation, allowSubmit, signal: innerSignal }) => llm.stream({
               system: AUTO_SYSTEM,
-              turns: [{ role: 'user', text: JSON.stringify({ goal, screen: { width: screen.width, height: screen.height },
+              turns: [{ role: 'user', text: JSON.stringify({ goal, userRules, screen: { width: screen.width, height: screen.height },
                 allowSubmit, form, observation, history, sources: sources.map(source => ({ ...source, content: String(source.content || '').slice(0, 4000) })) }) }],
               imageDataUrl: screen.imageDataUrl, maxTokens: 1200, signal: innerSignal, onToken() {}
             }),
