@@ -867,6 +867,36 @@ function initializeHyprShortcut() {
   }
 }
 
+// -------- remote Auto (textAgent: `Aether --auto "goal" [--zen-url URL] [--allow-submit]`) --------
+function writeRemoteResult(result) {
+  const fs = require('fs'), dir = path.join(app.getPath('userData'), 'remote-auto');
+  try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, 'last.json'), JSON.stringify(result)); }
+  catch (error) { log('Remote Auto result write failed: ' + error.message); }
+}
+function handleRemoteAuto(argv) {
+  const remoteAuto = require('./src/remote-auto');
+  let request;
+  try { request = remoteAuto.parseRemoteAuto(argv); }
+  catch (error) { writeRemoteResult({ status: 'error', message: error.message, at: new Date().toISOString() }); return true; }
+  if (!request) return false;
+  void remoteAuto.runRemoteAuto(request, {
+    getZen: () => getZenControl(),
+    // Hands the URL to the running Zen; detached so a cold Zen start never blocks Aether.
+    openInZen: async url => { const { LD_LIBRARY_PATH, ...env } = process.env; require('child_process').spawn('/opt/zen-browser-bin/zen-bin', ['--marionette', '--new-tab', url], { detached: true, stdio: 'ignore', env }).unref(); },
+    showPanel: () => showWindow(),
+    startAutoMode,
+    waitForEnd: async () => { await autoSession?.completion; return autoSession?.status; },
+    writeResult: writeRemoteResult
+  });
+  return true;
+}
+// One Aether per desktop: a second launch shows the panel, or hands its --auto request over.
+// (Test harnesses load main.js with a stub app that lacks the lock.)
+if (typeof app.requestSingleInstanceLock === 'function') {
+  if (!app.requestSingleInstanceLock()) app.quit();
+  else app.on('second-instance', (_event, argv) => { if (!handleRemoteAuto(argv)) showWindow(); });
+}
+
 // -------- lifecycle --------
 app.whenReady().then(() => {
   // if (app.dock) app.dock.hide();
@@ -895,6 +925,9 @@ app.whenReady().then(() => {
   }
 
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+
+  // Cold start with --auto: let the panel load before starting. ponytail: fixed 3 s wait, use a renderer-ready signal if it proves flaky.
+  if (process.argv?.includes('--auto')) setTimeout(() => handleRemoteAuto(process.argv), 3000);
 
   // Keep the overlay in front of fullscreen apps: when the active app changes
   // its fullscreen state, re-assert the window level and space settings.
