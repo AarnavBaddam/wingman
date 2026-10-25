@@ -637,3 +637,22 @@ test('two inputs in a row that change nothing tell the model to switch method', 
   assert.match(seen[2], /2 inputs in a row changed nothing.*does not scroll further/);
   assert.match(seen[3], /3 inputs in a row/);
 });
+
+test('no-question pages (task lists, start screens) may navigate without verified answers', async () => {
+  const listMap = { layout: 'single-page', question: 'Tasks list; Mission NL7', navigation: 'none', scroll: 'down', status: 'no-question' };
+  assert.deepEqual(parseAutoAction(JSON.stringify({ type: 'map', ...listMap }), bounds), { type: 'map', ...listMap });
+  const start = { type: 'click', x: 30, y: 40, label: 'Start This Task', intent: 'navigate', form: listMap };
+  const h = harness([start, { type: 'need_input', message: 'Stop' }]);
+  await h.engine.run('Open mission NL7 and complete it');
+  assert.ok(h.calls.includes('click'), 'the Start click was executed');
+  // The strict rule still holds on question pages.
+  const blocked = harness([{ ...start, form: { ...listMap, status: 'incomplete', scroll: 'none' } }, { type: 'need_input', message: 'Stop' }]);
+  await blocked.engine.run('Open mission NL7 and complete it');
+  assert.ok(!blocked.calls.includes('click'), 'an incomplete question page cannot navigate');
+});
+test('no-question cannot be used to submit', async () => {
+  const listMap = { layout: 'single-page', question: 'Start page', navigation: 'submit-form', scroll: 'none', status: 'no-question' };
+  const h = harness([{ ...submit, form: listMap }, { type: 'need_input', message: 'Stop' }]);
+  await h.engine.run('Submit it', { allowSubmit: true });
+  assert.ok(!h.calls.includes('click'));
+});

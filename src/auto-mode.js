@@ -3,7 +3,7 @@ The user's goal outranks every default rule below. If it forbids an action (for 
 Return exactly one JSON object, with no prose, using one of these schemas:
 {"type":"click","x":0,"y":0,"label":"readable target","intent":"select|focus|insert|navigate|submit","clicks":1}
 {"type":"drag","x":0,"y":0,"toX":100,"toY":100,"label":"tile name to destination bin"}
-{"type":"map","layout":"single-page|multi-step|per-question|unknown","question":"current question or section","navigation":"next|submit-answer|submit-form|none|unknown","scroll":"up|down|none","status":"incomplete|answer-verified|complete"}
+{"type":"map","layout":"single-page|multi-step|per-question|unknown","question":"current question or section","navigation":"next|submit-answer|submit-form|none|unknown","scroll":"up|down|none","status":"incomplete|answer-verified|complete|no-question"}
 {"type":"type","work":"short calculation steps, before the answer","text":"printable ASCII field value","label":"field name","origin":"user|calculation|sources","citations":[1],"symbols":{"π":{"x":0,"y":0}}}
 {"type":"fill","fields":[{"x":0,"y":0,"label":"field name","text":"value","origin":"user|calculation|sources","work":"optional steps","citations":[1],"symbols":{"3":{"x":0,"y":0}},"keypad":true,"clearButton":{"x":0,"y":0}}]}
 Fastest way to enter text: when one or more empty text/number fields are visible, send ONE fill listing every visible field you can answer now (max 10), each with the center x/y of the field box itself and the same keys as type. The engine clicks each field and enters its value in order, so no separate focus click is needed. Check every value before sending; then verify all of them on the next screenshot and fix any wrong one with focus, clear (or the keypad Clear button) and type.
@@ -18,6 +18,7 @@ Vector/free-body-diagram drawing uses vector, never raw drag. Work out every for
 Other graphing questions are skipped, not attempted: plotting points, drawing lines/curves, shading regions, or choosing tools/items and placing them on a graph or drawing canvas. Solve the question yourself, then return skip with concrete instructions that name the exact values, e.g. "Pick the line tool, plot (0,2) and (3,8)." Do not click or drag inside such a graph. After skip, click Next with intent navigate to move on; if the only way forward is submitting this answer, use need_input instead. Skip and vector may carry the same optional form object as click.
 {"type":"done","message":"Draft ready for user review"}
 To select a multiple-choice answer, click its radio circle or checkbox control itself, not the answer text. Mark a form answer-verified only when the screenshot shows that marker visibly filled.
+Pages with nothing to answer (task or assignment lists, dashboards, start, intro or menu screens) get status no-question: click the link or button that leads toward the goal with intent navigate. Never map no-question while a question, answer choice or input field is visible.
 clicks is optional: 1 (default) or 2 for a double click, any intent except submit. When the user goal or the page asks for a double click (for example to mark an answer as sure/confident), send ONE click with clicks 2 on each such answer; never rely on two separate clicks. A half-filled or "unsure" mark after a single click means a double click was needed. Apply the double-click rule to every answer for the whole run.
 {"type":"need_input","message":"Missing information to ask user"}
 Coordinates are integer screenshot coordinates. Scroll amount is a nonzero integer from -5 through 5: positive scrolls down, negative scrolls up. Labels are at most 120 characters. Type text is at most 1000 printable ASCII characters, without newlines, tabs, or controls.
@@ -118,7 +119,7 @@ function parseAutoAction(text, { width, height, sourceIds = [], allowSubmit = fa
   }
   if (action.type === 'map' && (!['single-page', 'multi-step', 'per-question', 'unknown'].includes(action.layout) ||
       !string(action.question, 500) || !['next', 'submit-answer', 'submit-form', 'none', 'unknown'].includes(action.navigation) ||
-      !['up', 'down', 'none'].includes(action.scroll) || !['incomplete', 'answer-verified', 'complete'].includes(action.status))) throw new Error('Invalid form map.');
+      !['up', 'down', 'none'].includes(action.scroll) || !['incomplete', 'answer-verified', 'complete', 'no-question'].includes(action.status))) throw new Error('Invalid form map.');
   if (action.type === 'scroll' && (!Number.isInteger(action.amount) || action.amount === 0 || Math.abs(action.amount) > 5)) throw new Error('Invalid scroll amount.');
   if (action.type === 'type') {
     if (/\b(password|passcode|otp|one[ -]?time[ -]?(password|code)|api[ -]?key|access[ -]?token|credit[ -]?card|cvv|cvc)\b/i.test(action.label)) {
@@ -401,7 +402,9 @@ function createAutoMode({ capture, decide, execute, research, locate, onUpdate =
             feedback('Before submission, map the full current question and visibly verify its answer, with no unread content or outstanding input.');
             continue;
           }
-          if (action.type === 'click' && action.intent === 'navigate' && !skipCurrent && form && (form.status !== 'answer-verified' || form.scroll !== 'none')) {
+          // A page with nothing to answer (task list, start screen) has no answers to verify before moving on.
+          const noQuestion = form?.status === 'no-question' && !pendingFields.size;
+          if (action.type === 'click' && action.intent === 'navigate' && !skipCurrent && !noQuestion && form && (form.status !== 'answer-verified' || form.scroll !== 'none')) {
             feedback('Verify the current answers and update the form map before clicking Next.');
             continue;
           }

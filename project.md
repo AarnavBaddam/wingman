@@ -1,5 +1,18 @@
 # Aether project state
 
+## Auto: no-question pages may navigate — 2026-10-25
+
+Live failure (textAgent run 20261025-182555, Physics Classroom tasks list): the model correctly clicked "Start This Task" with intent navigate, but the navigate guard (`auto-mode.js`) requires status answer-verified, which a task list can never reach. 15 blocked clicks led to a stall pause, with only one screenshot taken.
+- New map status `no-question` for pages with nothing to answer (task lists, dashboards, start/intro/menu screens). A navigate click is allowed there when no field input is pending. Submit still requires answer-verified. AUTO_SYSTEM tells the model never to map no-question while a question or input is visible.
+- 2 tests. The first fails with the fix disabled (mutation-checked). 294 pass.
+
+## Remote Auto for textAgent — 2026-10-25
+
+- `Aether --auto="goal" [--zen-url=URL] [--allow-submit]` starts an Auto run in the running Aether (single-instance lock + `second-instance`), or on a cold start after 3 s. Use the `=` form: Chromium reorders a second instance's argv and can split `--name value` pairs.
+- `src/remote-auto.js`: `parseRemoteAuto` and `runRemoteAuto` (finds the Zen tab by hostname or opens it with `zen-bin --marionette --new-tab`, then starts Auto and waits for the end). Each start and end is written to `<userData>/remote-auto/last.json`. textAgent's `ai.py aether` polls that file and texts the result.
+- `test/remote-auto.test.js` (7 tests). 292 total pass. Live: second-instance handoff verified; it reports "Restart Zen with --marionette" when Zen lacks Marionette. A full Auto run on a Marionette Zen tab has not been run yet.
+- Launching from a T3/Electron child shell needs `ELECTRON_RUN_AS_NODE` unset, or the AppImage starts as plain Node and prints "bad option".
+
 ## Write mode: sentence-level humaniser — 2026-10-24
 
 Open lever from 2026-10-23 (whole-text Codex rounds only lowered the local detector 98.6% to 91.5% in 5 rounds).
