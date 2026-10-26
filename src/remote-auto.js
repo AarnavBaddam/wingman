@@ -34,13 +34,24 @@ function sameSite(tabUrl, wanted) {
 
 // Finds (or opens) the Zen tab, starts Auto, and reports start and end through writeResult.
 async function runRemoteAuto(request, { getZen, openInZen, showPanel, startAutoMode, waitForEnd, writeResult,
-  sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), waitMs = 15000 }) {
+  sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), waitMs = 20000 }) {
   const report = fields => writeResult({ ...fields, goal: request.goal, zenUrl: request.zenUrl, at: new Date().toISOString() });
   try {
     let options = { target: 'desktop', allowSubmit: request.allowSubmit };
     if (request.zenUrl) {
       const zen = getZen();
-      await zen.connect();
+      try { await zen.connect(); }
+      catch (error) {
+        // Usually Zen is closed: open the URL, which starts Zen with Marionette, then retry.
+        // A Zen already running without Marionette still fails here, with the original message.
+        await openInZen(request.zenUrl);
+        let connected = false;
+        for (let waited = 0; !connected && waited < waitMs; waited += 1000) {
+          await sleep(1000);
+          try { await zen.connect(); connected = true; } catch {}
+        }
+        if (!connected) throw error;
+      }
       const find = async () => (await zen.listTabs()).find(tab => sameSite(tab.url, request.zenUrl));
       let tab = await find();
       if (!tab) {

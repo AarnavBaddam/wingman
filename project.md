@@ -1,5 +1,29 @@
 # Aether project state
 
+## Native dropdowns in Zen — 2026-10-26
+
+- User reported the in-page cursor going underneath webpage dropdowns. Run `20261025-233014` repeatedly clicked a native sequence-definition select, then paused with its placeholder unchanged.
+- Zen now inspects a native select instead of opening its popup. Enabled labels return as untrusted page-data feedback; the next select click uses an exact `option` label at the same collapsed control. A fixed hit-test script traverses frames/open shadow roots, and WebDriver ElementClick selects the unique enabled option. Custom in-page menus retain ordinary clicks. Desktop exact-option requests fail closed.
+- Validation: 308 tests pass; localhost Playwright checked select discovery/value. Real existing Zen on an owned disposable localhost tab selected `recursive`, emitted a trusted change event, and rejected a disabled option. Only the owned QA tab was closed. No provider calls or live-form answers were sent. `npm run pack` and `npm run dist:linux` pass.
+- Updated AppImage relaunched on the existing Wayland session; compositor confirms visible Aether Dock (PID 450518). Auto remains stopped. Code graph refreshed to 1,209 nodes / 1,936 edges.
+- User explicitly confirmed publishing to the existing `wingman` origin (AarnavBaddam/wingman); authenticated repository permission is WRITE. Commit/push the reviewed Auto changes on `codex/wingman-hardening`; leave the unrelated Python bytecode and untracked root index.html untouched. No force push.
+
+## Faster cycling choices — 2026-10-25
+
+- User clarified the Physics Classroom diagram gallery was correct but too slow: one model request per click through "Choice 1 of 6". Optimize comparison latency, not answer selection logic.
+- Click intent `cycle` separates intentional cycling from protected radio/checkbox selection. Optional bounded `steps` (1–12) and screenshot `region` scan choices with fresh capture/input authorization per click, no intermediate model request. Stops on unchanged pixels, geometry change or cancellation. The model can batch the forward distance back to its selected option.
+- `src/choice-sheet.js` uses Electron nativeImage to append ordered historical diagram crops below the unscaled live screenshot. `auto-session` sends this through the existing single-image provider path and logs the sheet. No dependency or provider API changes.
+- Validation: 306 tests pass; real localhost Playwright + Electron nativeImage checked six-choice collection, wrap to target, checkbox repeat protection, no-change stop, fresh captures and unchanged live screenshot pixels. Scripted decisions only; live model speed/quality on the user's form remains unverified. `npm run pack` and `npm run dist:linux` passed.
+- Graph refreshed: 1,208 nodes / 1,935 edges. Agentmemory daemon unavailable; durable intent is saved here and in AGENTS.md. Rebuilt AppImage relaunched on the existing Wayland session; compositor confirms visible Aether Dock (PID 32769). Auto left stopped; no live provider trial. The agent shell lacked desktop variables, so the successful launch explicitly supplied the existing Wayland/runtime/Hyprland session and retained the keyring flag. No push authorized.
+
+## Auto keypad and fullscreen recovery — 2026-10-25
+
+- Keypad fill reuses a preceding focus click on the same field, preventing the second click from closing the keypad.
+- Run `20261025-190616` stopped after clicking the activity's fullscreen control: the viewport lock rejected its new size. Zen capture now adopts the current viewport before taking a new image. Input and the post-capture check still reject later geometry changes.
+- Validation: 300 tests passed; localhost Playwright entered `32` with one focus click and the keypad still visible; `npm run pack` and `npm run dist:linux` passed. The browser check uses scripted decisions, not a live model.
+- Rebuilt AppImage and resumed the existing NL7 activity in run `20261025-191420`. It stopped at step 2 with `Escape pressed`; left stopped. Live mission completion remains unconfirmed. Several copies of the mission are open; remote matching uses the first matching tab.
+- Next: resume only when requested, then inspect progress and remaining keypad/model failures. No push authorized.
+
 ## Auto: no-question pages may navigate — 2026-10-25
 
 Live failure (textAgent run 20261025-182555, Physics Classroom tasks list): the model correctly clicked "Start This Task" with intent navigate, but the navigate guard (`auto-mode.js`) requires status answer-verified, which a task list can never reach. 15 blocked clicks led to a stall pause, with only one screenshot taken.

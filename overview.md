@@ -2,7 +2,13 @@
 
 Aether is an Electron desktop app. It has a main process that can call providers and access OS APIs, and a renderer process that draws the floating panel and captures browser media tracks. `preload.js` exposes a narrow IPC bridge between them.
 
+Zen capture accepts viewport changes, including fullscreen, before a new screenshot. It checks geometry again after capture and before input so stale coordinates remain blocked. Keypad fill reuses a preceding focus click on the same field to avoid toggling its keypad closed.
+
+For native HTML dropdowns, Zen select/focus clicks read enabled option labels using a fixed hit-test script instead of opening the browser-level popup. The model selects an exact label through a click's optional `option`; WebDriver ElementClick acts on the unique enabled option, preserving native form events. The script traverses frames/open shadow roots, rejects disabled/multiple selects and ambiguous labels, and resets frame context. Custom page menus still use pointer input. Desktop mode rejects exact-option requests.
+
 ## Main files
+
+Cycling answer galleries use click intent `cycle`. Optional `steps` (1–12) plus a bounded `region` collect successive choice screenshots locally without a model call between clicks. Every input still requires a fresh capture; unchanged pixels end the batch, and geometry changes or cancellation stop it. `src/choice-sheet.js` appends historical diagram crops below the unscaled current screenshot using Electron nativeImage, so existing single-image providers can compare the options together without changing action coordinates. `auto-session.js` supplies tile order/count and steps taken; a further bounded cycle can return to the chosen option. This relies on a stationary control and prompt-guided model recognition; it does not prove semantic progress from pixel changes.
 
 | Path | Role |
 |---|---|

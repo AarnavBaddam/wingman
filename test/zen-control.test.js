@@ -9,6 +9,18 @@ function png(width = 800, height = 600) {
   data.writeUInt32BE(13, 8); data.write('IHDR', 12); data.writeUInt32BE(width, 16); data.writeUInt32BE(height, 20);
   return data.toString('base64');
 }
+test('native dropdown inspection avoids popup input and option selection uses ElementClick', async t => {
+  const { control, commands } = await fixture(t, (name, params) => {
+    if (params.sandbox === 'aether-select') return params.args[2] === null ?
+      { dropdown: ['explicit', 'recursive'] } : { option: { 'element-6066-11e4-a52e-4f735466cecf': 'option-recursive' } };
+  });
+  const target = await control.lockTarget('tab-a'); await control.capture(target);
+  assert.deepEqual(await control.execute(target, { type: 'click', x: 20, y: 30, intent: 'select' }), { dropdown: ['explicit', 'recursive'] });
+  assert(!commands.some(c => c.name === 'WebDriver:PerformActions'));
+  await control.capture(target);
+  await control.execute(target, { type: 'click', x: 20, y: 30, intent: 'select', option: 'recursive' });
+  assert.deepEqual(commands.find(c => c.name === 'WebDriver:ElementClick').params, { id: 'option-recursive' });
+});
 test('drag holds the pointer through scaled intermediate moves and releases it', async t => {
   const { control, commands } = await fixture(t);
   const target = await control.lockTarget('tab-a'); await control.capture(target);
@@ -36,6 +48,50 @@ test('cancellation during drag drains the gesture and releases the held pointer'
   await assert.rejects(control.execute(target, { type: 'drag', x: 10, y: 10, toX: 200, toY: 200 }, aborter.signal), { name: 'AbortError' });
   assert.equal(commands.at(-1).name, 'WebDriver:ReleaseActions');
 });
+test('a click that opens a new tab moves the lock to that tab', async t => {
+  let tabs = ['tab-a', 'tab-b'];
+  const { control, commands } = await fixture(t, (name, params) => {
+    if (name === 'WebDriver:GetWindowHandles') return tabs;
+    if (name === 'WebDriver:PerformActions' && params.actions[0].type === 'pointer') tabs = ['tab-a', 'tab-b', 'tab-new'];
+  }, { followNewTabMs: 1000 });
+  const target = await control.lockTarget('tab-a'); await control.capture(target);
+  await control.execute(target, { type: 'click', x: 10, y: 10, label: 'Start This Task', intent: 'navigate' });
+  commands.length = 0;
+  await control.capture(target);
+  assert.equal(commands.find(c => c.name === 'WebDriver:SwitchToWindow').params.handle, 'tab-new');
+});
+test('ordinary clicks and ambiguous new tabs keep the locked tab', async t => {
+  let tabs = ['tab-a', 'tab-b'];
+  const { control, commands } = await fixture(t, (name, params) => {
+    if (name === 'WebDriver:GetWindowHandles') return tabs;
+    if (name === 'WebDriver:PerformActions' && params.actions[0].type === 'pointer') tabs = [...tabs, `x${tabs.length}`, `y${tabs.length}`];
+  }, { followNewTabMs: 500 });
+  const target = await control.lockTarget('tab-a'); await control.capture(target);
+  await control.execute(target, { type: 'click', x: 10, y: 10, label: 'Answer A', intent: 'select' });
+  await control.capture(target);
+  await control.execute(target, { type: 'click', x: 10, y: 10, label: 'Next', intent: 'navigate' });
+  commands.length = 0;
+  await control.capture(target);
+  assert.equal(commands.find(c => c.name === 'WebDriver:SwitchToWindow').params.handle, 'tab-a');
+});
+test('a click that reloads the page retries input release once instead of failing', async t => {
+  let releases = 0;
+  const { control, commands } = await fixture(t, name => {
+    if (name === 'WebDriver:ReleaseActions' && ++releases === 1) return { __error: 'Browsing context has been discarded' };
+  });
+  const target = await control.lockTarget('tab-a'); await control.capture(target);
+  await control.execute(target, { type: 'click', x: 10, y: 10, label: 'Start Sudden Death', intent: 'select' });
+  assert.equal(releases, 2);
+  const names = commands.map(c => c.name);
+  const first = names.indexOf('WebDriver:ReleaseActions');
+  assert.ok(names.slice(first + 1).includes('WebDriver:SwitchToWindow'), 'reselects the tab before retrying');
+  // A failure on the retry is still fatal.
+  let again = 0;
+  const strict = await fixture(t, name => { if (name === 'WebDriver:ReleaseActions') { again++; return { __error: 'gone' }; } });
+  const t2 = await strict.control.lockTarget('tab-a'); await strict.control.capture(t2);
+  await assert.rejects(strict.control.execute(t2, { type: 'click', x: 10, y: 10, label: 'x', intent: 'select' }), /release failed/);
+  assert.equal(again, 2);
+});
 async function fixture(t, override = () => undefined, options = {}) {
   const commands = [], cursorCalls = [], sockets = new Set(); let current = 'tab-a';
   const frame = value => { const json = JSON.stringify(value); return Buffer.from(`${Buffer.byteLength(json)}:${json}`); };
@@ -57,6 +113,7 @@ async function fixture(t, override = () => undefined, options = {}) {
         commands.push({ name, params });
         const changed = override(name, params, commands);
         if (changed === 'hang') continue;
+        if (changed?.__error) { socket.write(frame([1, id, { error: 'no such window', message: changed.__error }, null])); continue; }
         let result = changed;
         if (result === undefined) {
           if (name === 'WebDriver:GetWindowHandles') result = ['tab-a', 'tab-b'];
@@ -64,7 +121,7 @@ async function fixture(t, override = () => undefined, options = {}) {
           else if (name === 'WebDriver:GetWindowHandle') result = current;
           else if (name === 'WebDriver:GetTitle') result = 'Form café';
           else if (name === 'WebDriver:GetCurrentURL') result = 'https://example.com/form';
-          else if (name === 'WebDriver:ExecuteScript') result = params.sandbox === 'aether-drag' ? { handled: false } : params.sandbox === 'aether-drag-hover' ? { hovered: true } : params.args.length ? { scrolled: true } : { width: 400, height: 300, dpr: 2 };
+          else if (name === 'WebDriver:ExecuteScript') result = params.sandbox === 'aether-select' ? null : params.sandbox === 'aether-drag' ? { handled: false } : params.sandbox === 'aether-drag-hover' ? { hovered: true } : params.args.length ? { scrolled: true } : { width: 400, height: 300, dpr: 2 };
           else if (name === 'WebDriver:TakeScreenshot') result = png();
           else result = {};
         }
@@ -101,6 +158,26 @@ test('requires a real target and fresh screenshot for each action and scales scr
   await assert.rejects(control.execute(target, { type: 'click', x: 200, y: 100 }), /Capture/);
   await assert.rejects(control.lockTarget('missing'), /closed|available/i);
   await assert.rejects(control.capture({ ...target }), /Lock/);
+});
+test('capture accepts resized viewports but input still rejects geometry changed after capture', async t => {
+  let view = { width: 400, height: 300, dpr: 2 };
+  const { control, commands } = await fixture(t, (name, params) => {
+    if (name === 'WebDriver:ExecuteScript' && params.sandbox === 'aether-viewport') return view;
+    if (name === 'WebDriver:TakeScreenshot') return png(view.width * view.dpr, view.height * view.dpr);
+  });
+  const target = await control.lockTarget('tab-a');
+  await control.capture(target);
+  view = { width: 1000, height: 700, dpr: 1 };
+  const image = await control.capture(target);
+  assert.deepEqual([image.width, image.height], [1000, 700]);
+  await control.execute(target, { type: 'click', x: 900, y: 650 });
+  const pointer = commands.find(c => c.name === 'WebDriver:PerformActions').params.actions[0];
+  assert.deepEqual([pointer.actions[0].x, pointer.actions[0].y], [900, 650]);
+  await control.capture(target);
+  view = { width: 900, height: 600, dpr: 1 };
+  const inputs = commands.filter(c => c.name === 'WebDriver:PerformActions').length;
+  await assert.rejects(control.execute(target, { type: 'click', x: 10, y: 10 }), /changed/);
+  assert.equal(commands.filter(c => c.name === 'WebDriver:PerformActions').length, inputs);
 });
 test('rejects bounds, non-ASCII, changed geometry and stale targets without input', async t => {
   let resized = false, removed = false;

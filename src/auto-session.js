@@ -63,14 +63,15 @@ function createAutoSession({ getSettings, createLLM, getCodexHome, createDesktop
             // Zen reads keypad button positions from the page; desktop has no page to read.
             locate: desktop.findButtons ? (keys, innerSignal) => desktop.findButtons(target, keys, innerSignal) : undefined,
             research: (query, innerSignal) => research(query, settings, innerSignal),
-            decide: async ({ goal, userRules, knownButtons, screen, history, sources, form, observation, allowSubmit, signal: innerSignal }) => {
+            decide: async ({ goal, userRules, knownButtons, screen, choices, history, sources, form, observation, allowSubmit, signal: innerSignal }) => {
+              const imageDataUrl = choices ? require('./choice-sheet').choiceSheet(screen, choices) : screen.imageDataUrl;
               let image = null;
-              try { image = session.log?.image(screen.imageDataUrl); } catch {}
+              try { image = session.log?.image(imageDataUrl); } catch {}
               const response = await llm.stream({
               system: AUTO_SYSTEM,
               turns: [{ role: 'user', text: JSON.stringify({ goal, userRules, screen: { width: screen.width, height: screen.height },
-                allowSubmit, form, observation, knownButtons: Object.keys(knownButtons || {}).length ? knownButtons : undefined, history, sources: sources.map(source => ({ ...source, content: String(source.content || '').slice(0, 4000) })) }) }],
-              imageDataUrl: screen.imageDataUrl, maxTokens: 1200, signal: innerSignal, onToken() {}
+                allowSubmit, form, observation, choices: choices ? { count: choices.images.length, stepsTaken: choices.stepsTaken, order: 'Historical tiles below the live screenshot, left to right, then top to bottom. Tile 1 is the starting choice.' } : undefined, knownButtons: Object.keys(knownButtons || {}).length ? knownButtons : undefined, history, sources: sources.map(source => ({ ...source, content: String(source.content || '').slice(0, 4000) })) }) }],
+              imageDataUrl, maxTokens: 1200, signal: innerSignal, onToken() {}
               });
               record({ kind: 'decide', image, observation, form, response });
               return response;

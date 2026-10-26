@@ -69,3 +69,15 @@ test('desktop target when no url is given', async () => {
   await runRemoteAuto({ goal: 'g', zenUrl: null, allowSubmit: false }, h.d);
   assert.deepEqual(h.started[0].options, { target: 'desktop', allowSubmit: false });
 });
+
+test('starts Zen when it is closed, then connects and uses the opened tab', async () => {
+  let up = false, tabs = [];
+  const h = deps({ d: {
+    getZen: () => ({ connect: async () => { if (!up) throw new Error('Zen automation unavailable. Restart Zen with --marionette and retry.'); },
+                     listTabs: async () => tabs }),
+    openInZen: async url => { h.opened.push(url); up = true; tabs = [{ id: 'z1', url: url + '/' }]; } } });
+  await runRemoteAuto({ goal: 'g', zenUrl: 'https://a.com', allowSubmit: false }, h.d);
+  assert.deepEqual(h.opened, ['https://a.com'], 'opened once to start Zen, not again for the tab');
+  assert.equal(h.started[0].options.tabId, 'z1');
+  assert.deepEqual(h.results.map(r => r.status), ['running', 'done']);
+});

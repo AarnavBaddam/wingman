@@ -2,6 +2,24 @@ const net = require('node:net');
 
 const MAX_FRAME = 40 * 1024 * 1024;
 const VIEWPORT_SCRIPT = 'return {width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio};';
+// Native select popups live outside the page's pointer/screenshot surface. Read their
+// options here, then use WebDriver ElementClick on an exact option, never set value.
+const SELECT_SCRIPT = `
+const [x,y,label]=arguments;
+let el=document.elementFromPoint(x,y);
+for(let n=0;n<20 && el?.shadowRoot?.elementFromPoint;n++) {const child=el.shadowRoot.elementFromPoint(x,y);if(!child||child===el)break;el=child;}
+if(el?.localName==='iframe'||el?.localName==='frame') {
+ const r=el.getBoundingClientRect();return {frame:el,x:(x-r.left)/(r.width/el.offsetWidth)-el.clientLeft,y:(y-r.top)/(r.height/el.offsetHeight)-el.clientTop};
+}
+const select=el?.closest('select');
+if(!select) {if(label!==null)throw Error('No native dropdown at that point');return null;}
+if(select.disabled||select.multiple)throw Error('Disabled or multiple-selection dropdown requires user review');
+const options=[...select.options].filter(o=>!o.disabled&&!o.closest('optgroup[disabled]')&&!o.hidden);
+if(options.length>200)throw Error('Dropdown has too many options; user review required');
+if(label===null)return {dropdown:options.map(o=>o.label.trim()).filter(Boolean)};
+const matches=options.filter(o=>o.label.trim()===label);
+if(matches.length!==1)throw Error('Dropdown option missing, disabled or ambiguous');
+return {option:matches[0]};`;
 // Gecko's native wheel default action does not scroll hidden tabs. Only this
 // fixed, bounded hit-test script scrolls; click and keyboard input remain native.
 const SCROLL_SCRIPT = `
@@ -143,7 +161,7 @@ if(!host){
 host.style.transform='translate('+x+'px,'+y+'px)';
 if(mode==='click')host.querySelector('[data-ring]')?.animate([{transform:'scale(.6)',opacity:.9},{transform:'scale(1.8)',opacity:0}],{duration:450,easing:'ease-out',fill:'forwards'});
 return true;`;
-function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, connectSocket = options => net.createConnection(options) } = {}) {
+function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, followNewTabMs = 1500, connectSocket = options => net.createConnection(options) } = {}) {
   if (host !== '127.0.0.1' || !Number.isInteger(port) || port < 1 || port > 65535 || !Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 30000) throw new Error('Zen automation requires a bounded loopback connection.');
   let socket = null, buffer = Buffer.alloc(0), pending = null, greeting = null, serial = Promise.resolve(), nextId = 0, ready = false;
   const targets = new WeakMap();
@@ -226,12 +244,14 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
     if (!view || ![view.width, view.height].every(n => Number.isSafeInteger(n) && n > 0 && n <= 32768) || !Number.isFinite(view.dpr) || view.dpr < 0.25 || view.dpr > 8) throw new Error('Zen viewport unavailable.');
     return view;
   }
-  async function validate(target, signal) {
+  async function validate(target, signal, refreshView = false) {
     cancelled(signal);
     const state = targets.get(target);
     if (!state) throw new Error('Lock an exact Zen tab first.');
-    await select(target.id, signal);
+    await select(tabOf(target), signal);
     const view = await viewport(signal);
+    // Only a new capture may adopt resized geometry; input must use the captured viewport.
+    if (refreshView) state.view = view;
     if (view.width !== state.view.width || view.height !== state.view.height || view.dpr !== state.view.dpr) throw new Error('Zen viewport changed. Select the tab and start again.');
     return state;
   }
@@ -250,11 +270,24 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
     await select(id, signal); const view = await viewport(signal);
     const width = Math.floor(view.width * view.dpr), height = Math.floor(view.height * view.dpr);
     const target = Object.freeze({ id, width, height, size: Object.freeze([width, height]) });
-    targets.set(target, { view, fresh: false }); return target;
+    targets.set(target, { view, fresh: false, handle: id }); return target;
+  }
+  // The tab a target currently follows. It starts as the locked tab and moves when a click opens a new one.
+  function tabOf(target) { return targets.get(target)?.handle ?? target.id; }
+  // Links that open in a new tab (target=_blank) leave the locked tab unchanged, so the run would
+  // keep seeing the old page. After a navigate/submit click, move the lock to exactly one new tab.
+  async function followNewTab(target, before, signal) {
+    const state = targets.get(target);
+    for (let waited = 0; state && waited < followNewTabMs; waited += 250) {
+      await new Promise(resolve => setTimeout(resolve, 250)); cancelled(signal);
+      const added = (await handles(signal)).filter(handle => !before.includes(handle));
+      if (added.length > 1) return;  // ambiguous: stay on the locked tab
+      if (added.length === 1) { await select(added[0], signal); state.handle = added[0]; return; }
+    }
   }
   async function capture(target, signal) {
     const previous = targets.get(target); if (previous) previous.fresh = false;
-    const state = await validate(target, signal);
+    const state = await validate(target, signal, true);
     // The model must see the page, not Aether's own cursor.
     await cursor('hide');
     let encoded;
@@ -303,8 +336,11 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
     const point = (x, y) => [x / state.scale, y / state.scale];
     const pointed = state?.fresh && ['click', 'drag', 'scroll'].includes(action?.type) && [action.x, action.y].every(Number.isFinite);
     if (pointed) await cursor('move', ...point(action.x, action.y));
+    const follow = followNewTabMs > 0 && action?.type === 'click' && ['navigate', 'submit'].includes(action.intent);
+    const before = follow ? await handles(signal) : null;
     const result = await act(target, action, signal);
     if (pointed && action.type === 'click') await cursor('click', ...point(action.x, action.y));
+    if (follow) await followNewTab(target, before, signal);
     if (pointed && action.type === 'drag') await cursor('move', ...point(action.toX, action.toY));
     return result;
   }
@@ -324,6 +360,29 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
     }
     let attempted = false;
     try {
+      if (action.type === 'click' && (['select', 'focus'].includes(action.intent) || 'option' in action)) {
+        await validate(target, signal);
+        if ('option' in action && (action.intent !== 'select' || typeof action.option !== 'string' || !action.option.trim() || action.option.length > 200 || (action.clicks || 1) !== 1)) throw new Error('Invalid dropdown option action.');
+        let x = action.x / state.scale, y = action.y / state.scale;
+        try {
+          for (let depth = 0; depth < 5; depth++) {
+            const result = await command('WebDriver:ExecuteScript', { script: SELECT_SCRIPT, args: [x, y, action.option ?? null], newSandbox: true, sandbox: 'aether-select' }, signal);
+            if (result?.frame) {
+              if (depth === 4 || ![result.x, result.y].every(Number.isFinite)) throw new Error('Zen dropdown frame depth or coordinates unsupported.');
+              await command('WebDriver:SwitchToFrame', { element: result.frame }, signal); x = result.x; y = result.y;
+            } else {
+              if (Array.isArray(result?.dropdown)) return result;
+              if (result?.option) {
+                const id = result.option['element-6066-11e4-a52e-4f735466cecf'];
+                if (typeof id !== 'string') throw new Error('Invalid dropdown option reference.');
+                await command('WebDriver:ElementClick', { id }, signal); return;
+              }
+              if ('option' in action) throw new Error('Native dropdown option unavailable.');
+              break;
+            }
+          }
+        } finally { if (socket) await command('WebDriver:SwitchToFrame', { id: null }); }
+      }
       if (action.type === 'drag') {
         await validate(target, signal);
         let points = [action.x, action.y, action.toX, action.toY].map(n => n / state.scale);
@@ -406,7 +465,15 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
       if (attempted) {
         try {
           if (!socket) throw new Error('Zen connection closed during input.');
-          await command('WebDriver:ReleaseActions');
+          try { await command('WebDriver:ReleaseActions'); }
+          catch (error) {
+            // A click that reloads the page (Physics Classroom "Start Marathon Mode") can drop the old
+            // document under the release. The click itself completed; retry once on the reloaded tab.
+            if (action.type === 'drag' || !socket) throw error;
+            await new Promise(resolve => setTimeout(resolve, 500));
+            await select(tabOf(target));
+            await command('WebDriver:ReleaseActions');
+          }
         }
         catch (error) { const failure = new Error('Zen input release failed. Reconnect before continuing.', { cause: error }); failure.code = 'INPUT_CLEANUP'; fail(failure); throw failure; }
       }
@@ -429,7 +496,7 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
   // call, printable ASCII or Backspace () only, never a model-chosen key.
   // The pacing (delays, typos, gaps) is decided upstream in src/typing-plan.js.
   // ponytail: reselects the tab only via focusTab; if the user switches tabs
-  // mid-write, add a periodic select(target.id) inside this loop.
+  // mid-write, add a periodic select(tabOf(target)) inside this loop.
   async function writeKey(target, token, signal) {
     requireReady(); cancelled(signal);
     if (!targets.has(target)) throw new Error('Lock an exact Zen tab first.');
@@ -438,7 +505,7 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
   }
   async function focusTab(target, signal) {
     requireReady(); if (!targets.has(target)) throw new Error('Lock an exact Zen tab first.');
-    await select(target.id, signal);
+    await select(tabOf(target), signal);
   }
   return {
     connect: signal => enqueue(() => connectInternal(signal)),
@@ -450,7 +517,7 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
     writeKey: (target, token, signal) => enqueue(() => writeKey(target, token, signal)),
     focusTab: (target, signal) => enqueue(() => focusTab(target, signal)),
     // Run end: take the second cursor off the page.
-    release: target => enqueue(async () => { if (targets.has(target)) { try { await select(target.id); } catch { return; } await cursor('remove'); } }),
+    release: target => enqueue(async () => { if (targets.has(target)) { try { await select(tabOf(target)); } catch { return; } await cursor('remove'); } }),
     // Dropping the transport releases Marionette's session; never Quit/DeleteSession.
     close: () => enqueue(() => { ready = false; const connection = socket; socket = null; connection?.destroy(); })
   };

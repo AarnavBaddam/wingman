@@ -94,6 +94,7 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
     cancelled(signal);
     if (!authorized) throw new Error('Capture the locked target before acting.');
     if (!action || !['click', 'type', 'scroll', 'drag', 'clear'].includes(action.type)) throw new Error('Unsupported desktop action.');
+    if ('option' in action) throw new Error('Exact dropdown selection requires Zen tab mode.');
     if (action.type === 'clear') {
       if (!helperEnv.YDOTOOL_SOCKET) throw new Error('Configure the ydotool socket before desktop input.');
       await validate(target, signal);

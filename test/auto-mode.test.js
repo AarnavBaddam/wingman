@@ -4,6 +4,20 @@ const { parseAutoAction, createAutoMode, AUTO_SYSTEM } = require('../src/auto-mo
 const bounds = { width: 800, height: 600, sourceIds: [3] };
 const click = { type: 'click', x: 20, y: 30, label: 'Name field', intent: 'focus' };
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
+test('native dropdown options can be selected after inspection at the same point', async () => {
+  const inspect = { ...click, intent: 'select', label: 'Sequence definition' };
+  const choose = { ...inspect, option: 'recursive' };
+  assert.deepEqual(parseAutoAction(JSON.stringify(choose), bounds), choose);
+  for (const patch of [{ intent: 'submit' }, { clicks: 2 }, { option: '' }]) {
+    assert.throws(() => parseAutoAction(JSON.stringify({ ...choose, ...patch }), bounds));
+  }
+  const contexts = [], actions = [inspect, choose, { type: 'done', message: 'Review' }];
+  const h = harness([], { decide: async c => { contexts.push(c); return JSON.stringify(actions.shift()); },
+    execute: async a => { h.calls.push(a.type); return a.option ? undefined : { dropdown: ['explicit', 'recursive'] }; } });
+  await h.engine.run('Choose recursive');
+  assert.equal(h.calls.filter(c => c === 'click').length, 2);
+  assert(contexts[1].history.some(a => a.type === 'feedback' && /recursive/.test(a.message)));
+});
 test('drag accepts bounded endpoints and rejects malformed destinations', () => {
   const drag = { type: 'drag', x: 100, y: 100, toX: 300, toY: 400, label: 'Weight to acts on car' };
   assert.deepEqual(parseAutoAction(JSON.stringify(drag), bounds), drag);
@@ -130,6 +144,77 @@ test('identical Next clicks on changed pages are progress, not a repetition fail
   await h.engine.run('Move through pages');
   assert.equal(h.calls.filter(c=>c==='click').length,3);
   assert.equal(h.updates.at(-1).status,'done');
+});
+
+test('cycle clicks advance the same control across fresh changed screens', async () => {
+  const cycle = { ...click, intent: 'cycle', label: 'Direction arrow' };
+  assert.deepEqual(parseAutoAction(JSON.stringify(cycle), bounds), cycle);
+  assert.throws(() => parseAutoAction(JSON.stringify({ ...cycle, clicks: 2 }), bounds));
+  assert.throws(() => parseAutoAction(JSON.stringify({ ...cycle, label: 'Submit answer' }), bounds));
+  let frames = 0;
+  const h = harness([cycle, cycle, cycle, { type: 'done', message: 'Target direction visible' }], {
+    capture: async () => ({ ...bounds, imageDataUrl: 'frame' + (++frames) })
+  });
+  await h.engine.run('Cycle the arrow to the target direction');
+  assert.equal(h.calls.filter(c => c === 'click').length, 3);
+  assert.equal(frames, 4);
+  assert.equal(h.updates.at(-1).status, 'done');
+});
+
+test('cycle clicks still stop when the control does not change', async () => {
+  const cycle = { ...click, intent: 'cycle', label: 'Direction arrow' };
+  const h = harness([cycle, cycle, cycle, cycle]);
+  await h.engine.run('Cycle the arrow to the target direction');
+  assert.equal(h.calls.filter(c => c === 'click').length, 2);
+  assert.equal(h.updates.at(-1).status, 'paused');
+  assert.match(h.updates.at(-1).message, /unchanged screen/);
+});
+
+test('cycle scan collects choices without a model call per click and keeps captures fresh', async () => {
+  const scan = { ...click, intent: 'cycle', label: 'Next diagram', steps: 5,
+    region: { x: 10, y: 10, width: 300, height: 300 } };
+  assert.deepEqual(parseAutoAction(JSON.stringify(scan), bounds), scan);
+  for (const patch of [{ steps: 13 }, { steps: 0 }, { steps: 1.5 }, { intent: 'select' },
+    { region: { x: 700, y: 0, width: 300, height: 300 } }]) {
+    assert.throws(() => parseAutoAction(JSON.stringify({ ...scan, ...patch }), bounds));
+  }
+  let frames = 0, fresh = false;
+  const contexts = [];
+  const actions = [scan, { type: 'done', message: 'Compared six choices' }];
+  const h = harness([], {
+    capture: async () => { fresh = true; return { ...bounds, imageDataUrl: 'frame' + ++frames }; },
+    execute: async a => { assert(fresh); fresh = false; h.calls.push(a.type); },
+    decide: async c => { contexts.push(c); return JSON.stringify(actions.shift()); }
+  });
+  await h.engine.run('Compare the six diagrams');
+  assert.equal(h.calls.filter(c => c === 'click').length, 5);
+  assert.equal(contexts.length, 2);
+  assert.equal(contexts[1].choices.images.length, 6);
+  assert.deepEqual(contexts[1].choices.region, scan.region);
+});
+
+test('cycle scan stops immediately when an input changes nothing', async () => {
+  const scan = { ...click, intent: 'cycle', steps: 5, region: { x: 0, y: 0, width: 100, height: 100 } };
+  const contexts = [], actions = [scan, { type: 'done', message: 'Review blocked control' }];
+  const h = harness([], { decide: async c => { contexts.push(c); return JSON.stringify(actions.shift()); } });
+  await h.engine.run('Inspect options');
+  assert.equal(h.calls.filter(c => c === 'click').length, 1);
+  assert.equal(contexts[1].choices.images.length, 1);
+});
+
+test('cycle scans stop on cancellation and changed geometry before further clicks', async () => {
+  const scan = { ...click, intent: 'cycle', steps: 5, region: { x: 0, y: 0, width: 100, height: 100 } };
+  for (const cancel of [true, false]) {
+    let captures = 0, inputs = 0;
+    const h = harness([scan], {
+      capture: async () => ({ width: ++captures > 1 && !cancel ? 700 : 800, height: 600, imageDataUrl: 'frame' + captures }),
+      execute: async () => { inputs++; if (cancel) h.engine.stop(); }
+    });
+    if (cancel) await h.engine.run('Inspect choices');
+    else await assert.rejects(h.engine.run('Inspect choices'), /geometry changed/);
+    assert.equal(inputs, 1);
+    assert.equal(h.updates.at(-1).status, cancel ? 'stopped' : 'error');
+  }
 });
 
 test('a verified map can accompany the submission action in one model response', async () => {
@@ -655,4 +740,20 @@ test('no-question cannot be used to submit', async () => {
   const h = harness([{ ...submit, form: listMap }, { type: 'need_input', message: 'Stop' }]);
   await h.engine.run('Submit it', { allowSubmit: true });
   assert.ok(!h.calls.includes('click'));
+});
+
+test('fill does not re-click a keypad field the previous step focused (a second click closes the keypad)', async () => {
+  const io = strictIO();
+  const page = { '3': { x: 300, y: 300 }, '2': { x: 200, y: 200 } };
+  const acts = [{ type: 'click', x: 50, y: 50, label: 'Answer field', intent: 'focus' },
+    { type: 'fill', fields: [{ x: 51, y: 50, label: 'Answer field', text: '32', origin: 'calculation', keypad: true }] },
+    { type: 'done', message: 'ok' }];
+  const h = harness(acts, { ...io, locate: async chars => Object.fromEntries(chars.filter(c => page[c]).map(c => [c, page[c]])) });
+  await h.engine.run('Fill');
+  assert.deepEqual(io.executed, ['focus@50,50', 'insert@300,300', 'insert@200,200']);
+  // Without a prior focus click, fill still opens the keypad itself.
+  const io2 = strictIO();
+  const h2 = harness([acts[1], acts[2]], { ...io2, locate: async chars => Object.fromEntries(chars.filter(c => page[c]).map(c => [c, page[c]])) });
+  await h2.engine.run('Fill');
+  assert.deepEqual(io2.executed, ['focus@51,50', 'insert@300,300', 'insert@200,200']);
 });
