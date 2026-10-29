@@ -95,7 +95,7 @@ function parseAutoAction(text, { width, height, sourceIds = [], allowSubmit = fa
     vector: ['type', 'label', 'magnitude', 'angle', 'origin', 'tick', 'readout', 'tip', 'form'],
     fill: ['type', 'fields', 'form'],
     done: ['type', 'message', 'form'], skip: ['type', 'question', 'instructions', 'form'], need_input: ['type', 'message'],
-    map: ['type', 'layout', 'question', 'navigation', 'scroll', 'status']
+    map: ['type', 'layout', 'question', 'navigation', 'scroll', 'status', 'surface']
   };
   const allowed = schemas[action.type];
   if (!allowed || Object.keys(action).some(key => !allowed.includes(key))) throw new Error('Unsupported Auto action or properties.');
@@ -130,7 +130,11 @@ function parseAutoAction(text, { width, height, sourceIds = [], allowSubmit = fa
     if (/\b(submit|send)\b/i.test(action.label) && action.intent !== 'submit') throw new Error('Submission requires intent submit.');
     if (action.intent === 'submit' && allowSubmit !== true) throw new Error('Form submission is not enabled for this run.');
   }
-  if (action.type === 'map' && (!['single-page', 'multi-step', 'per-question', 'unknown'].includes(action.layout) ||
+  if (action.type === 'map' && 'surface' in action && !SURFACES.includes(action.surface)) throw new Error('Invalid surface.');
+  // A classification-only map (document/generic surfaces) carries surface + status, no form fields.
+  if (action.type === 'map' && !('layout' in action) && !('navigation' in action) && !('scroll' in action)) {
+    if (!string(action.question, 500) || !['incomplete', 'complete', 'no-question'].includes(action.status)) throw new Error('Invalid surface map.');
+  } else if (action.type === 'map' && (!['single-page', 'multi-step', 'per-question', 'unknown'].includes(action.layout) ||
       !string(action.question, 500) || !['next', 'submit-answer', 'submit-form', 'none', 'unknown'].includes(action.navigation) ||
       !['up', 'down', 'none'].includes(action.scroll) || !['incomplete', 'answer-verified', 'complete', 'no-question'].includes(action.status))) throw new Error('Invalid form map.');
   if (action.type === 'scroll' && (!Number.isInteger(action.amount) || action.amount === 0 || Math.abs(action.amount) > 5)) throw new Error('Invalid scroll amount.');
@@ -193,6 +197,18 @@ function parseAutoAction(text, { width, height, sourceIds = [], allowSubmit = fa
   return action;
 }
 
+// Behaviour profiles. The model classifies the surface on its first map; the user's
+// goal can name it in plain text and override the classifier entirely.
+const SURFACES = ['form', 'document', 'spreadsheet', 'app', 'webpage', 'unknown'];
+const surfaceToProfile = surface => surface === 'form' ? 'form' : surface === 'document' ? 'document' : 'generic';
+// Explicit surface words in the goal win over classification. Null = let the model classify.
+function profileFromText(goal) {
+  const g = String(goal).toLowerCase();
+  if (/\bg(?:oogle)?\s*doc(?:s|ument)?\b|\bgdoc\b|\bword\s+doc(?:ument)?\b|\bdocument\b/.test(g)) return 'document';
+  if (/\bforms?\b|\bquiz(?:zes)?\b|\bsurveys?\b|\bworksheets?\b/.test(g)) return 'form';
+  return null;
+}
+
 // Instructions in the goal that the engine enforces itself, so they hold even when
 // the model falls back on its defaults (user report 2026-10-23: "don't scroll" and
 // "double click" were ignored).
@@ -230,6 +246,9 @@ function createAutoMode({ capture, decide, execute, research, locate, onUpdate =
       let knownButtons = {};
       let choices = null;
       const userRules = goalRules(goal);
+      // Plain-text surface word wins; otherwise 'unknown' makes the model classify first.
+      const forcedProfile = profileFromText(goal);
+      let profile = forcedProfile || 'unknown', profileAnnounced = false;
       const normalizeLabel = label => label.trim().replace(/\s+/g, ' ').toLowerCase();
       const remember = action => { history.push(action); history = history.slice(-20); };
       const feedback = message => {
@@ -328,7 +347,7 @@ function createAutoMode({ capture, decide, execute, research, locate, onUpdate =
             }[kind] || 'Pick a different action, or use need_input if you are blocked.');
           }
           check(); update('deciding', 'Choosing the next step.');
-          const response = await operation(() => decide({ goal: goal.trim(), userRules: userRules.rules, knownButtons: { ...knownButtons }, screen, choices, form: form && { ...form }, observation, allowSubmit: allowSubmit === true, history: [...history], sources: [...sources], signal }));
+          const response = await operation(() => decide({ goal: goal.trim(), profile, userRules: userRules.rules, knownButtons: { ...knownButtons }, screen, choices, form: form && { ...form }, observation, allowSubmit: allowSubmit === true, history: [...history], sources: [...sources], signal }));
           choices = null;
           check();
           let action;
@@ -341,6 +360,16 @@ function createAutoMode({ capture, decide, execute, research, locate, onUpdate =
             continue;
           }
           if (action.form) form = { type: 'map', ...action.form };
+          // Classify, say it, proceed: the model's surface switches the behaviour profile,
+          // unless the user already named one in plain text. Announced once.
+          const surface = action.surface || action.form?.surface;
+          if (surface && !forcedProfile) profile = surfaceToProfile(surface);
+          // Say it, then proceed — but only when diverging from the normal form path, so
+          // ordinary form runs stay quiet.
+          if (!profileAnnounced && profile !== 'unknown' && profile !== 'form') {
+            update('deciding', `Surface looks like a ${surface || profile}. Proceeding as ${profile}.`);
+            profileAnnounced = true;
+          }
           if (userRules.noScroll) {
             // Nothing is unread when the user forbids scrolling: what is visible is the whole task.
             if (form) form = { ...form, scroll: 'none' };
@@ -413,17 +442,23 @@ function createAutoMode({ capture, decide, execute, research, locate, onUpdate =
             feedback('Submit was already clicked and no answer changed since. The page is probably still loading: do not click Submit again. Inspect the screen and act only on what changed.');
             continue;
           }
-          if (action.type === 'click' && action.intent === 'submit' &&
-              (!form || form.status !== 'answer-verified' || form.scroll !== 'none' ||
-               !['submit-answer', 'submit-form'].includes(form.navigation) || pendingFields.size)) {
-            feedback('Before submission, map the full current question and visibly verify its answer, with no unread content or outstanding input.');
-            continue;
-          }
-          // A page with nothing to answer (task list, start screen) has no answers to verify before moving on.
-          const noQuestion = form?.status === 'no-question' && !pendingFields.size;
-          if (action.type === 'click' && action.intent === 'navigate' && !skipCurrent && !noQuestion && form && (form.status !== 'answer-verified' || form.scroll !== 'none')) {
-            feedback('Verify the current answers and update the form map before clicking Next.');
-            continue;
+          // Form gating: a graded form must be mapped and visibly verified before Submit/Next.
+          // It stays on until the surface is positively a document/generic one (those have no
+          // form map, so the checks would deadlock them). An unclassified surface keeps the
+          // legacy form safety until proven otherwise.
+          if (profile !== 'document' && profile !== 'generic') {
+            if (action.type === 'click' && action.intent === 'submit' &&
+                (!form || form.status !== 'answer-verified' || form.scroll !== 'none' ||
+                 !['submit-answer', 'submit-form'].includes(form.navigation) || pendingFields.size)) {
+              feedback('Before submission, map the full current question and visibly verify its answer, with no unread content or outstanding input.');
+              continue;
+            }
+            // A page with nothing to answer (task list, start screen) has no answers to verify before moving on.
+            const noQuestion = form?.status === 'no-question' && !pendingFields.size;
+            if (action.type === 'click' && action.intent === 'navigate' && !skipCurrent && !noQuestion && form && (form.status !== 'answer-verified' || form.scroll !== 'none')) {
+              feedback('Verify the current answers and update the form map before clicking Next.');
+              continue;
+            }
           }
           let drawn = null;
           if (action.type === 'vector') {
@@ -605,4 +640,4 @@ function createAutoMode({ capture, decide, execute, research, locate, onUpdate =
     }
   };
 }
-module.exports = { AUTO_SYSTEM, parseAutoAction, createAutoMode, isBlankFrame, goalRules };
+module.exports = { AUTO_SYSTEM, parseAutoAction, createAutoMode, isBlankFrame, goalRules, profileFromText, surfaceToProfile, SURFACES };
