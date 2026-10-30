@@ -817,5 +817,7 @@ test('a response with stray closing braces is accepted; other junk is not', () =
   const ok = JSON.stringify({ type: 'click', x: 1, y: 2, label: 'Energy transfer arrow', intent: 'cycle' });
   assert.equal(parseAutoAction(ok + '}}', bounds).label, 'Energy transfer arrow');
   assert.throws(() => parseAutoAction(ok + '{"type":"done"}', bounds));
-  assert.throws(() => parseAutoAction(JSON.stringify({ type: 'click', x: 1, y: 2, label: 'Wire transfer funds', intent: 'select' }), bounds));
+  // Only "energy transfer" is carved out of the money-transfer guard; every other transfer stays blocked.
+  for (const label of ['Wire transfer funds', 'Transfer', 'Confirm transfer', 'Transfer $50']) assert.throws(() => parseAutoAction(JSON.stringify({ type: 'click', x: 1, y: 2, label, intent: 'select' }), bounds));
+  assert.equal(parseAutoAction(JSON.stringify({ type: 'click', x: 1, y: 2, label: 'energy-transfer arrows', intent: 'cycle' }), bounds).intent, 'cycle');
 });

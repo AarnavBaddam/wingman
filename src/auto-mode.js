@@ -120,7 +120,7 @@ function parseAutoAction(text, { width, height, sourceIds = [], allowSubmit = fa
   }
   if (action.type === 'drag' && (!Number.isInteger(action.toX) || action.toX < 0 || action.toX >= width ||
       !Number.isInteger(action.toY) || action.toY < 0 || action.toY >= height)) throw new Error('Drag destination is outside the screen.');
-  if (['drag', 'vector'].includes(action.type) && /\b(submit|send|pay|payment|purchase|buy|delete|remove|publish|checkout|(?:wire|bank|money|funds?)\s+transfer|transfer\s+(?:money|funds?)|sign\s+in|log\s+in)\b/i.test(action.label)) throw new Error('Drag is only supported for answer manipulation.');
+  if (['drag', 'vector'].includes(action.type) && /\b(submit|send|pay|payment|purchase|buy|delete|remove|publish|checkout|(?<!energy[\s-])transfer|sign\s+in|log\s+in)\b/i.test(action.label)) throw new Error('Drag is only supported for answer manipulation.');
   if (action.type === 'click') {
     if (!['select', 'cycle', 'focus', 'insert', 'navigate', 'submit'].includes(action.intent)) throw new Error('Invalid click intent.');
     if ('clicks' in action && action.clicks !== 1 && !(action.clicks === 2 && action.intent !== 'submit')) throw new Error('clicks must be 1 or 2, and Submit is never double clicked.');
@@ -134,7 +134,7 @@ function parseAutoAction(text, { width, height, sourceIds = [], allowSubmit = fa
           r.width < 1 || r.height < 1 || r.x + r.width > width || r.y + r.height > height) throw new Error('Cycle scans need 1–12 steps and a bounded choice region.');
     }
     // Labels are a defense against obvious final actions, not a guarantee about screen semantics.
-    if (/\b(pay|payment|purchase|buy|delete|remove|publish|checkout|place\s+order|confirm\s+(order|purchase|payment)|(?:wire|bank|money|funds?)\s+transfer|transfer\s+(?:money|funds?)|sign\s+in|log\s+in)\b/i.test(action.label)) throw new Error('Sensitive actions require user review.');
+    if (/\b(pay|payment|purchase|buy|delete|remove|publish|checkout|place\s+order|confirm\s+(order|purchase|payment|transfer)|(?<!energy[\s-])transfer|sign\s+in|log\s+in)\b/i.test(action.label)) throw new Error('Sensitive actions require user review.');
     if (/\b(submit|send)\b/i.test(action.label) && action.intent !== 'submit') throw new Error('Submission requires intent submit.');
     if (action.intent === 'submit' && allowSubmit !== true) throw new Error('Form submission is not enabled for this run.');
   }
