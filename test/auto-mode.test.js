@@ -769,7 +769,7 @@ test('Continue on the result page right after a submit is allowed without a veri
 test('adjust presses each stepper the requested number of times from one decision, fresh capture per press', async () => {
   const adjust = { type: 'adjust', taps: [{ x: 10, y: 20, label: 'Initial Eg up', times: 2 }, { x: 30, y: 20, label: 'Final Eint up', times: 1 }] };
   assert.deepEqual(parseAutoAction(JSON.stringify(adjust), bounds), adjust);
-  for (const taps of [[], [{ ...adjust.taps[0], times: 0 }], [{ ...adjust.taps[0], times: 11 }], [{ ...adjust.taps[0], label: 'Submit' }], [{ ...adjust.taps[0], x: 800 }]]) {
+  for (const taps of [[], [{ ...adjust.taps[0], times: 0 }], [{ ...adjust.taps[0], times: 11 }], [{ ...adjust.taps[0], label: 'Submit' }], [{ ...adjust.taps[0], x: 800 }], [{ ...adjust.taps[0], times: 10 }, { ...adjust.taps[1], times: 10 }, { ...adjust.taps[1], times: 1 }]]) {
     assert.throws(() => parseAutoAction(JSON.stringify({ ...adjust, taps }), bounds));
   }
   const sent = [];
