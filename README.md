@@ -71,7 +71,7 @@ Screen capture on native Hyprland requires `grim` on PATH (`sudo pacman -S --nee
 
 ### Auto mode: click, type and scroll
 
-Auto mode controls the focused desktop app on macOS 14+ or native Hyprland with Lua support, and needs a vision-capable provider. On Hyprland it requires `hyprctl`, `grim`, `ydotool` and a running ydotool daemon/socket. On macOS the bundled `macdotool` replaces all three; grant Accessibility and Screen Recording. On macOS, Escape is reserved as a global shortcut while Auto runs. Other desktops and Windows are unsupported.
+Auto mode controls the focused desktop app on macOS 14+ or native Hyprland with Lua support, and needs a vision-capable provider. On Hyprland it requires `hyprctl`, `grim`, `ydotool` and a running ydotool daemon/socket. On macOS the bundled `macdotool` replaces all three; grant Accessibility and Screen Recording. It runs as a persistent daemon, with eased cursor moves, so one `fill` enters every visible text field in a single model turn. On macOS, Escape is reserved as a global shortcut while Auto runs. Other desktops and Windows are unsupported.
 
 Move Aether clear of the target fields, type a specific task in its input, and click **Auto**. Focus the target app within the three-second countdown. Auto reads that window, chooses one action, performs it, and reads the result before continuing. Press **Escape** anywhere or click **Stop Auto** to cancel. Changing target focus/geometry, opening Aether settings, hiding/reloading Aether, or losing the Escape connection stops the task. Each run is limited to 20 decisions and three minutes; each decision can consume provider allowance.
 

@@ -4,6 +4,7 @@ Return exactly one JSON object, with no prose, using one of these schemas:
 {"type":"drag","x":0,"y":0,"toX":100,"toY":100,"label":"tile name to destination bin"}
 {"type":"map","layout":"single-page|multi-step|per-question|unknown","question":"current question or section","navigation":"next|submit-answer|submit-form|none|unknown","scroll":"up|down|none","status":"incomplete|answer-verified|complete"}
 {"type":"type","text":"printable ASCII field value","label":"field name","origin":"user|calculation|sources","citations":[1]}
+{"type":"fill","fields":[{"x":0,"y":0,"label":"field name","text":"value","origin":"user|calculation|sources","citations":[1]}]}
 {"type":"scroll","x":0,"y":0,"amount":-2,"label":"scroll area"}
 {"type":"research","query":"factual question"}
 For sorting, matching, ranking, sliders, or draggable answer tiles, use drag rather than repeated clicks. x/y is the center of the item or handle; toX/toY is a clear point inside the destination. Both must be visible in the current screenshot; scroll first if necessary. Move one item per action, then inspect the fresh screenshot to verify it landed in the intended bin or position. Track placements in history, use current tile positions after layout changes, and do not repeat a successful drop. Verify all required placements before Next/Submit. Drag may carry the same optional form object as click. Drag is for answer manipulation only, never submission or sensitive actions.
@@ -12,7 +13,7 @@ For sorting, matching, ranking, sliders, or draggable answer tiles, use drag rat
 Coordinates are integer screenshot coordinates. Scroll amount is a nonzero integer from -5 through 5: positive scrolls down, negative scrolls up. Labels are at most 120 characters. Type text is at most 1000 printable ASCII characters, without newlines, tabs, or controls.
 For a form, first map its visible structure. Determine whether it shows all questions, multiple sections with Next, or one question with Submit answer. Do not assume a button called Submit ends the form: read nearby instructions and progress. Unknown details stay unknown until observed. If the question/options are cut off, scroll with overlapping views to read the whole question before answering. Use the persistent form map and history; remap after navigation or a changed question. A map describes what you SEE, not what you expect.
 Prefer including an optional form object on a click, type, scroll, or done response instead of spending a separate turn mapping. The form object contains layout, question, navigation, scroll, and status with the same values as the map schema, but without type. It describes the current screenshot BEFORE the action. For example, return a verified form map together with the Next/Submit click after visually verifying the selected answer. Use standalone map only when no action is ready. Do not keep returning an unchanged map. After selecting an answer, inspect it once, then find Next/Submit; scroll down to locate navigation outside the view. Never select the same checked option again merely to verify it.
-Before typing EACH field, click it with intent focus, then use the identical label for typing. Typing appends text: use an empty field; if replacement is needed, use need_input. Any typing, scrolling, selection, or navigation requires a new field focus click before further typing. Use action history to track fields already entered and options selected. Complete the currently visible field, then scroll the screen yourself to review earlier fields and options that are offscreen. Do not ask the user to supply screenshots merely because a field is offscreen. After answering, inspect a fresh screenshot and map status answer-verified only when the entered value or selected option is visible and correct. Then click Next with intent navigate, or Submit with intent submit. Read validation errors and recover rather than skipping a question. Do not click the same radio/checkbox again if already selected.
+Fastest way to enter text: when empty text fields are visible, send ONE fill listing every visible field you can answer now (1 to 10), each with the center x/y of the field box itself and the same keys as type, instead of spending a focus click turn and a type turn per field. The engine clicks each field and enters its value in order. Verify all values on the next screenshot. Otherwise, before typing EACH field, click it with intent focus, then use the identical label for typing. Typing appends text: use an empty field; if replacement is needed, use need_input. Any typing, scrolling, selection, or navigation requires a new field focus click before further typing. Use action history to track fields already entered and options selected. Complete the currently visible field, then scroll the screen yourself to review earlier fields and options that are offscreen. Do not ask the user to supply screenshots merely because a field is offscreen. After answering, inspect a fresh screenshot and map status answer-verified only when the entered value or selected option is visible and correct. Then click Next with intent navigate, or Submit with intent submit. Read validation errors and recover rather than skipping a question. Do not click the same radio/checkbox again if already selected.
 The trusted allowSubmit flag controls submission. If false, stop with done for user review before any Submit/Send action, including submitting one answer. If true, you may submit answers and the final form for this run. Never use intent navigate to disguise submission. After final submission, inspect the next screenshot and map status complete ONLY for a visible success/receipt/thank-you confirmation. A button click or vanished form alone does not prove success. Never claim done while still awaiting confirmation. Never publish, pay, purchase, delete, confirm orders, enter passwords, answer CAPTCHA/security challenges, supply payment details, or invent personal information. Use need_input when information or safe direction is missing.
 Observation feedback reports whether pixels changed after the last action. Unchanged pixels can mean a missed click, scroll boundary, or no visible focus change. Inspect the target and retry carefully; never assume the next question loaded. Coordinates always refer to the current cropped image, not the whole display. Choose the center of the actual control.
 Research informational factual questions before choosing or typing answers. User-given values and calculations may be used directly. For origin sources, citations must list supporting supplied source number IDs; keep citations separate from the entered field text. Other origins must omit citations. Source IDs identify supplied evidence; their presence does not guarantee that the evidence supports a claim. No keyboard shortcuts, shell, or evaluation actions.`;
@@ -29,7 +30,7 @@ function parseAutoAction(text, { width, height, sourceIds = [], allowSubmit = fa
     click: ['type', 'x', 'y', 'label', 'intent', 'form'], type: ['type', 'text', 'label', 'origin', 'citations', 'form'],
     scroll: ['type', 'x', 'y', 'amount', 'label', 'form'], research: ['type', 'query'],
     drag: ['type', 'x', 'y', 'toX', 'toY', 'label', 'form'],
-    done: ['type', 'message', 'form'], need_input: ['type', 'message'],
+    fill: ['type', 'fields', 'form'], done: ['type', 'message', 'form'], need_input: ['type', 'message'],
     map: ['type', 'layout', 'question', 'navigation', 'scroll', 'status']
   };
   const allowed = schemas[action.type];
@@ -72,6 +73,16 @@ function parseAutoAction(text, { width, height, sourceIds = [], allowSubmit = fa
           action.citations.some(id => !Number.isInteger(id) || !sourceIds.includes(id)) ||
           new Set(action.citations).size !== action.citations.length) throw new Error('Source text must cite supplied sources.');
     } else if ('citations' in action) throw new Error('Only source text may include citations.');
+  }
+  if (action.type === 'fill') {
+    if (!Array.isArray(action.fields) || !action.fields.length || action.fields.length > 10) throw new Error('fill needs 1 to 10 fields.');
+    // Each field is a type action plus the point of the field to click first.
+    action.fields = action.fields.map(field => {
+      if (!field || typeof field !== 'object' || Array.isArray(field)) throw new Error('Invalid fill field.');
+      const { x, y, ...rest } = field;
+      if (!Number.isInteger(width) || !Number.isInteger(height) || !Number.isInteger(x) || x < 0 || x >= width || !Number.isInteger(y) || y < 0 || y >= height) throw new Error('Fill field coordinates are outside the screen.');
+      return { ...parseAutoAction(JSON.stringify({ ...rest, type: 'type' }), { width, height, sourceIds, allowSubmit }), x, y };
+    });
   }
   if (action.type === 'research' && !string(action.query, 1000)) throw new Error('Invalid research query.');
   if (['done', 'need_input'].includes(action.type) && !string(action.message, 1000)) throw new Error('Invalid action message.');
@@ -116,11 +127,11 @@ function createAutoMode({ capture, decide, execute, research, onUpdate = () => {
             .finally(() => signal.removeEventListener('abort', abort));
         });
       }
-      function settleDelay() {
-        if (!delay) return Promise.resolve();
+      function settleDelay(ms = delay) {
+        if (!ms) return Promise.resolve();
         return new Promise((resolve, reject) => {
           const abort = () => { clearTimeout(wait); signal.removeEventListener('abort', abort); reject(signal.reason); };
-          const wait = setTimeout(() => { signal.removeEventListener('abort', abort); resolve(); }, delay);
+          const wait = setTimeout(() => { signal.removeEventListener('abort', abort); resolve(); }, ms);
           signal.addEventListener('abort', abort, { once: true });
           if (signal.aborted) abort();
         });
@@ -161,6 +172,11 @@ function createAutoMode({ capture, decide, execute, research, onUpdate = () => {
             feedback(duplicateSelection ?
               'No repeated input was sent. This selection was already clicked. Inspect whether it is selected; if correct, verify it and find Next/Submit, scrolling down if necessary. If the click missed, inspect the actual control and correct its coordinates.' :
               `No repeated input was sent. The ${action.type} response repeated on an unchanged screen. Inspect the last result; use a different action to make progress. Do not remap an unchanged question; locate Next/Submit or scroll to find navigation. Use need_input only if genuinely blocked.`);
+            continue;
+          }
+          if (action.type === 'fill' && pendingFields.size && action.fields.some(field => !pendingFields.has(normalizeLabel(field.label)))) {
+            focusedLabel = null;
+            feedback('Fill was not performed because another field label is still outstanding.');
             continue;
           }
           if (action.type === 'type' && pendingFields.size && !pendingFields.has(normalizeLabel(action.label))) {
@@ -221,8 +237,17 @@ function createAutoMode({ capture, decide, execute, research, onUpdate = () => {
             // Keep earlier evidence and its IDs intact for actions already in history.
             sources = [...sources, ...additions];
           } else {
-            update('acting', action.type === 'type' ? 'Entering a draft field value.' : action.type === 'click' ? 'Selecting the next target.' : action.type === 'drag' ? 'Dragging an answer to its destination.' : 'Scrolling the screen.', { action });
-            await operation(() => execute(action, signal));
+            update('acting', action.type === 'fill' ? `Filling ${action.fields.length} field${action.fields.length > 1 ? 's' : ''}.` : action.type === 'type' ? 'Entering a draft field value.' : action.type === 'click' ? 'Selecting the next target.' : action.type === 'drag' ? 'Dragging an answer to its destination.' : 'Scrolling the screen.', { action });
+            if (action.type === 'fill') {
+              // Executors take one input per fresh screenshot: capture, click, capture, type per field.
+              for (const [i, field] of action.fields.entries()) {
+                if (i) { await settleDelay(Math.min(delay, 60)); await operation(() => capture(signal)); check(); }
+                await operation(() => execute({ type: 'click', x: field.x, y: field.y, label: field.label, intent: 'focus' }, signal)); check();
+                await settleDelay(Math.min(delay, 60)); await operation(() => capture(signal)); check();
+                await operation(() => execute({ type: 'type', text: field.text, label: field.label, origin: field.origin }, signal)); check();
+                pendingFields.delete(normalizeLabel(field.label));
+              }
+            } else await operation(() => execute(action, signal));
             check();
             previousImage = screen.imageDataUrl; previousAction = action;
             if (action.type === 'click' && ['navigate', 'submit'].includes(action.intent)) {

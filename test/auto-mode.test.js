@@ -314,3 +314,66 @@ test('malformed model output receives bounded correction without executing it', 
   await assert.rejects(bad.engine.run('Fill form'), /JSON/);
   assert.equal(bad.calls.filter(c=>c==='capture').length,3);
 });
+const fillField = (label, x, y, extra = {}) => ({ x, y, label, text: 'v ' + label, origin: 'user', ...extra });
+test('fill parses 1-10 bounded fields with type rules per field', () => {
+  const ok = { type: 'fill', fields: [fillField('Name', 5, 6), fillField('Fact', 7, 8, { origin: 'sources', citations: [3] })] };
+  const parsed = parseAutoAction(JSON.stringify(ok), bounds);
+  assert.deepEqual(parsed.fields.map(f => [f.x, f.y, f.label]), [[5, 6, 'Name'], [7, 8, 'Fact']]);
+  const many = Array.from({ length: 11 }, (_, i) => fillField('F' + i, 1, 1));
+  for (const action of [
+    { type: 'fill', fields: [] }, { type: 'fill', fields: many }, { type: 'fill' }, { type: 'fill', fields: [fillField('A', 800, 1)] },
+    { type: 'fill', fields: [fillField('A', 1.5, 1)] }, { type: 'fill', fields: [fillField('A', 1, 1, { text: 'é' })] },
+    { type: 'fill', fields: [fillField('A', 1, 1, { origin: 'sources' })] }, { type: 'fill', fields: [fillField('A', 1, 1, { origin: 'sources', citations: [9] })] },
+    { type: 'fill', fields: [fillField('A', 1, 1, { origin: 'calculation', citations: [3] })] }, { type: 'fill', fields: [fillField('A', 1, 1, { keypad: true })] },
+    { type: 'fill', fields: [fillField('A', 1, 1, { text: 'x'.repeat(1001) })] }, { type: 'fill', fields: ['x'] }, { type: 'fill', fields: [fillField('A', 1, 1)], extra: 1 }
+  ]) assert.throws(() => parseAutoAction(JSON.stringify(action), bounds));
+  assert.throws(() => parseAutoAction(JSON.stringify({ type: 'fill', fields: [fillField('Name', 1, 1), fillField('Password', 2, 2)] }), bounds), { code: 'AUTO_SENSITIVE_INPUT' });
+  assert.match(AUTO_SYSTEM, /ONE fill/);
+});
+test('fill expands to capture, focus click, capture, type per field with short settles', async () => {
+  const executed = [], seen = [];
+  const actions = [{ type: 'fill', fields: [fillField('Name', 5, 6), fillField('City', 7, 8)] }, { type: 'done', message: 'Review' }];
+  const h = harness([], { delay: 100, decide: async c => { seen.push(c); return JSON.stringify(actions.shift()); },
+    execute: async a => { h.calls.push(a.type); executed.push(a); } });
+  const started = Date.now();
+  await h.engine.run('Fill the form');
+  assert.deepEqual(h.calls, ['capture', 'click', 'capture', 'type', 'capture', 'click', 'capture', 'type', 'capture']);
+  assert.deepEqual(executed.map(a => [a.type, a.label, a.intent, a.text]), [
+    ['click', 'Name', 'focus', undefined], ['type', 'Name', undefined, 'v Name'], ['click', 'City', 'focus', undefined], ['type', 'City', undefined, 'v City']]);
+  assert.equal(seen[1].observation.action, 'fill');
+  assert(Date.now() - started >= 280);
+});
+test('fill stops at the first failing step and aborts without further input', async () => {
+  const executed = [];
+  const h = harness([{ type: 'fill', fields: [fillField('Name', 5, 6), fillField('City', 7, 8)] }],
+    { execute: async a => { executed.push(a.type); if (executed.length === 2) throw new Error('boom'); } });
+  await assert.rejects(h.engine.run('Fill'), /boom/);
+  assert.deepEqual(executed, ['click', 'type']);
+  const controller = new AbortController(), seen = [];
+  const g = harness([{ type: 'fill', fields: [fillField('A', 1, 1), fillField('B', 2, 2)] }],
+    { execute: async a => { seen.push(a.type); controller.abort(); } });
+  await g.engine.run('Fill', { signal: controller.signal });
+  assert.deepEqual(seen, ['click']);
+  assert.equal(g.updates.at(-1).status, 'stopped');
+});
+test('fill with a sensitive field pauses without input, and outstanding pending labels gate fill', async () => {
+  const executed = [];
+  const h = harness([{ type: 'fill', fields: [fillField('Password', 1, 1)] }], { execute: async a => executed.push(a.type) });
+  await h.engine.run('Fill');
+  assert.deepEqual(executed, []);
+  assert.equal(h.updates.at(-1).status, 'paused');
+  const seen = [];
+  const actions = [{ type: 'type', text: 'x', label: 'Name', origin: 'user' }, { type: 'fill', fields: [fillField('Other', 1, 1)] }, { type: 'done', message: 'r' }];
+  const g = harness([], { maxSteps: 3, decide: async c => { seen.push(c); return JSON.stringify(actions.shift()); }, execute: async a => executed.push(a.type) });
+  await g.engine.run('Fill');
+  assert.deepEqual(executed, []);
+  assert.ok(seen.at(-1).history.some(a => a.type === 'feedback' && /Fill was not performed/.test(a.message)));
+});
+test('fill clears pending field tracking so done is accepted', async () => {
+  const actions = [{ type: 'type', text: 'x', label: 'Name', origin: 'user' }, { type: 'fill', fields: [fillField('Name', 1, 1)] }, { type: 'done', message: 'r' }];
+  const executed = [];
+  const h = harness([], { decide: async () => JSON.stringify(actions.shift()), execute: async a => executed.push(a.type) });
+  await h.engine.run('Fill');
+  assert.deepEqual(executed, ['click', 'type']);
+  assert.equal(h.updates.at(-1).status, 'done');
+});

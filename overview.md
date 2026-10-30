@@ -22,6 +22,7 @@ Aether is an Electron desktop app. It has a main process that can call providers
 | `src/auto-mode.js` | Validates one desktop action per observation, tracks evidence and field focus, and bounds decisions/time. |
 | `src/auto-session.js` | Owns countdown, selected provider, cancellation, progress and input teardown before releasing the busy lock. |
 | `src/desktop-control.js` | Locks a native Hyprland window, captures its crop, and executes bounded ydotool click/type/scroll input. |
+| `packages/macdotool/` | macOS ydotool counterpart: Swift CLI plus `serve` daemon (`client.js`) with eased cursor moves. `desktop-control.js` uses it on macOS. |
 | `src/zen-control.js` | Connects to existing Zen through loopback Marionette, locks a selected tab, captures its viewport and sends browser-native pointer/key actions without using the desktop cursor. |
 | `src/hypr-auto-stop.js` | Installs an owned, non-consuming Escape binding; stops Auto on disconnect or compositor reload. |
 | `src/library.js`, `data/library.json` | Loads and searches the bundled, attributed reference library. |

@@ -1,7 +1,12 @@
 const { spawn } = require('node:child_process');
+const macdaemon = require('../packages/macdotool/client');
 
 const MAX_BUFFER = 40 * 1024 * 1024;
 const ownClass = value => /^(?:dev\.prahladv\.aether(?:\.desktop)?|aether|wingman)$/i.test(value);
+// Fitts-like cursor travel time (ms) for the macOS smooth move: longer trips take a little longer, capped.
+const smoothMs = distance => Math.round(Math.min(90, 25 + 10 * Math.log2(1 + distance / 40)));
+// Minimum-jerk position fraction, so drags accelerate and settle like a hand.
+const minJerk = t => t * t * t * (10 - 15 * t + 6 * t * t);
 const cancelled = signal => { if (signal?.aborted) { const error = new Error('Desktop action cancelled.'); error.name = 'AbortError'; throw error; } };
 
 // No shell, bounded binary output, and stdin rather than command arguments for text.
@@ -35,7 +40,7 @@ function run(command, args, options) {
   });
 }
 
-function createDesktopControl({ env = process.env, pid = process.pid, call = run, platform = process.platform,
+function createDesktopControl({ env = process.env, pid = process.pid, platform = process.platform, call = platform === 'darwin' ? macdaemon.call : run,
   macdotool = platform === 'darwin' ? require('../packages/macdotool').binaryPath() : 'macdotool' } = {}) {
   const locked = new WeakMap();
   const mac = platform === 'darwin';
@@ -43,8 +48,8 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
   const inputTool = mac ? macdotool : 'ydotool';
   const helperEnv = mac ? env : { ...env, YDOTOOL_SOCKET: env.YDOTOOL_SOCKET || (env.XDG_RUNTIME_DIR ? `${env.XDG_RUNTIME_DIR}/.ydotool_socket` : '') };
   const query = (what, signal) => mac ? invoke(macdotool, [what], signal) : invoke('hyprctl', ['-j', what], signal);
-  async function moveCursor(x, y, signal) {
-    if (mac) { await invoke(macdotool, ['mousemove', '--absolute', '-x', String(x), '-y', String(y)], signal); return; }
+  async function moveCursor(x, y, signal, smooth = []) {
+    if (mac) { await invoke(macdotool, ['mousemove', '--absolute', '-x', String(x), '-y', String(y), ...smooth], signal); return; }
     const response = await invoke('hyprctl', ['eval', `hl.dispatch(hl.dsp.cursor.move({x=${x},y=${y}}))`], signal);
     if (String(response).trim() !== 'ok') throw new Error('Hyprland cursor move failed.');
   }
@@ -117,7 +122,7 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
       // Small chunks bound text sent if focus changes during a helper call.
       for (let offset = 0; offset < action.text.length; offset += 8) {
         await validate(target, signal);
-        await input(['type', '--key-delay', '2', '--key-hold', '2', '--file', '-'], { input: action.text.slice(offset, offset + 8) });
+        await input(mac ? ['type', '--key-delay', '1', '--key-hold', '1', '-e', '0', '--file', '-'] : ['type', '--key-delay', '2', '--key-hold', '2', '--file', '-'], { input: action.text.slice(offset, offset + 8) });
       }
       return;
     }
@@ -140,7 +145,14 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
     }
     await checkPoint();
     await validate(target, signal);
-    await moveCursor(x, y, signal);
+    let smooth = [];
+    if (mac) {
+      let ms = 40;
+      try { const p = JSON.parse(String(await query('cursorpos', signal))); const d = Math.hypot(x - p.x, y - p.y); if (Number.isFinite(d)) ms = smoothMs(d); }
+      catch { cancelled(signal); }
+      smooth = ['--smooth', String(ms)];
+    }
+    await moveCursor(x, y, signal, smooth);
     await checkPoint();
     await validate(target, signal);
     if (action.type === 'drag') {
@@ -148,11 +160,11 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
       const endY = Math.min(target.size[1] - 1, Math.round(action.toY));
       await input(['click', '0x40']);
       for (let i = 1; i <= 12; i++) {
-        const px = Math.round(x + (target.at[0] + endX - x) * i / 12);
-        const py = Math.round(y + (target.at[1] + endY - y) * i / 12);
+        const px = Math.round(mac ? x + (target.at[0] + endX - x) * minJerk(i / 12) : x + (target.at[0] + endX - x) * i / 12);
+        const py = Math.round(mac ? y + (target.at[1] + endY - y) * minJerk(i / 12) : y + (target.at[1] + endY - y) * i / 12);
         await checkPoint(px, py); await validate(target, signal);
-        await moveCursor(px, py, signal);
-        await new Promise(resolve => setTimeout(resolve, 40));
+        await moveCursor(px, py, signal, mac ? ['--smooth', '16', '--ease', 'linear'] : []);
+        if (!mac) await new Promise(resolve => setTimeout(resolve, 40));
       }
       await checkPoint(target.at[0] + endX, target.at[1] + endY);
       await validate(target, signal);
@@ -204,4 +216,4 @@ function createDesktopControl({ env = process.env, pid = process.pid, call = run
   return { lockTarget, capture, execute };
 }
 
-module.exports = { createDesktopControl };
+module.exports = { createDesktopControl, smoothMs };

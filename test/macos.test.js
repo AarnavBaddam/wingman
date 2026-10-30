@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const { EventEmitter, once } = require('node:events');
 const { PassThrough } = require('node:stream');
 const { execFileSync } = require('node:child_process');
-const { createDesktopControl } = require('../src/desktop-control');
+const { createDesktopControl, smoothMs } = require('../src/desktop-control');
 const { createMacActivityWatcher } = require('../src/mac-activity');
 const { createMacAutoStop } = require('../src/mac-auto-stop');
 const { binaryPath } = require('../packages/macdotool');
@@ -36,13 +36,13 @@ test('macOS desktop control uses macdotool for window, capture, cursor and ydoto
   assert(h.calls.every(c => c.command === '/app/macdotool'));
   assert.deepEqual(h.calls.map(c => c.args), [
     ['activewindow'], ['activewindow'], ['capture', '-g', '100,50 800x600'], ['activewindow'],
-    ['clients'], ['activewindow'], ['mousemove', '--absolute', '-x', '110', '-y', '70'], ['clients'], ['activewindow'],
+    ['clients'], ['activewindow'], ['cursorpos'], ['mousemove', '--absolute', '-x', '110', '-y', '70', '--smooth', '40'], ['clients'], ['activewindow'],
     ['debug'], ['activewindow'], ['click', '0xC0']
   ]);
   await h.control.capture(target);
   await h.control.execute(target, { type: 'type', text: 'hi there' });
   const typed = h.calls.at(-1);
-  assert.deepEqual(typed.args, ['type', '--key-delay', '2', '--key-hold', '2', '--file', '-']);
+  assert.deepEqual(typed.args, ['type', '--key-delay', '1', '--key-hold', '1', '-e', '0', '--file', '-']);
   assert.equal(typed.options.input, 'hi there');
 });
 
@@ -55,6 +55,53 @@ test('macOS input failure releases only the mouse button and keycode 0, with Acc
   assert.deepEqual(h.calls.slice(-2).map(c => c.args), [['click', '0x80'], ['key', '--key-delay', '0', '0:0']]);
   // No ydotool socket is needed on macOS.
   assert(!h.calls.some(c => c.command === 'ydotool'));
+});
+
+test('smoothMs grows with distance and is capped', () => {
+  assert.equal(smoothMs(0), 25);
+  assert.equal(smoothMs(40), 35);
+  assert(smoothMs(500) > smoothMs(100));
+  assert.equal(smoothMs(1e9), 90);
+});
+
+test('macOS click smooths by distance from cursorpos and falls back to 40 when it is garbage', async () => {
+  const h = macHarness();
+  const seen = [];
+  const mk = pos => createDesktopControl({ pid: 99, platform: 'darwin', macdotool: '/app/macdotool', env: {}, call: async (command, args) => {
+    seen.push(args);
+    return { stdout: args[0] === 'capture' ? png(800, 600) : args[0] === 'activewindow' ? JSON.stringify(h.window) : args[0] === 'clients' ? '[]' : args[0] === 'cursorpos' ? pos : '' };
+  } });
+  const control = mk(JSON.stringify({ x: 110, y: 70 + 400 }));
+  const target = await control.lockTarget();
+  await control.capture(target);
+  await control.execute(target, { type: 'click', x: 10, y: 20 });
+  assert.deepEqual(seen.find(a => a[0] === 'mousemove').slice(-2), ['--smooth', String(smoothMs(400))]);
+  seen.length = 0;
+  const bad = mk('{"x":"a"}');
+  const t2 = await bad.lockTarget();
+  await bad.capture(t2);
+  await bad.execute(t2, { type: 'click', x: 10, y: 20 });
+  assert.deepEqual(seen.find(a => a[0] === 'mousemove').slice(-2), ['--smooth', '40']);
+});
+
+test('macOS drag uses 12 guarded minimum-jerk linear segments with no sleep', async () => {
+  const h = macHarness();
+  const target = await h.control.lockTarget();
+  await h.control.capture(target);
+  const started = Date.now();
+  await h.control.execute(target, { type: 'drag', x: 0, y: 0, toX: 120, toY: 60 });
+  assert(Date.now() - started < 400);
+  const moves = h.calls.map(c => c.args).filter(a => a[0] === 'mousemove');
+  assert.equal(moves.length, 13);
+  assert.deepEqual(moves[0].slice(-2), ['--smooth', '40']);
+  for (const m of moves.slice(1)) assert.deepEqual(m.slice(-4), ['--smooth', '16', '--ease', 'linear']);
+  const xs = moves.slice(1).map(m => Number(m[m.indexOf('-x') + 1]));
+  assert.equal(xs.at(-1), 220);
+  assert(xs[0] < 100 + 120 / 12, 'min-jerk starts slower than linear');
+  assert(xs.every((v, i) => !i || v >= xs[i - 1]));
+  const names = h.calls.map(c => c.args[0]);
+  assert.equal(names.filter(n => n === 'clients').length, 15);
+  assert.deepEqual(h.calls.map(c => c.args).filter(a => a[0] === 'click'), [['click', '0x40'], ['click', '0x80']]);
 });
 
 function fakeChild() {

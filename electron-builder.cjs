@@ -30,7 +30,7 @@ module.exports = {
   appId: "dev.prahladv.aether",
   productName: "Aether",
   publish: null,
-  files: ["main.js", "preload.js", "src/**/*", "renderer/**/*", "data/**/*", "packages/macdotool/index.js", "LICENSE"],
+  files: ["main.js", "preload.js", "src/**/*", "renderer/**/*", "data/**/*", "packages/macdotool/index.js", "packages/macdotool/client.js", "LICENSE"],
   // Desktop Auto on macOS needs the macdotool helper; compile it before packaging.
   beforePack: (context) => {
     if (context.electronPlatformName === "darwin") require("./packages/macdotool/build").build();
