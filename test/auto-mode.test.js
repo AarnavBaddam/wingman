@@ -821,3 +821,15 @@ test('a response with stray closing braces is accepted; other junk is not', () =
   for (const label of ['Wire transfer funds', 'Transfer', 'Confirm transfer', 'Transfer $50', 'Energy transfer funds to savings', 'energy transfer $20', 'energy-transfer to account']) assert.throws(() => parseAutoAction(JSON.stringify({ type: 'click', x: 1, y: 2, label, intent: 'select' }), bounds));
   assert.equal(parseAutoAction(JSON.stringify({ type: 'click', x: 1, y: 2, label: 'energy-transfer arrows', intent: 'cycle' }), bounds).intent, 'cycle');
 });
+test('a result page the model describes but does not grade is still recorded from its text', async () => {
+  const page = { type: 'click', x: 60, y: 70, label: 'Continue', intent: 'navigate', form: { layout: 'multi-step', question: "Result page: the answer was marked incorrect (O' Drats)", navigation: 'next', scroll: 'none', status: 'no-question' } };
+  const contexts = [];
+  const h = harness([], { decide: async c => { contexts.push(c); return JSON.stringify([checkAnswer, page, { type: 'done', message: 'x', form: { ...graded, status: 'complete' } }][contexts.length - 1]); } });
+  await h.engine.run('Complete the quiz', { allowSubmit: true });
+  assert.equal(contexts[2].siteResults[0].result, 'incorrect');
+});
+test('adjust taps with times 0 are dropped instead of rejecting the whole action', () => {
+  const action = parseAutoAction(JSON.stringify({ type: 'adjust', taps: [{ x: 1, y: 2, label: 'Ek up', times: 2 }, { x: 3, y: 2, label: 'Eg up', times: 0 }] }), bounds);
+  assert.deepEqual(action.taps.map(t => t.label), ['Ek up']);
+  assert.throws(() => parseAutoAction(JSON.stringify({ type: 'adjust', taps: [{ x: 3, y: 2, label: 'Eg up', times: 0 }] }), bounds));
+});

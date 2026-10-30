@@ -1,5 +1,11 @@
 # Aether project state
 
+## Auto: grades read from result text; Help banned — 2026-10-30
+
+- Run `20261030-031437`: the model never set `result` on result pages (wrote "marked incorrect" in the question text instead), so `siteResults` stayed empty and nothing was learned. Then it clicked Help Me! repeatedly: the button turns red but its content opens outside the captured tab, and the repeat guard paused the run at 226 s.
+- Fixes: engine infers the grade from the result-page map text when `result` is missing; prompt now forbids Help/hint/"?" buttons (the earlier "use Help" line was my regression); `adjust` taps with `times: 0` are dropped instead of rejecting the batch. 322 tests pass; both new tests fail on the old engine.
+- Still open: site grading for "halfway down" and bouncing-object questions is unknown; the checker and the site disagreed on the sled question. Learning only works within one run.
+
 ## Auto: learn from the site's grades within a run — 2026-10-30
 
 - Rerun `20261030-024459` (8 LOL-chart questions): pre-submit checker said "correct" on 6 answers the site marked wrong. The answers were textbook-consistent; the site grades its own way (bouncing vase/mug: energy transferred OUT was marked correct, no-transfer marked wrong; "halfway down" with Ek 2/Eg 3 marked wrong). Auto repeated rejected patterns (skier 2x, mug 2x) and hit the 80-step cap at 524 s.
