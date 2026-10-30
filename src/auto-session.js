@@ -1,5 +1,5 @@
 const { createAutoMode } = require('./auto-mode');
-const { buildAutoSystem } = require('./auto-profiles');
+const { buildAutoSystem, VERIFY } = require('./auto-profiles');
 
 function wait(ms, signal) {
   return new Promise((resolve, reject) => {
@@ -75,6 +75,12 @@ function createAutoSession({ getSettings, createLLM, getCodexHome, createDesktop
               imageDataUrl, maxTokens: 1200, signal: innerSignal, onToken() {}
               });
               record({ kind: 'decide', image, observation, form, response });
+              return response;
+            },
+            verify: async ({ goal, screen, signal: innerSignal }) => {
+              const response = await llm.stream({ system: VERIFY, turns: [{ role: 'user', text: JSON.stringify({ goal }) }],
+                imageDataUrl: screen.imageDataUrl, maxTokens: 1200, effort: 'high', signal: innerSignal, onToken() {} });
+              record({ kind: 'verify', response });
               return response;
             },
             onUpdate(update) {

@@ -58,7 +58,7 @@ function startServer(env) {
   return server;
 }
 
-async function codexServerTurn({ codexHome, env, model, instructions, text, imagePath, onToken = () => {}, signal, timeoutMs, maxOutput, cwd }) {
+async function codexServerTurn({ codexHome, env, model, effort, instructions, text, imagePath, onToken = () => {}, signal, timeoutMs, maxOutput, cwd }) {
   let server = servers.get(codexHome);
   if (!server || server.dead) { server = startServer(env); servers.set(codexHome, server); }
   server.hold();
@@ -93,7 +93,7 @@ async function codexServerTurn({ codexHome, env, model, instructions, text, imag
     });
     const input = [{ type: 'text', text, text_elements: [] }];
     if (imagePath) input.push({ type: 'localImage', path: imagePath });
-    server.request('turn/start', { threadId: thread.id, input }).then(r => { turnId = r?.turn?.id; }, error => fail(error));
+    server.request('turn/start', { threadId: thread.id, input, ...(effort && { effort }) }).then(r => { turnId = r?.turn?.id; }, error => fail(error));
     try { return await result; }
     finally { server.request('thread/unsubscribe', { threadId: thread.id }).catch(() => {}); }
   } finally { server.release(); }

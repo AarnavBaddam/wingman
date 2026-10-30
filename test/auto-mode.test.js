@@ -757,3 +757,48 @@ test('fill does not re-click a keypad field the previous step focused (a second 
   await h2.engine.run('Fill');
   assert.deepEqual(io2.executed, ['focus@51,50', 'insert@300,300', 'insert@200,200']);
 });
+const graded = { layout: 'per-question', question: 'Mug falls', navigation: 'submit-answer', scroll: 'none', status: 'answer-verified', answer: 'Eg 1 to Eint 1, no transfer' };
+const checkAnswer = { type: 'click', x: 40, y: 50, label: 'Check Answer', intent: 'submit', form: graded };
+test('Continue on the result page right after a submit is allowed without a verified map (live stall 2026-10-30)', async () => {
+  const result = { layout: 'multi-step', question: 'Incorrect-answer feedback', navigation: 'next', scroll: 'none', status: 'incomplete' };
+  const h = harness([checkAnswer, { type: 'click', x: 60, y: 70, label: 'Continue', intent: 'navigate', form: result }, { type: 'done', message: 'x', form: { ...result, status: 'complete' } }]);
+  await h.engine.run('Complete the quiz', { allowSubmit: true });
+  assert.equal(h.calls.filter(c => c === 'click').length, 2);
+  assert(!h.updates.some(u => /Verify the current answers/.test(u.message)));
+});
+test('adjust presses each stepper the requested number of times from one decision, fresh capture per press', async () => {
+  const adjust = { type: 'adjust', taps: [{ x: 10, y: 20, label: 'Initial Eg up', times: 2 }, { x: 30, y: 20, label: 'Final Eint up', times: 1 }] };
+  assert.deepEqual(parseAutoAction(JSON.stringify(adjust), bounds), adjust);
+  for (const taps of [[], [{ ...adjust.taps[0], times: 0 }], [{ ...adjust.taps[0], times: 11 }], [{ ...adjust.taps[0], label: 'Submit' }], [{ ...adjust.taps[0], x: 800 }]]) {
+    assert.throws(() => parseAutoAction(JSON.stringify({ ...adjust, taps }), bounds));
+  }
+  const sent = [];
+  const h = harness([adjust, { type: 'done', message: 'x' }], { execute: async a => { sent.push(a); h.calls.push(a.type); } });
+  await h.engine.run('Set the bars');
+  assert.deepEqual(sent.map(a => [a.x, a.type]), [[10, 'click'], [10, 'click'], [30, 'click']]);
+  assert.deepEqual(h.calls.slice(0, 7), ['capture', 'decide', 'click', 'capture', 'click', 'capture', 'click']);
+});
+test('an independent check that disagrees blocks Submit and feeds its fix back; agreement submits', async () => {
+  const verdicts = ['{"verdict":"wrong","expected":"no transfer","onScreen":"transfer out 3","fix":"cycle the system to no transfer"}', '{"verdict":"correct","fix":""}'];
+  const seen = [];
+  const h = harness([checkAnswer, checkAnswer, { type: 'done', message: 'x', form: { ...graded, status: 'complete' } }],
+    { verify: async c => { seen.push(c); return verdicts.shift(); } });
+  await h.engine.run('Complete the quiz', { allowSubmit: true });
+  assert.equal(seen.length, 2);
+  assert.equal(h.calls.filter(c => c === 'click').length, 1);
+  assert(h.updates.some(u => /cycle the system to no transfer/.test(u.message)));
+});
+test('a failing or unreadable check does not block Submit', async () => {
+  const h = harness([checkAnswer, { type: 'done', message: 'x', form: { ...graded, status: 'complete' } }], { verify: async () => 'not json' });
+  await h.engine.run('Complete the quiz', { allowSubmit: true });
+  assert.equal(h.calls.filter(c => c === 'click').length, 1);
+});
+test('after two rejections on one question the third Submit goes through instead of stalling', async () => {
+  let checks = 0;
+  // Shifted x: an identical click on an unchanged screen is the repeat guard's job, not this one's.
+  const h = harness([checkAnswer, { ...checkAnswer, x: 41 }, { ...checkAnswer, x: 42 }, { type: 'done', message: 'x', form: { ...graded, status: 'complete' } }],
+    { verify: async () => { checks++; return '{"verdict":"wrong","fix":"x"}'; } });
+  await h.engine.run('Complete the quiz', { allowSubmit: true });
+  assert.equal(checks, 2);
+  assert.equal(h.calls.filter(c => c === 'click').length, 1);
+});

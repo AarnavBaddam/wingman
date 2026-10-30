@@ -3,7 +3,10 @@ The user's goal outranks every default rule below. If it forbids an action (for 
 Return exactly one JSON object, with no prose, using one of these schemas:
 {"type":"click","x":0,"y":0,"label":"readable target","intent":"select|cycle|focus|insert|navigate|submit","clicks":1}
 {"type":"drag","x":0,"y":0,"toX":100,"toY":100,"label":"tile name to destination bin"}
-{"type":"map","layout":"single-page|multi-step|per-question|unknown","question":"current question or section","navigation":"next|submit-answer|submit-form|none|unknown","scroll":"up|down|none","status":"incomplete|answer-verified|complete|no-question"}
+{"type":"map","layout":"single-page|multi-step|per-question|unknown","question":"current question or section","navigation":"next|submit-answer|submit-form|none|unknown","scroll":"up|down|none","status":"incomplete|answer-verified|complete|no-question","answer":"complete intended answer + one-line check"}
+Solve before you click: on the first action for each new question, work out the whole answer and put it in form.answer — every value, choice, bar height and toggle/arrow state, plus a one-line consistency check against the governing rule (for energy: initial + transferred in − transferred out = final). Repeat the same answer on every action for that question; change it only when you find a mistake. Every click then moves the screen toward that answer, and the screen must match it exactly before Submit, including states left over from earlier clicks (a transfer arrow switched on just to reveal a button must be cycled back if the answer has no transfer). When a question asks for amounts but gives no numbers, pick small whole numbers that obey every relation it implies; never skip or ask for lack of numbers. Before a graded Submit the engine has the question checked independently; if that check disagrees, re-solve carefully and fix what is wrong.
+{"type":"adjust","taps":[{"x":0,"y":0,"label":"Initial Eg up arrow","times":3}],"form":{}}
+adjust is for stepper buttons that raise or lower a value by one per click (bar-chart up/down arrows, +/- counters). Read the current values, then send ONE adjust with every press the question still needs (max 8 buttons, times 1–10 each, the difference between current and target). The engine presses each one with a fresh capture. Never use adjust for radios, checkboxes, cycle controls, text fields, navigation or submission.
 {"type":"type","work":"short calculation steps, before the answer","text":"printable ASCII field value","label":"field name","origin":"user|calculation|sources","citations":[1],"symbols":{"π":{"x":0,"y":0}}}
 {"type":"fill","fields":[{"x":0,"y":0,"label":"field name","text":"value","origin":"user|calculation|sources","work":"optional steps","citations":[1],"symbols":{"3":{"x":0,"y":0}},"keypad":true,"clearButton":{"x":0,"y":0}}]}
 Fastest way to enter text: when one or more empty text/number fields are visible, send ONE fill listing every visible field you can answer now (max 10), each with the center x/y of the field box itself and the same keys as type. The engine clicks each field and enters its value in order, so no separate focus click is needed. Check every value before sending; then verify all of them on the next screenshot and fix any wrong one with focus, clear (or the keypad Clear button) and type.
@@ -15,14 +18,14 @@ For sorting, matching, ranking, sliders, or draggable answer tiles, use drag rat
 {"type":"vector","label":"Fg","magnitude":9.8,"angle":270,"readout":{"magnitude":8.1,"angle":265},"tip":{"x":0,"y":0}}
 Vector/free-body-diagram drawing uses vector, never raw drag. Work out every force first (name, magnitude, direction). Angle is degrees counterclockwise from +x (right 0, up 90, left 180, down 270). magnitude uses graph units. First select the needed vector tool or label with ordinary clicks, then send a vector with origin = center of the starting dot/tail point and tick = any grid point on the x or y axis line through origin, with value = its distance from origin in graph units (use 1 per grid square when the graph has no numbers). The engine computes pixels and drags tail to tip. After drawing, select/inspect the vector and read the tool's length/angle readout, converted to the same convention. If it differs from the target, send the same label, magnitude and angle with readout and tip = center of the arrowhead as you see it now (omit origin and tick); the engine corrects from the readout. Do not re-draw an existing label. Max 3 corrections per label, then skip with manual instructions. Draw one vector per action and verify each before the next.
 {"type":"skip","question":"short question text","instructions":"exact steps for the user to answer it by hand"}
-Other graphing questions are skipped, not attempted: plotting points, drawing lines/curves, shading regions, or choosing tools/items and placing them on a graph or drawing canvas. Solve the question yourself, then return skip with concrete instructions that name the exact values, e.g. "Pick the line tool, plot (0,2) and (3,8)." Do not click or drag inside such a graph. After skip, click Next with intent navigate to move on; if the only way forward is submitting this answer, use need_input instead. Skip and vector may carry the same optional form object as click.
+Bar charts whose bars are set with arrow, stepper or tap buttons are NOT graphing questions: answer them with adjust and click. Other graphing questions are skipped, not attempted: plotting points, drawing lines/curves, shading regions, or choosing tools/items and placing them on a graph or drawing canvas. Solve the question yourself, then return skip with concrete instructions that name the exact values, e.g. "Pick the line tool, plot (0,2) and (3,8)." Do not click or drag inside such a graph. After skip, click Next with intent navigate to move on; if the only way forward is submitting this answer, use need_input instead. Skip and vector may carry the same optional form object as click.
 {"type":"done","message":"Draft ready for user review"}
 To select a multiple-choice answer, click its radio circle or checkbox control itself, not the answer text. Mark a form answer-verified only when the screenshot shows that marker visibly filled.
 Native dropdowns in Zen: click the collapsed select control once with intent select. The engine returns its enabled option labels in feedback without opening a browser popup. Choose by returning a click at that SAME control with intent select and option = the exact supplied label, e.g. {"type":"click","x":20,"y":30,"label":"Sequence definition","intent":"select","option":"recursive"}. Never click guessed popup rows, double click, or cycle a native dropdown. Verify the collapsed selected value on the next screenshot. Custom in-page menus still use ordinary visible clicks. Exact-option selection is supported only in Zen tab mode.
 For controls that cycle through values, directions, symbols or answer states with each click, use intent cycle, not select or drag. Send one single click, inspect the fresh screenshot, then repeat on the same control only while its visible state is not the desired answer. Stop when the target state is visible; if the states wrap around, reassess the control and target rather than looping. Never use cycle for ordinary radios/checkboxes, navigation or submission. A cycling state is not an unsure confidence mark: do not double click it or mark it verified after only the first change.
 Fast cycling galleries (e.g. Physics Classroom "Choice 1 of 6"): avoid one model turn per option. Send a cycle click with steps = number of remaining unseen choices (1–12) and region = {x,y,width,height}, a tight rectangle around the diagram AND its choice number. The same control must stay at the same position throughout; never batch a moving control. The engine clicks and captures each choice locally, then shows a numbered contact sheet BELOW the current full screenshot. Tile 1 is the starting choice, followed by one tile per successful click; choices.count and choices.stepsTaken describe the scan. Compare them all in one turn. The CURRENT full screenshot at the top supplies action coordinates; gallery tiles are historical, never click their coordinates. Once you know the correct choice, use another bounded cycle with steps equal to the forward distance (wrapping if necessary), then verify the live diagram before Check Answer. Do not rescan choices already seen or submit during a scan. A no-change capture ends a scan early; reassess instead of assuming all steps ran.
 Physics Classroom Minds On missions: when the launch screen asks for a usage mode, always choose Sudden Death, never Marathon.
-Pages with nothing to answer (task or assignment lists, dashboards, start, intro or menu screens) get status no-question: click the link or button that leads toward the goal with intent navigate. Never map no-question while a question, answer choice or input field is visible.
+Pages with nothing to answer (task or assignment lists, dashboards, start, intro or menu screens, and result pages after Check Answer such as "Correct!" or "Incorrect... Continue") get status no-question: click the link or button that leads toward the goal with intent navigate. Never map no-question while a question, answer choice or input field is visible.
 clicks is optional: 1 (default) or 2 for a double click, any intent except submit. When the user goal or the page asks for a double click (for example to mark an answer as sure/confident), send ONE click with clicks 2 on each such answer; never rely on two separate clicks. A half-filled or "unsure" mark after a single click means a double click was needed. Apply the double-click rule to every answer for the whole run.
 {"type":"need_input","message":"Missing information to ask user"}
 Coordinates are integer screenshot coordinates. Scroll amount is a nonzero integer from -5 through 5: positive scrolls down, negative scrolls up. Labels are at most 120 characters. Type text is at most 1000 printable ASCII characters, without newlines, tabs, or controls.
@@ -93,9 +96,9 @@ function parseAutoAction(text, { width, height, sourceIds = [], allowSubmit = fa
     scroll: ['type', 'x', 'y', 'amount', 'label', 'form'], research: ['type', 'query'], clear: ['type', 'label', 'form'],
     drag: ['type', 'x', 'y', 'toX', 'toY', 'label', 'form'],
     vector: ['type', 'label', 'magnitude', 'angle', 'origin', 'tick', 'readout', 'tip', 'form'],
-    fill: ['type', 'fields', 'form'],
+    fill: ['type', 'fields', 'form'], adjust: ['type', 'taps', 'form'],
     done: ['type', 'message', 'form'], skip: ['type', 'question', 'instructions', 'form'], need_input: ['type', 'message'],
-    map: ['type', 'layout', 'question', 'navigation', 'scroll', 'status', 'surface']
+    map: ['type', 'layout', 'question', 'navigation', 'scroll', 'status', 'surface', 'answer']
   };
   const allowed = schemas[action.type];
   if (!allowed || Object.keys(action).some(key => !allowed.includes(key))) throw new Error('Unsupported Auto action or properties.');
@@ -181,6 +184,17 @@ function parseAutoAction(text, { width, height, sourceIds = [], allowSubmit = fa
         Object.keys(action.tick).some(k => !['x', 'y', 'value'].includes(k)) || !positive(action.tick.value) ||
         (action.tick.x === action.origin.x && action.tick.y === action.origin.y)) throw new Error('Vector needs origin and an axis tick, or a readout.');
   }
+  if (action.type === 'map' && 'answer' in action && !string(action.answer, 600)) throw new Error('Invalid intended answer.');
+  if (action.type === 'adjust') {
+    // Stepper/arrow presses: many single clicks from one decision. Each is its own click, so no
+    // control ever sees a double click; submit/sensitive labels are refused like any click.
+    if (!Array.isArray(action.taps) || !action.taps.length || action.taps.length > 8) throw new Error('adjust needs 1 to 8 taps.');
+    for (const tap of action.taps) {
+      if (!tap || typeof tap !== 'object' || Array.isArray(tap) || Object.keys(tap).some(k => !['x', 'y', 'label', 'times'].includes(k)) ||
+          !Number.isInteger(tap.times) || tap.times < 1 || tap.times > 10) throw new Error('Each adjust tap needs x, y, label and times 1–10.');
+      parseAutoAction(JSON.stringify({ type: 'click', x: tap.x, y: tap.y, label: tap.label, intent: 'insert' }), { width, height });
+    }
+  }
   if (action.type === 'fill') {
     if (!Array.isArray(action.fields) || !action.fields.length || action.fields.length > 10) throw new Error('fill needs 1 to 10 fields.');
     // Each field is a type action plus the point of the field to click first.
@@ -223,7 +237,17 @@ function goalRules(goal) {
   return { noScroll, doubleClick, rules };
 }
 
-function createAutoMode({ capture, decide, execute, research, locate, onUpdate = () => {}, delay = 300,
+// The checker's reply is model text: take the first JSON object, keep known fields, cap lengths.
+function parseVerdict(text) {
+  try {
+    const raw = JSON.parse(String(text).slice(String(text).indexOf('{'), String(text).lastIndexOf('}') + 1));
+    if (!['correct', 'wrong', 'unsure'].includes(raw?.verdict)) return null;
+    const cut = v => typeof v === 'string' ? v.slice(0, 300) : '';
+    return { verdict: raw.verdict, expected: cut(raw.expected), onScreen: cut(raw.onScreen), fix: cut(raw.fix) };
+  } catch { return null; }
+}
+
+function createAutoMode({ capture, decide, execute, research, locate, verify, onUpdate = () => {}, delay = 300,
   maxSteps = 80, maxDurationMs = 600000, stallSteps = 15 }) {
   if (![capture, decide, execute].every(fn => typeof fn === 'function')) throw new Error('Auto requires capture, decide, and execute functions.');
   if (!Number.isInteger(maxSteps) || maxSteps < 1 || maxSteps > 80 || !Number.isFinite(maxDurationMs) || maxDurationMs <= 0 || maxDurationMs > 600000 || !Number.isFinite(delay) || delay < 0) throw new Error('Invalid Auto limits.');
@@ -244,7 +268,7 @@ function createAutoMode({ capture, decide, execute, research, locate, onUpdate =
       const vectors = new Map();
       // Keypad/palette points used this run, fed back so the model stops re-guessing them (latest wins).
       let knownButtons = {};
-      let choices = null;
+      let choices = null, rejections = 0;
       const userRules = goalRules(goal);
       // Plain-text surface word wins; otherwise 'unknown' makes the model classify first.
       const forcedProfile = profileFromText(goal);
@@ -325,6 +349,8 @@ function createAutoMode({ capture, decide, execute, research, locate, onUpdate =
               previousAction.type === 'type' && !previousAction.symbols ?
               'Screen unchanged after typing: the text did not appear. If the field has an on-screen keypad, refocus it and send the value again with every character mapped to its keypad button in symbols.' :
               'Screen unchanged after the last action. Inspect before retrying or advancing.') :
+              previousAction.type === 'adjust' ?
+              `Screen changed. Presses sent: ${previousAction.taps.map(t => `${t.label} x${t.times}`).join('; ')}. Read every value now against form.answer and fix any difference before Submit.` :
               ['type', 'fill'].includes(previousAction.type) ?
               // A glance missed 84000 for 24000 live; name the intended values so the check is exact.
               `Screen changed. Values entered: ${(previousAction.fields || [previousAction]).map(f => `${f.label} = ${f.text}`).join('; ')}. Read each box in the screenshot digit by digit against these; re-enter any mismatch (with clearButton on keypad fields) before moving on.` :
@@ -455,9 +481,27 @@ function createAutoMode({ capture, decide, execute, research, locate, onUpdate =
             }
             // A page with nothing to answer (task list, start screen) has no answers to verify before moving on.
             const noQuestion = form?.status === 'no-question' && !pendingFields.size;
-            if (action.type === 'click' && action.intent === 'navigate' && !skipCurrent && !noQuestion && form && (form.status !== 'answer-verified' || form.scroll !== 'none')) {
-              feedback('Verify the current answers and update the form map before clicking Next.');
+            // Right after Submit the page shows a result ("Correct!", "Incorrect, Continue"): the answer is
+            // already in, nothing is left to verify. Gating it stalled a live run 15 steps (2026-10-30).
+            if (action.type === 'click' && action.intent === 'navigate' && !skipCurrent && !noQuestion && !submitPending && form && (form.status !== 'answer-verified' || form.scroll !== 'none')) {
+              feedback('Verify the current answers and update the form map before clicking Next. If this page has nothing to answer (a result, feedback or intro page), map status no-question.');
               continue;
+            }
+            // A second, independent solve of the question before a graded Submit. The acting model works
+            // click by click and drifted into wrong answers live (energy not conserved, stray transfer arrow).
+            if (action.type === 'click' && action.intent === 'submit' && typeof verify === 'function' && rejections < 2) {
+              update('deciding', 'Checking the answer before submitting.');
+              let verdict = null;
+              try { verdict = parseVerdict(await operation(() => verify({ goal: goal.trim(), screen, signal }))); }
+              catch (error) { if (signal.aborted) throw error; }
+              check();
+              // ponytail: fails open (no verdict = submit), and two rejections let the third Submit through,
+              // so a confused checker cannot stall a run. Pause instead if wrong answers cost more than stalls.
+              if (verdict?.verdict === 'wrong') {
+                rejections++;
+                feedback(`Not submitted: an independent check of this question disagrees. Expected: ${verdict.expected || 'see fix'}. On screen: ${verdict.onScreen || 'unread'}. Fix: ${verdict.fix || 'recheck the answer'}. Re-solve it; if the check is right, correct the screen and update form.answer, then Submit again.`);
+                continue;
+              }
             }
           }
           let drawn = null;
@@ -542,7 +586,7 @@ function createAutoMode({ capture, decide, execute, research, locate, onUpdate =
             // Keep earlier evidence and its IDs intact for actions already in history.
             sources = [...sources, ...additions];
           } else {
-            update('acting', action.type === 'fill' ? `Filling ${action.fields.length} field${action.fields.length > 1 ? 's' : ''}.` : action.type === 'type' ? 'Entering a draft field value.' : action.type === 'clear' ? 'Clearing the field.' : action.type === 'click' ? 'Selecting the next target.' : action.type === 'drag' ? 'Dragging an answer to its destination.' : 'Scrolling the screen.', { action });
+            update('acting', action.type === 'adjust' ? 'Pressing the value arrows.' : action.type === 'fill' ? `Filling ${action.fields.length} field${action.fields.length > 1 ? 's' : ''}.` : action.type === 'type' ? 'Entering a draft field value.' : action.type === 'clear' ? 'Clearing the field.' : action.type === 'click' ? 'Selecting the next target.' : action.type === 'drag' ? 'Dragging an answer to its destination.' : 'Scrolling the screen.', { action });
             if (action.type === 'click' && action.intent === 'cycle' && action.steps) {
               choices = { region: action.region, images: [screen.imageDataUrl], stepsTaken: 0 };
               let currentScreen = screen;
@@ -556,6 +600,11 @@ function createAutoMode({ capture, decide, execute, research, locate, onUpdate =
                 if (next.imageDataUrl === currentScreen.imageDataUrl) break;
                 choices.images.push(next.imageDataUrl);
                 currentScreen = next;
+              }
+            } else if (action.type === 'adjust') {
+              for (const tap of action.taps) for (let n = 0; n < tap.times; n++) {
+                await input({ type: 'click', x: tap.x, y: tap.y, label: tap.label, intent: 'insert' });
+                await settleDelay(Math.min(delay, 150));
               }
             } else for (const [index, field] of (action.type === 'fill' ? action.fields : [action]).entries()) {
               let value = field;
@@ -590,11 +639,11 @@ function createAutoMode({ capture, decide, execute, research, locate, onUpdate =
             check();
             previousImage = screen.imageDataUrl; previousAction = action;
             // ponytail: a sent answer click counts even if it missed; the repeat guards catch same-spot misses.
-            if (['type', 'fill', 'drag'].includes(action.type) || (action.type === 'click' && action.intent !== 'focus')) progressStep = step;
+            if (['type', 'fill', 'drag', 'adjust'].includes(action.type) || (action.type === 'click' && action.intent !== 'focus')) progressStep = step;
             if (action.type === 'click' && ['navigate', 'submit'].includes(action.intent)) {
               if (action.intent === 'submit') submitted = true;
               submitPending = action.intent === 'submit';
-              form = null; skipCurrent = false;
+              form = null; skipCurrent = false; rejections = 0;
             } else {
               if (action.type !== 'scroll') submitPending = false;
               if (form) form = { ...form, status: 'incomplete' };

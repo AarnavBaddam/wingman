@@ -1,5 +1,15 @@
 # Aether project state
 
+## Auto: pre-submit check, batched stepper presses, result-page stall — 2026-10-30
+
+- Live run `20261030-022132` (Physics Classroom LOL charts, 8 questions): 2 wrong answers (mug, bobsled), then a 15-step stall on the "Incorrect... Continue" page, plus a bar chart wrongly skipped as "graphing".
+- Wrong answers: both left a stray transfer-arrow state (from the user's "tap the center" hint) and broke conservation. Probe: asked to state the whole answer first, default/medium/high effort solved the mug right; `low` did not. Effort barely moved latency (3-10 s, noisy), so it is not the speed lever.
+- Fixes in `src/auto-mode.js`: `form.answer` (solve the whole question first, keep it, match the screen to it); `adjust` action (all stepper/arrow presses for a question from one decision, fresh capture per press); Continue allowed right after a submit (`submitPending`); a bar chart set by arrows is not graphing; no-number questions get small whole numbers that obey the rules.
+- Independent check before every graded Submit (`VERIFY` in `src/auto-profiles.js`, wired in `auto-session.js`, Codex `effort: 'high'` via new optional `effort` pass-through in `cli-provider`/`codex-server`). It sees only the goal + screenshot, not the actor's answer. Fails open; two rejections per question, then the third Submit goes through (ponytail comment marks the trade).
+- Live checker probe on the run's own screenshots: 4/4 (caught mug + bobsled with the right fix, passed swing + sled), 5-10 s per check.
+- 318 tests pass (5 new; navigate fix mutation-checked). `npm run pack` passes. Not run: a full live Auto run with the new code, Playwright on a localhost stepper page, `dist:linux` AppImage rebuild.
+- Unverified: whether Physics Classroom wants E_Ch > 0 for the bobsled team pushing (team is inside the system); checker said E_Ch = 0.
+
 ## Auto behaviour profiles — surface-aware, plain-text steerable — 2026-10-28
 
 - User problem: Auto's one prompt (`AUTO_SYSTEM`) was written for graded quiz forms, so every other surface (a Google Doc, an app) was forced through form logic and broke. Endless per-site edge-case patching. Goal: make behaviour modular and steerable in plain text, and let the model classify the surface and pick its own method.

@@ -86,7 +86,7 @@ function run(binary, args, input, cwd, provider, onToken, signal, env) {
   });
 }
 
-async function streamCLI(provider, { model, system, turns, imageDataUrl, onToken = () => {}, signal, codexHome }) {
+async function streamCLI(provider, { model, effort, system, turns, imageDataUrl, onToken = () => {}, signal, codexHome }) {
   const prompt = turns.map((turn) => `${turn.role}: ${turn.text}`).join('\n\n');
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'wingman-llm-'));
   try {
@@ -122,7 +122,7 @@ async function streamCLI(provider, { model, system, turns, imageDataUrl, onToken
       // --ignore-user-config, so the default profile keeps the isolated `codex exec` path.
       if (codexHome) {
         try {
-          return await require('./codex-server').codexServerTurn({ codexHome, env, model, instructions, text: prompt, onToken, signal,
+          return await require('./codex-server').codexServerTurn({ codexHome, env, model, effort, instructions, text: prompt, onToken, signal,
             imagePath: args.includes('--image') ? args[args.indexOf('--image') + 1] : null, timeoutMs: TIMEOUT_MS, maxOutput: MAX_OUTPUT, cwd: directory });
         } catch (error) {
           if (!error.serverFault || signal?.aborted) throw signedOutError(error);
