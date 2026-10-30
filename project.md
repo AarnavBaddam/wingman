@@ -8,6 +8,8 @@
 - Independent check before every graded Submit (`VERIFY` in `src/auto-profiles.js`, wired in `auto-session.js`, Codex `effort: 'high'` via new optional `effort` pass-through in `cli-provider`/`codex-server`). It sees only the goal + screenshot, not the actor's answer. Fails open; two rejections per question, then the third Submit goes through (ponytail comment marks the trade).
 - Live checker probe on the run's own screenshots: 4/4 (caught mug + bobsled with the right fix, passed swing + sled), 5-10 s per check.
 - 318 tests pass (5 new; navigate fix mutation-checked). `npm run pack` passes. Not run: a full live Auto run with the new code, Playwright on a localhost stepper page, `dist:linux` AppImage rebuild.
+- Security review follow-up (`b6a1d24`): checker output relayed JSON-quoted as untrusted; `adjust` capped at 20 presses total. Per-press page-change detection not added (ponytail comment). Committed `c0cb272` + `b6a1d24` locally on `codex/wingman-hardening`, not pushed. AppImage rebuilt and relaunched (dock mapped).
+- Next: user reruns the same LOL-charts prompt unchanged (Allow submit on); compare wrong answers (was 2/8) and steps per question (was ~7); review the run log's `verify` entries.
 - Unverified: whether Physics Classroom wants E_Ch > 0 for the bobsled team pushing (team is inside the system); checker said E_Ch = 0.
 
 ## Auto behaviour profiles — surface-aware, plain-text steerable — 2026-10-28
