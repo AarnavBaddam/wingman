@@ -1,5 +1,12 @@
 # Aether project state
 
+## Auto: learn from the site's grades within a run — 2026-10-30
+
+- Rerun `20261030-024459` (8 LOL-chart questions): pre-submit checker said "correct" on 6 answers the site marked wrong. The answers were textbook-consistent; the site grades its own way (bouncing vase/mug: energy transferred OUT was marked correct, no-transfer marked wrong; "halfway down" with Ek 2/Eg 3 marked wrong). Auto repeated rejected patterns (skier 2x, mug 2x) and hit the 80-step cap at 524 s.
+- Fix: model reports `result: correct|incorrect` on the result page; engine pairs it with the submitted `form.answer` into `siteResults` (last 12), sent to actor and checker as ground truth for how this site grades. Probe: with this run's grades the checker flipped the last mug from correct to wrong and proposed the accepted transfer-out pattern (site acceptance still unconfirmed).
+- Also: stray trailing `}` tolerated (5 calls wasted live); money filter narrowed to wire/bank/money/funds transfer ("energy transfer" was blocked twice); adjust allowed on a cycle control once its order is known this run; limits raised 80 steps/10 min to 160/20 min (caps 200/30 min), stall guard unchanged.
+- 320 tests pass. Next: rerun same prompt; compare wrong answers (6/12 graded this run) and whether repeated patterns stop.
+
 ## Auto: pre-submit check, batched stepper presses, result-page stall — 2026-10-30
 
 - Live run `20261030-022132` (Physics Classroom LOL charts, 8 questions): 2 wrong answers (mug, bobsled), then a 15-step stall on the "Incorrect... Continue" page, plus a bar chart wrongly skipped as "graphing".

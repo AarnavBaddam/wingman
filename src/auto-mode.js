@@ -4,9 +4,9 @@ Return exactly one JSON object, with no prose, using one of these schemas:
 {"type":"click","x":0,"y":0,"label":"readable target","intent":"select|cycle|focus|insert|navigate|submit","clicks":1}
 {"type":"drag","x":0,"y":0,"toX":100,"toY":100,"label":"tile name to destination bin"}
 {"type":"map","layout":"single-page|multi-step|per-question|unknown","question":"current question or section","navigation":"next|submit-answer|submit-form|none|unknown","scroll":"up|down|none","status":"incomplete|answer-verified|complete|no-question","answer":"complete intended answer + one-line check"}
-Solve before you click: on the first action for each new question, work out the whole answer and put it in form.answer — every value, choice, bar height and toggle/arrow state, plus a one-line consistency check against the governing rule (for energy: initial + transferred in − transferred out = final). Repeat the same answer on every action for that question; change it only when you find a mistake. Every click then moves the screen toward that answer, and the screen must match it exactly before Submit, including states left over from earlier clicks (a transfer arrow switched on just to reveal a button must be cycled back if the answer has no transfer). When a question asks for amounts but gives no numbers, pick small whole numbers that obey every relation it implies; never skip or ask for lack of numbers. Before a graded Submit the engine has the question checked independently; if that check disagrees, re-solve carefully and fix what is wrong.
+Solve before you click: on the first action for each new question, work out the whole answer and put it in form.answer — every value, choice, bar height and toggle/arrow state, plus a one-line consistency check against the governing rule (for energy: initial + transferred in − transferred out = final). Repeat the same answer on every action for that question; change it only when you find a mistake. Every click then moves the screen toward that answer, and the screen must match it exactly before Submit, including states left over from earlier clicks (a transfer arrow switched on just to reveal a button must be cycled back if the answer has no transfer). When a question asks for amounts but gives no numbers, pick small whole numbers that obey every relation it implies; never skip or ask for lack of numbers. On the result page right after Check Answer/Submit, add result "correct" or "incorrect" to your form, exactly as the page says. siteResults lists answers this site has already graded this run: they are ground truth for how THIS site grades. Never resubmit a pattern it marked incorrect for a similar question (same kind of motion and system), even if your own reasoning says it is right; prefer what it marked correct, and use the page's Help button when a similar question was graded incorrect. Before a graded Submit the engine has the question checked independently; if that check disagrees, re-solve carefully and fix what is wrong.
 {"type":"adjust","taps":[{"x":0,"y":0,"label":"Initial Eg up arrow","times":3}],"form":{}}
-adjust is for stepper buttons that raise or lower a value by one per click (bar-chart up/down arrows, +/- counters). Read the current values, then send ONE adjust with every press the question still needs (max 8 buttons, times 1–10 each, 20 presses in total, the difference between current and target). The engine presses each one with a fresh capture. Never use adjust for radios, checkboxes, cycle controls, text fields, navigation or submission.
+adjust is for stepper buttons that raise or lower a value by one per click (bar-chart up/down arrows, +/- counters). Read the current values, then send ONE adjust with every press the question still needs (max 8 buttons, times 1–10 each, 20 presses in total, the difference between current and target). The engine presses each one with a fresh capture. Never use adjust for radios, checkboxes, text fields, navigation or submission. A cycle control may use adjust only after history this run shows its full order of states, with times = the presses needed to reach the target state.
 {"type":"type","work":"short calculation steps, before the answer","text":"printable ASCII field value","label":"field name","origin":"user|calculation|sources","citations":[1],"symbols":{"π":{"x":0,"y":0}}}
 {"type":"fill","fields":[{"x":0,"y":0,"label":"field name","text":"value","origin":"user|calculation|sources","work":"optional steps","citations":[1],"symbols":{"3":{"x":0,"y":0}},"keypad":true,"clearButton":{"x":0,"y":0}}]}
 Fastest way to enter text: when one or more empty text/number fields are visible, send ONE fill listing every visible field you can answer now (max 10), each with the center x/y of the field box itself and the same keys as type. The engine clicks each field and enters its value in order, so no separate focus click is needed. Check every value before sending; then verify all of them on the next screenshot and fix any wrong one with focus, clear (or the keypad Clear button) and type.
@@ -89,7 +89,12 @@ function parseAutoAction(text, { width, height, sourceIds = [], allowSubmit = fa
   const fence = /^```(?:json)?\s*\n([\s\S]*?)\n```$/i.exec(json);
   if (fence) json = fence[1].trim();
   let action;
-  try { action = JSON.parse(json); } catch { throw new Error('Auto response must contain exactly one JSON object.'); }
+  // Models live-appended a stray closing brace to valid actions: retry with only trailing braces trimmed.
+  try { action = JSON.parse(json); } catch {
+    const trimmed = json.replace(/\}+$/, '');
+    for (let n = 1; n <= 3 && action === undefined; n++) try { action = JSON.parse(trimmed + '}'.repeat(n)); } catch {}
+    if (action === undefined) throw new Error('Auto response must contain exactly one JSON object.');
+  }
   if (!action || typeof action !== 'object' || Array.isArray(action)) throw new Error('Invalid Auto action.');
   const schemas = {
     click: ['type', 'x', 'y', 'label', 'intent', 'clicks', 'option', 'steps', 'region', 'form'], type: ['type', 'work', 'text', 'label', 'origin', 'citations', 'symbols', 'clearButton', 'keypad', 'form'],
@@ -98,7 +103,7 @@ function parseAutoAction(text, { width, height, sourceIds = [], allowSubmit = fa
     vector: ['type', 'label', 'magnitude', 'angle', 'origin', 'tick', 'readout', 'tip', 'form'],
     fill: ['type', 'fields', 'form'], adjust: ['type', 'taps', 'form'],
     done: ['type', 'message', 'form'], skip: ['type', 'question', 'instructions', 'form'], need_input: ['type', 'message'],
-    map: ['type', 'layout', 'question', 'navigation', 'scroll', 'status', 'surface', 'answer']
+    map: ['type', 'layout', 'question', 'navigation', 'scroll', 'status', 'surface', 'answer', 'result']
   };
   const allowed = schemas[action.type];
   if (!allowed || Object.keys(action).some(key => !allowed.includes(key))) throw new Error('Unsupported Auto action or properties.');
@@ -115,7 +120,7 @@ function parseAutoAction(text, { width, height, sourceIds = [], allowSubmit = fa
   }
   if (action.type === 'drag' && (!Number.isInteger(action.toX) || action.toX < 0 || action.toX >= width ||
       !Number.isInteger(action.toY) || action.toY < 0 || action.toY >= height)) throw new Error('Drag destination is outside the screen.');
-  if (['drag', 'vector'].includes(action.type) && /\b(submit|send|pay|payment|purchase|buy|delete|remove|publish|checkout|transfer|sign\s+in|log\s+in)\b/i.test(action.label)) throw new Error('Drag is only supported for answer manipulation.');
+  if (['drag', 'vector'].includes(action.type) && /\b(submit|send|pay|payment|purchase|buy|delete|remove|publish|checkout|(?:wire|bank|money|funds?)\s+transfer|transfer\s+(?:money|funds?)|sign\s+in|log\s+in)\b/i.test(action.label)) throw new Error('Drag is only supported for answer manipulation.');
   if (action.type === 'click') {
     if (!['select', 'cycle', 'focus', 'insert', 'navigate', 'submit'].includes(action.intent)) throw new Error('Invalid click intent.');
     if ('clicks' in action && action.clicks !== 1 && !(action.clicks === 2 && action.intent !== 'submit')) throw new Error('clicks must be 1 or 2, and Submit is never double clicked.');
@@ -129,7 +134,7 @@ function parseAutoAction(text, { width, height, sourceIds = [], allowSubmit = fa
           r.width < 1 || r.height < 1 || r.x + r.width > width || r.y + r.height > height) throw new Error('Cycle scans need 1–12 steps and a bounded choice region.');
     }
     // Labels are a defense against obvious final actions, not a guarantee about screen semantics.
-    if (/\b(pay|payment|purchase|buy|delete|remove|publish|checkout|place\s+order|confirm\s+(order|purchase|payment)|transfer|sign\s+in|log\s+in)\b/i.test(action.label)) throw new Error('Sensitive actions require user review.');
+    if (/\b(pay|payment|purchase|buy|delete|remove|publish|checkout|place\s+order|confirm\s+(order|purchase|payment)|(?:wire|bank|money|funds?)\s+transfer|transfer\s+(?:money|funds?)|sign\s+in|log\s+in)\b/i.test(action.label)) throw new Error('Sensitive actions require user review.');
     if (/\b(submit|send)\b/i.test(action.label) && action.intent !== 'submit') throw new Error('Submission requires intent submit.');
     if (action.intent === 'submit' && allowSubmit !== true) throw new Error('Form submission is not enabled for this run.');
   }
@@ -184,6 +189,7 @@ function parseAutoAction(text, { width, height, sourceIds = [], allowSubmit = fa
         Object.keys(action.tick).some(k => !['x', 'y', 'value'].includes(k)) || !positive(action.tick.value) ||
         (action.tick.x === action.origin.x && action.tick.y === action.origin.y)) throw new Error('Vector needs origin and an axis tick, or a readout.');
   }
+  if (action.type === 'map' && 'result' in action && !['correct', 'incorrect'].includes(action.result)) throw new Error('result must be correct or incorrect.');
   if (action.type === 'map' && 'answer' in action && !string(action.answer, 600)) throw new Error('Invalid intended answer.');
   if (action.type === 'adjust') {
     // Stepper/arrow presses: many single clicks from one decision. Each is its own click, so no
@@ -250,9 +256,9 @@ function parseVerdict(text) {
 }
 
 function createAutoMode({ capture, decide, execute, research, locate, verify, onUpdate = () => {}, delay = 300,
-  maxSteps = 80, maxDurationMs = 600000, stallSteps = 15 }) {
+  maxSteps = 160, maxDurationMs = 1200000, stallSteps = 15 }) {
   if (![capture, decide, execute].every(fn => typeof fn === 'function')) throw new Error('Auto requires capture, decide, and execute functions.');
-  if (!Number.isInteger(maxSteps) || maxSteps < 1 || maxSteps > 80 || !Number.isFinite(maxDurationMs) || maxDurationMs <= 0 || maxDurationMs > 600000 || !Number.isFinite(delay) || delay < 0) throw new Error('Invalid Auto limits.');
+  if (!Number.isInteger(maxSteps) || maxSteps < 1 || maxSteps > 200 || !Number.isFinite(maxDurationMs) || maxDurationMs <= 0 || maxDurationMs > 1800000 || !Number.isFinite(delay) || delay < 0) throw new Error('Invalid Auto limits.');
   let controller = null;
   return {
     get active() { return controller !== null; },
@@ -270,7 +276,7 @@ function createAutoMode({ capture, decide, execute, research, locate, verify, on
       const vectors = new Map();
       // Keypad/palette points used this run, fed back so the model stops re-guessing them (latest wins).
       let knownButtons = {};
-      let choices = null, rejections = 0;
+      let choices = null, rejections = 0, pendingGrade = null, siteResults = [];
       const userRules = goalRules(goal);
       // Plain-text surface word wins; otherwise 'unknown' makes the model classify first.
       const forcedProfile = profileFromText(goal);
@@ -375,7 +381,7 @@ function createAutoMode({ capture, decide, execute, research, locate, verify, on
             }[kind] || 'Pick a different action, or use need_input if you are blocked.');
           }
           check(); update('deciding', 'Choosing the next step.');
-          const response = await operation(() => decide({ goal: goal.trim(), profile, userRules: userRules.rules, knownButtons: { ...knownButtons }, screen, choices, form: form && { ...form }, observation, allowSubmit: allowSubmit === true, history: [...history], sources: [...sources], signal }));
+          const response = await operation(() => decide({ goal: goal.trim(), profile, userRules: userRules.rules, knownButtons: { ...knownButtons }, screen, choices, form: form && { ...form }, observation, allowSubmit: allowSubmit === true, history: [...history], sources: [...sources], siteResults: [...siteResults], signal }));
           choices = null;
           check();
           let action;
@@ -388,6 +394,10 @@ function createAutoMode({ capture, decide, execute, research, locate, verify, on
             continue;
           }
           if (action.form) form = { type: 'map', ...action.form };
+          // The site's own grade is ground truth for how it marks answers; pair it with what was submitted
+          // so later similar questions (and the checker) stop repeating a rejected pattern.
+          const result = action.result || action.form?.result;
+          if (result && pendingGrade) { siteResults = [...siteResults, { ...pendingGrade, result }].slice(-12); pendingGrade = null; }
           // Classify, say it, proceed: the model's surface switches the behaviour profile,
           // unless the user already named one in plain text. Announced once.
           const surface = action.surface || action.form?.surface;
@@ -494,7 +504,7 @@ function createAutoMode({ capture, decide, execute, research, locate, verify, on
             if (action.type === 'click' && action.intent === 'submit' && typeof verify === 'function' && rejections < 2) {
               update('deciding', 'Checking the answer before submitting.');
               let verdict = null;
-              try { verdict = parseVerdict(await operation(() => verify({ goal: goal.trim(), screen, signal }))); }
+              try { verdict = parseVerdict(await operation(() => verify({ goal: goal.trim(), screen, siteResults: [...siteResults], signal }))); }
               catch (error) { if (signal.aborted) throw error; }
               check();
               // ponytail: fails open (no verdict = submit), and two rejections let the third Submit through,
@@ -645,7 +655,7 @@ function createAutoMode({ capture, decide, execute, research, locate, verify, on
             // ponytail: a sent answer click counts even if it missed; the repeat guards catch same-spot misses.
             if (['type', 'fill', 'drag', 'adjust'].includes(action.type) || (action.type === 'click' && action.intent !== 'focus')) progressStep = step;
             if (action.type === 'click' && ['navigate', 'submit'].includes(action.intent)) {
-              if (action.intent === 'submit') submitted = true;
+              if (action.intent === 'submit') { submitted = true; pendingGrade = form?.answer ? { question: form.question, answer: form.answer } : null; }
               submitPending = action.intent === 'submit';
               form = null; skipCurrent = false; rejections = 0;
             } else {

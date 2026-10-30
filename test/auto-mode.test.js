@@ -802,3 +802,20 @@ test('after two rejections on one question the third Submit goes through instead
   assert.equal(checks, 2);
   assert.equal(h.calls.filter(c => c === 'click').length, 1);
 });
+test('the site\'s grade on a result page is paired with the submitted answer and shown to actor and checker', async () => {
+  const resultPage = r => ({ type: 'click', x: 60, y: 70, label: 'Continue', intent: 'navigate', form: { layout: 'multi-step', question: 'Result screen', navigation: 'next', scroll: 'none', status: 'no-question', result: r } });
+  const contexts = [], checks = [];
+  const h = harness([], {
+    decide: async c => { contexts.push(c); return JSON.stringify([checkAnswer, resultPage('incorrect'), { ...checkAnswer, x: 41 }, { type: 'done', message: 'x', form: { ...graded, status: 'complete' } }][contexts.length - 1]); },
+    verify: async c => { checks.push(c); return '{"verdict":"correct"}'; } });
+  await h.engine.run('Complete the quiz', { allowSubmit: true });
+  assert.deepEqual(contexts[2].siteResults, [{ question: 'Mug falls', answer: graded.answer, result: 'incorrect' }]);
+  assert.deepEqual(checks[1].siteResults, contexts[2].siteResults);
+  assert.throws(() => parseAutoAction(JSON.stringify({ type: 'map', ...resultPage('maybe').form }), bounds));
+});
+test('a response with stray closing braces is accepted; other junk is not', () => {
+  const ok = JSON.stringify({ type: 'click', x: 1, y: 2, label: 'Energy transfer arrow', intent: 'cycle' });
+  assert.equal(parseAutoAction(ok + '}}', bounds).label, 'Energy transfer arrow');
+  assert.throws(() => parseAutoAction(ok + '{"type":"done"}', bounds));
+  assert.throws(() => parseAutoAction(JSON.stringify({ type: 'click', x: 1, y: 2, label: 'Wire transfer funds', intent: 'select' }), bounds));
+});
