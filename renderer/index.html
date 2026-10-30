@@ -6,12 +6,42 @@
   <title>Aether</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="katex.min.css" />
+  <link rel="stylesheet" href="notch.css" />
   <style>
     .katex { font-size: 1.15em; }
     .katex-display { margin: 0.6em 0; overflow-x: auto; overflow-y: hidden; }
   </style>
 </head>
 <body>
+  <div id="notch-root">
+  <div id="notch-hit" aria-hidden="true"></div>
+  <div id="notch-shape">
+  <i class="notch-ear left" aria-hidden="true"></i><i class="notch-ear right" aria-hidden="true"></i>
+  <div id="notch-clip">
+  <div id="notch-live" role="status" aria-live="polite">
+    <span id="n-led" class="led" aria-hidden="true"></span>
+    <span id="n-step"></span><span id="n-text"></span><span id="n-sub"></span>
+    <span id="n-key"></span><span id="n-sweep" aria-hidden="true"></span>
+  </div>
+  <div id="notch-peek" aria-label="Aether quick controls">
+    <div class="np-row np-top">
+      <span class="np-mark" data-s="0"><span id="np-led" class="led" aria-hidden="true"></span>AETHER</span>
+      <span id="np-status" data-s="0"></span>
+      <button class="np-round" data-s="1" data-proxy="#stop-btn" data-stay type="button" title="Start or stop listening"><span id="np-listen" class="np-dot"></span>LISTEN</button>
+      <button class="np-icon" data-s="1" data-open="#more-btn" type="button" title="Settings" aria-label="Settings"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 5h7M13 5h1M2 11h1M7 11h7"/><circle cx="11" cy="5" r="2"/><circle cx="5" cy="11" r="2"/></svg></button>
+    </div>
+    <button id="np-ask" data-s="2" type="button"><span>Ask anything</span><kbd>↵</kbd></button>
+    <div class="np-keys" role="group" aria-label="Modes">
+      <button data-s="3" data-open="[data-mode=assist]" type="button"><b>F1</b>Assist</button>
+      <button data-s="3" data-open="[data-mode=say]" type="button"><b>F2</b>Say</button>
+      <button data-s="3" data-open="[data-mode=followup]" type="button"><b>F3</b>Follow-up</button>
+      <button data-s="3" data-open="[data-mode=recap]" type="button"><b>F4</b>Recap</button>
+      <button data-s="3" data-open="[data-mode=research]" type="button"><b>F5</b>Research</button>
+      <button class="np-act" data-s="3" data-ask type="button"><b>AUTO</b>Run</button>
+      <button class="np-act" data-s="3" data-open="#write-mode-btn" type="button"><b>WRITE</b>Draft</button>
+    </div>
+  </div>
+  <div id="notch-sheet">
   <div id="app">
     <section id="plate" aria-label="Aether">
       <!-- Header doubles as the drag handle -->
@@ -21,6 +51,9 @@
         <span id="auto-refresh-indicator" hidden title="Assist refreshes after clicks or scrolling">REFRESH</span>
         <span id="readout" aria-live="polite">AUTO · DESK · ARM OFF</span>
         <button class="tb-stop" id="stop-btn" type="button" title="Start / stop listening to a meeting"><span id="live-dot" class="off" aria-hidden="true"></span><span>LISTEN</span></button>
+        <button id="notch-pin" class="notch-tool" type="button" aria-pressed="false" title="Keep open when the pointer leaves" aria-label="Keep open"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h4l-.6 4.2L12 9H4l2.6-2.8zM8 9v5"/></svg></button>
+        <button id="notch-collapse" class="notch-tool" type="button" title="Tuck away (Esc)" aria-label="Tuck away"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 10 8 5.5l4.5 4.5"/></svg></button>
+        <button id="notch-hide" class="notch-tool" type="button" title="Hide notch until the Show / hide shortcut is pressed" aria-label="Hide notch"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3l10 10M13 3 3 13"/></svg></button>
       </div>
 
       <div id="panel-wrap">
@@ -168,6 +201,10 @@
         <label class="s-check"><input id="auto-refresh" type="checkbox" />Auto refresh Assist after clicks or scrolling</label>
         <div class="s-hint" id="auto-refresh-hint">Off by default. After interaction pauses, a screenshot goes to your selected provider and uses its allowance.</div>
 
+        <label class="s-check"><input id="notch-auto-hide" type="checkbox" />Automatically hide the notch after inactivity</label>
+        <div class="s-field"><span>Hide after (seconds)</span><input id="notch-hide-delay" type="number" min="2" max="60" step="1" autocomplete="off" /></div>
+        <div class="s-hint">The notch stays visible while listening, running Auto/Write, typing, or pinned. Use the Show / hide shortcut to bring it back.</div>
+
         <label class="s-label">Write mode <span class="s-hint">human-paced typing into a Zen tab</span></label>
         <div class="s-hint">Humaniser used by the Humanize button</div>
         <div class="s-seg" id="wm-humanizer-seg">
@@ -227,11 +264,20 @@
     </div>
   </div>
 
+  </div><!-- notch-sheet -->
+  </div><!-- notch-clip -->
+  <div class="notch-edge" data-edge="w"></div><div class="notch-edge" data-edge="e"></div><div class="notch-edge" data-edge="s"></div><div class="notch-edge" data-edge="sw"></div><div class="notch-edge" data-edge="se"></div>
+  </div><!-- notch-shape -->
+  </div><!-- notch-root -->
+
   <script src="icons.js"></script>
   <script src="katex.min.js"></script>
   <script src="../node_modules/marked/lib/marked.umd.js"></script>
   <script src="../node_modules/dompurify/dist/purify.min.js"></script>
   <script src="answer-format.js"></script>
   <script src="renderer.js"></script>
+  <script src="notch-state.js"></script>
+  <script src="status-line.js"></script>
+  <script src="notch.js"></script>
 </body>
 </html>

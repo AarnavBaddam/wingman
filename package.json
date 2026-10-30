@@ -12,7 +12,11 @@
     "test": "node --test",
     "pack": "electron-builder --dir",
     "dist": "electron-builder --mac zip",
-    "dist:win": "electron-builder --win",
+    "build:input": "cd native/ydotool-win && cargo build --release && cd ../.. && node -e \"require('fs').mkdirSync('tools',{recursive:true});require('fs').copyFileSync('native/ydotool-win/target/release/ydotool.exe','tools/ydotool.exe')\"",
+    "test:notch-e2e": "node scripts/notch-e2e.js",
+    "test:input-e2e": "electron native/ydotool-win/e2e/aether.e2e.js",
+    "dist:win": "npm run build:input && electron-builder --win",
+    "check:windows": "node --check main.js && node --check src/windows-control.js && node --check src/windows-auto-stop.js",
     "dist:linux": "electron-builder --linux AppImage",
     "build": "electron-builder --dir"
   },

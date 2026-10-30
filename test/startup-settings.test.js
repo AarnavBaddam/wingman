@@ -10,7 +10,7 @@ test('normal relaunch restores the dock and panel while Auto handoff keeps its o
 });
 test('unavailable saved settings do not interrupt startup lifecycle registration',async()=>{
  let start;const registered=[],messages=[];
- const context=vm.createContext({process:{platform:'linux'},console,autoRefreshChange:Promise.resolve(),
+ const context=vm.createContext({notchMode:false,process:{platform:'linux'},console,autoRefreshChange:Promise.resolve(),
   app:{whenReady:()=>({then:fn=>start=fn}),commandLine:{getSwitchValue:()=>''},on:name=>registered.push(name)},
   session:{defaultSession:{setPermissionRequestHandler(){},setPermissionCheckHandler(){},setDisplayMediaRequestHandler(){}}},
   createWindow(){},createDock(){},registerShortcuts(){},initializeHyprShortcut(){},configureAutoRefresh:async()=>{},publishAutoRefreshState(){},store:{getSettings(){throw Error('Keyring unavailable');}},send:(_channel,data)=>messages.push(data.message)

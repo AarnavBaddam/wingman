@@ -113,7 +113,9 @@
     button.querySelector('.n').textContent = autoModeActive ? 'Stop Auto' : 'Run Auto';
     button.classList.toggle('on', autoModeActive);
     button.disabled = !autoModeSupported && !autoModeActive;
-    if (!autoModeSupported) button.title = 'Desktop Auto currently requires native Hyprland, grim and ydotool.';
+    if (!autoModeSupported) button.title = wingman.platform === 'win32'
+      ? 'Windows Auto requires ydotool.exe (npm run build:input).'
+      : 'Desktop Auto currently requires native Hyprland, grim and ydotool.';
     const status = $('#auto-mode-status');
     status.textContent = state.message ? (state.step ? 'Step ' + state.step + ' · ' : '') + state.message : '';
     status.classList.toggle('hidden', !state.message);
@@ -642,6 +644,8 @@ function fillSettings() {
     $('#auto-refresh-hint').textContent = autoRefreshSupported
       ? 'Off by default. After interaction pauses, a screenshot goes to your selected provider and uses its allowance.'
       : 'Click/scroll refresh is currently available on Hyprland. Manual Assist works here.';
+    $('#notch-auto-hide').checked = settings.notchAutoHide !== false;
+    $('#notch-hide-delay').value = Number.isInteger(settings.notchHideDelay) ? settings.notchHideDelay : 8;
     document.querySelectorAll('#provider-seg button').forEach((b) => b.classList.toggle('on', b.dataset.provider === settings.provider));
     $('#key-openai').value = settings.apiKeys.openai || '';
     $('#key-anthropic').value = settings.apiKeys.anthropic || '';
@@ -754,6 +758,9 @@ function statusText() {
 async function saveSettings() {
     settings.codexSeparateAccount = $('#codex-separate-account').checked;
     settings.autoRefresh = $('#auto-refresh').checked;
+    settings.notchAutoHide = $('#notch-auto-hide').checked;
+    const notchDelay = Number.parseInt($('#notch-hide-delay').value, 10);
+    settings.notchHideDelay = Number.isInteger(notchDelay) ? Math.max(2, Math.min(60, notchDelay)) : 8;
     settings.apiKeys.openai = $('#key-openai').value.trim();
     settings.apiKeys.anthropic = $('#key-anthropic').value.trim();
     settings.apiKeys.gemini = $('#key-gemini').value.trim();
@@ -927,7 +934,7 @@ async function saveSettings() {
   }
   document.addEventListener('mousemove', (e) => {
     const el = document.elementFromPoint(e.clientX, e.clientY);
-    const overUI = !!(el && el.closest && el.closest('#plate, #settings-scrim, #onboard-scrim, .resize-corner'));
+    const overUI = !!(el && el.closest && el.closest('#plate, #settings-scrim, #onboard-scrim, .resize-corner, #notch-hit, #notch-shape'));
     setIgnore(!overUI);
   });
   setIgnore(true); // supported platforms re-enable input when the pointer enters UI

@@ -55,7 +55,9 @@ Screen capture on native Hyprland requires `grim` on PATH (`sudo pacman -S --nee
 
 ### Auto mode: click, type and scroll
 
-Auto mode controls the focused desktop app on native Hyprland with Lua support. It requires `hyprctl`, `grim`, `ydotool`, a running ydotool daemon/socket, and a vision-capable provider. This first version is unavailable on other desktops and operating systems.
+Auto mode controls the focused desktop app on native Hyprland with Lua support. On Windows it uses the bundled `ydotool.exe` (a native Windows port in `native/ydotool-win`, SendInput only) for mouse and keyboard input and Electron capture for screenshots. Build it with `npm run build:input`, or set `YDOTOOL_PATH` to the full path of `ydotool.exe`. Both platforms require a vision-capable provider.
+
+On Windows all of Aether lives in a notch at the top of the primary display: hover for quick controls, click for the full sheet, and it tucks away when the pointer leaves. By default it fully hides after eight seconds of inactivity; change or disable that behavior in Settings, pin it to keep the sheet open, or use the toolbar's **Hide notch** action. The configured Show / hide shortcut restores it.
 
 Move Aether clear of the target fields, type a specific task in its input, and click **Auto**. Focus the target app within the three-second countdown. Auto reads that window, chooses one action, performs it, and reads the result before continuing. Press **Escape** anywhere or click **Stop Auto** to cancel. Changing target focus/geometry, opening Aether settings, hiding/reloading Aether, or losing the Escape connection stops the task. Each run is limited to 20 decisions and three minutes; each decision can consume provider allowance.
 

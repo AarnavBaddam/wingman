@@ -1,5 +1,11 @@
 # Aether project state
 
+## Windows notch auto-hide — 2026-10-30
+
+- The fixed Windows notch now fully hides after an idle delay (8 seconds by default), while active Auto/Write, listening, typing, settings, and pinned sheets stay available.
+- Settings exposes the auto-hide toggle and a bounded 2–60 second delay. The full sheet also has a direct **Hide notch** control; the existing Show / hide shortcut restores the fixed window.
+- Unit coverage covers the idle/pinned/live state predicate. Native Windows notch E2E and packaged Windows validation remain required before claiming the desktop flow is verified.
+
 ## Native dropdowns in Zen — 2026-10-26
 
 - User reported the in-page cursor going underneath webpage dropdowns. Run `20261025-233014` repeatedly clicked a native sequence-definition select, then paused with its placeholder unchanged.

@@ -1,0 +1,160 @@
+/* The notch (Windows). Aether's instrument identity on OLED black: mono readout, one LED, orange = act.
+   Without body.notch the wrappers vanish, so other platforms keep the plain panel. */
+#notch-root, #notch-shape, #notch-clip, #notch-sheet { display: contents; }
+#notch-hit, #notch-live, #notch-peek, .notch-ear, .notch-edge, .notch-tool { display: none; }
+
+body.notch { --ink: #000; --line: rgba(255,255,255,.085); --line-2: rgba(255,255,255,.16); --soft: rgba(255,255,255,.055);
+  --ease-out: cubic-bezier(.23, 1, .32, 1); }
+.notch #notch-root { display: block; position: fixed; inset: 0; pointer-events: none; }
+.notch #notch-hit { display: block; position: absolute; top: 0; left: 50%; transform: translateX(-50%); pointer-events: auto; }
+.notch.notch-busy #notch-hit, .notch.notch-busy #notch-shape { pointer-events: none; }
+
+/* Shape: sized by the spring. Children never depend on its size, so a frame costs one paint. */
+.notch #notch-shape { --r: 4px; --ear: 0px; display: block; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  pointer-events: auto; contain: layout style; }
+.notch #notch-clip { display: block; position: absolute; inset: 0; overflow: hidden; background: var(--ink);
+  border-radius: 0 0 var(--r) var(--r); box-shadow: 0 0 0 .5px rgba(255,255,255,.06); }
+.notch #notch-shape[data-view="sheet"] #notch-clip, .notch #notch-shape[data-view="peek"] #notch-clip {
+  box-shadow: 0 0 0 .5px rgba(255,255,255,.08), 0 18px 50px -12px rgba(0,0,0,.65); }
+
+/* Concave shoulders: the bar grows out of the screen edge instead of sitting on it. */
+.notch .notch-ear { display: block; position: absolute; top: 0; width: var(--ear); height: var(--ear); pointer-events: none; }
+.notch .notch-ear.left { right: 100%; background: radial-gradient(circle at 0 100%, transparent calc(var(--ear) - .5px), var(--ink) var(--ear)); }
+.notch .notch-ear.right { left: 100%; background: radial-gradient(circle at 100% 100%, transparent calc(var(--ear) - .5px), var(--ink) var(--ear)); }
+
+/* Layers cross-fade with blur so the eye reads one object changing, not two swapping.
+   Exit is quick and first; entry waits until the shape has room. */
+.notch #notch-live, .notch #notch-peek, .notch #notch-sheet { position: absolute; top: 0; left: 50%; opacity: 0; visibility: hidden;
+  transform: translateX(-50%) translateY(-6px) scale(.97); transform-origin: 50% 0; filter: blur(5px);
+  transition: opacity 110ms ease, filter 110ms ease, transform 160ms ease, visibility 0s linear 110ms; }
+.notch #notch-shape[data-live="1"] #notch-live, .notch #notch-shape[data-view="peek"] #notch-peek, .notch #notch-shape[data-view="sheet"] #notch-sheet {
+  opacity: 1; visibility: visible; filter: none; transform: translateX(-50%);
+  transition: opacity 150ms ease 20ms, filter 170ms ease 20ms, transform 300ms var(--ease-out), visibility 0s; }
+
+/* ---- live status ---- */
+.notch #notch-live { display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 16px; white-space: nowrap;
+  font: 500 11.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--oled-fg); }
+#n-step { color: var(--orange); } #n-step:empty, #n-sub:empty, #n-key:empty { display: none; }
+#n-text { overflow: hidden; text-overflow: ellipsis; max-width: 300px; }
+#n-sub { color: var(--oled-dim); }
+#n-key { padding: 2px 6px; border-radius: 4px; background: var(--soft); color: var(--oled-dim); font-size: 10.5px; }
+.notch .led { flex: none; width: 7px; height: 7px; border-radius: 50%; background: oklch(.42 0 0); transition: background 200ms ease, box-shadow 200ms ease; }
+.notch .led.on { background: var(--orange); box-shadow: 0 0 9px 0 var(--orange); }
+.notch .led.listen { background: var(--green); box-shadow: 0 0 9px 0 var(--green); }
+.notch .led.need { background: var(--orange); animation: notch-need 1.2s ease-in-out infinite; }
+@keyframes notch-need { 50% { opacity: .35; } }
+/* Working sweep: a thin light travelling the lower edge, only while Aether is actually acting. */
+#n-sweep { position: absolute; left: 0; right: 0; bottom: 0; height: 1px; opacity: 0; overflow: hidden; }
+.notch #notch-shape[data-busy="1"] #n-sweep { opacity: 1; }
+#n-sweep::after { content: ''; position: absolute; inset: 0; width: 38%;
+  background: linear-gradient(90deg, transparent, var(--orange), transparent); animation: notch-sweep 1.5s cubic-bezier(.45, 0, .55, 1) infinite; }
+@keyframes notch-sweep { from { transform: translateX(-100%); } to { transform: translateX(264%); } }
+
+/* ---- peek ---- */
+.notch #notch-peek { display: flex; flex-direction: column; gap: 10px; width: 548px; height: 212px; padding: 12px 16px 16px; }
+.np-row { display: flex; align-items: center; gap: 8px; }
+.np-mark { display: inline-flex; align-items: center; gap: 8px; font: 700 13px var(--disp); font-stretch: 80%; letter-spacing: .16em; color: var(--oled-fg); }
+#np-status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center;
+  font: 500 11px var(--mono); letter-spacing: .05em; text-transform: uppercase; color: var(--oled-dim); }
+.np-round, .np-icon, #np-ask, .np-keys button, .notch-tool { border: 0; cursor: pointer; background: var(--soft); color: var(--oled-fg);
+  transition: background 140ms ease, color 140ms ease, transform 120ms ease; }
+.np-round { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 11px; border-radius: 14px; font: 500 11px var(--mono); letter-spacing: .06em; }
+.np-dot { width: 7px; height: 7px; border-radius: 50%; background: oklch(.45 0 0); transition: background 200ms ease, box-shadow 200ms ease; }
+.np-dot.on { background: var(--green); box-shadow: 0 0 9px var(--green); }
+.np-icon { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: var(--oled-dim); }
+#np-ask { display: flex; align-items: center; justify-content: space-between; height: 46px; padding: 0 8px 0 16px; border-radius: 14px; text-align: left;
+  font: 500 15px var(--disp); color: var(--oled-dim); box-shadow: inset 0 0 0 1px var(--line); }
+#np-ask kbd { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: var(--orange); color: var(--orange-ink); font: 500 15px var(--mono); }
+.np-keys { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; flex: 1; min-height: 0; }
+.np-keys button { display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 0 10px; border-radius: 11px; text-align: left; font: 500 11.5px var(--disp); white-space: nowrap; overflow: hidden; }
+.np-keys b { font: 500 9.5px var(--mono); letter-spacing: .07em; color: var(--oled-dim); }
+.np-keys .np-act b { color: var(--orange); }
+@media (hover: hover) and (pointer: fine) {
+  .np-round:hover, .np-icon:hover, .np-keys button:hover, .notch-tool:hover { background: rgba(255,255,255,.12); color: #fff; }
+  #np-ask:hover { color: var(--oled-fg); box-shadow: inset 0 0 0 1px var(--line-2); }
+}
+.np-round:active, .np-icon:active, #np-ask:active, .np-keys button:active, .notch-tool:active { transform: scale(.97); }
+/* Stagger: decorative only; every control is live from the first frame. */
+.notch [data-s] { opacity: 0; translate: 0 -5px; transition: opacity 90ms ease, translate 90ms ease; }
+.notch #notch-shape[data-view="peek"] [data-s] { opacity: 1; translate: 0; transition: opacity 170ms ease, translate 280ms var(--ease-out), background 140ms ease, color 140ms ease, transform 120ms ease; }
+.notch #notch-shape[data-view="peek"] [data-s="0"] { transition-delay: 30ms, 30ms, 0s, 0s, 0s; }
+.notch #notch-shape[data-view="peek"] [data-s="1"] { transition-delay: 50ms, 50ms, 0s, 0s, 0s; }
+.notch #notch-shape[data-view="peek"] [data-s="2"] { transition-delay: 70ms, 70ms, 0s, 0s, 0s; }
+.notch #notch-shape[data-view="peek"] [data-s="3"] { transition-delay: 100ms, 100ms, 0s, 0s, 0s; }
+
+/* ---- sheet: the existing panel, on black ---- */
+.notch #notch-sheet { display: block; width: var(--sheet-w, 600px); height: var(--sheet-h, 620px); }
+.notch #app { height: 100%; padding: 0; pointer-events: auto; }
+.notch #plate { --plate: #000; --plate-lo: #000; --plate-hi: #000; background: #000; border-radius: 0; box-shadow: none; padding: 12px 18px 12px; }
+.notch #toolbar { -webkit-app-region: no-drag; }
+.notch #drag-handle { visibility: hidden; -webkit-app-region: no-drag; }
+.notch #dock-btn, .notch .resize-corner { display: none; }
+.notch .notch-tool { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; color: var(--oled-dim); }
+.notch #notch-pin[aria-pressed="true"] { background: var(--orange); color: var(--orange-ink); }
+.notch .screen { background: oklch(.135 0 0); box-shadow: inset 0 0 0 1px var(--line); border-radius: 12px; }
+.notch #composer { background: oklch(.135 0 0); box-shadow: inset 0 0 0 1px var(--line); border-radius: 13px; }
+.notch #composer:focus-within { box-shadow: inset 0 0 0 1px var(--line-2); }
+.notch .act { background: var(--soft); color: var(--oled-fg); box-shadow: none; border-radius: 10px; transition: background 140ms ease, transform 120ms ease; }
+.notch .act .f { color: var(--oled-dim); }
+.notch .act.run { background: var(--orange); color: var(--orange-ink); }
+.notch .act.run .f { color: var(--orange-ink); opacity: .75; }
+.notch .act.blue .f, .notch .act.dark .f { color: var(--oled-dim); }
+.notch .act:hover { filter: none; background: rgba(255,255,255,.12); }
+.notch .act.run:hover { background: oklch(.73 .18 42); }
+.notch .act:active { transform: scale(.97); }
+.notch .tb-stop { background: var(--soft); box-shadow: none; border-radius: 13px; }
+.notch #settings-scrim, .notch #onboard-scrim { background: rgba(0,0,0,.72); }
+
+/* ---- resize edges ---- */
+.notch .notch-edge { display: none; position: absolute; z-index: 40; }
+.notch #notch-shape[data-view="sheet"] .notch-edge { display: block; }
+.notch-edge[data-edge="w"] { left: -5px; top: 30px; bottom: 24px; width: 10px; cursor: ew-resize; }
+.notch-edge[data-edge="e"] { right: -5px; top: 30px; bottom: 24px; width: 10px; cursor: ew-resize; }
+.notch-edge[data-edge="s"] { left: 24px; right: 24px; bottom: -5px; height: 10px; cursor: ns-resize; }
+.notch-edge[data-edge="sw"] { left: -5px; bottom: -5px; width: 28px; height: 28px; cursor: nesw-resize; }
+.notch-edge[data-edge="se"] { right: -5px; bottom: -5px; width: 28px; height: 28px; cursor: nwse-resize; }
+
+@media (prefers-reduced-motion: reduce) {
+  .notch #notch-live, .notch #notch-peek, .notch #notch-sheet, .notch [data-s] { filter: none !important; transform: translateX(-50%) !important; translate: none !important; transition: opacity 120ms ease, visibility 0s !important; }
+  .notch [data-s] { transform: none !important; }
+  #n-sweep::after, .notch .led.need { animation: none; }
+}
+
+/* ---- sheet controls: one accent, keys sit on the black instead of on plates ---- */
+.notch #action-row { grid-template-columns: 1fr 1.55fr 1.05fr .95fr 1.05fr 1.1fr 1fr; gap: 6px; }
+.notch .act { min-width: 0; padding-inline: 10px; }
+.notch .act .n, .notch .act.run .n { font: 600 12px/1.15 var(--disp); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notch .act.run { background: var(--soft); color: var(--oled-fg); }
+.notch .act.run .f { color: var(--orange); opacity: 1; }
+.notch .act.run:hover { background: rgba(255,255,255,.12); }
+.notch .slide { background: var(--soft); box-shadow: none; border-radius: 9px; height: 32px; }
+.notch .slide button, .notch .slide label > span { border-radius: 7px; color: var(--oled-dim); transition: background 140ms ease, color 140ms ease; }
+.notch .slide button[aria-checked="true"], .notch .slide input:checked + span { background: rgba(255,255,255,.15); color: #fff; box-shadow: none; }
+.notch .keycap { background: var(--soft); color: var(--oled-dim); box-shadow: none; border-radius: 5px; }
+.notch #send-btn { background: var(--orange); color: var(--orange-ink); box-shadow: none; border-radius: 9px; width: 32px; height: 30px; }
+.notch #send-btn:active { transform: scale(.97); box-shadow: none; }
+.notch .foot { border-top-color: var(--line); }
+.notch .foot button { border-radius: 6px; color: var(--oled-dim); }
+.notch .foot button:hover { background: var(--soft); }
+.notch #more-btn { color: var(--oled-fg); }
+
+/* Short labels so seven keys fit on one line (set in notch.js; the Linux panel keeps its long ones). */
+.notch #action-row { grid-template-columns: repeat(7, 1fr); }
+.notch .act { padding-inline: 9px; }
+.notch #write-input, .notch #write-review { background: transparent; }
+
+/* Settings and the tutorial take the whole sheet: a dialog inside a sheet would be a box in a box. */
+.notch #settings-scrim, .notch #onboard-scrim { position: absolute; inset: 0; background: #000; display: block; }
+.notch #settings, .notch #onboard { width: 100%; max-width: none; height: 100%; max-height: none; margin: 0; background: #000; border: 0; border-radius: 0; box-shadow: none; }
+.notch #settings { display: flex; flex-direction: column; }
+.notch .s-head { flex: none; padding: 14px 18px 10px; background: #000; }
+.notch .s-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 18px 18px; }
+.notch .s-field input, .notch .s-textarea { background: oklch(.135 0 0); border: 0; box-shadow: inset 0 0 0 1px var(--line); border-radius: 8px; }
+.notch .s-seg { background: var(--soft); box-shadow: none; border-radius: 9px; }
+.notch .s-seg button { border-radius: 7px; background: transparent; color: var(--oled-dim); box-shadow: none; }
+.notch .s-seg button.on { background: rgba(255,255,255,.15); color: #fff; box-shadow: none; }
+.notch #s-close { background: var(--orange); color: var(--orange-ink); border: 0; box-shadow: none; border-radius: 9px; }
+.notch ::-webkit-scrollbar { width: 8px; height: 8px; }
+.notch ::-webkit-scrollbar-track { background: transparent; }
+.notch ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 4px; border: 2px solid #000; }
+.notch ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.26); }

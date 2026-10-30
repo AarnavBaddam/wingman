@@ -5,40 +5,21 @@
   const dock = $('dock');
   let listenSince = 0, listenTimer = null, idleTimer = null, last = {};
 
-  const short = text => String(text || '').replace(/[.]+$/, '').replace(/\s+/g, ' ').trim().slice(0, 60);
   function clock() {
     const s = Math.max(0, Math.floor((Date.now() - listenSince) / 1000));
     return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
   }
   function paint(state) {
     last = state;
-    const auto = state.auto || {}, write = state.write || {}, led = $('led');
     clearInterval(listenTimer); listenTimer = null;
-    let step = '', text = 'AETHER · READY', sub = '', key = state.toggleLabel || '', ledClass = 'led';
-    if (auto.active) {
-      step = auto.step ? String(auto.step).padStart(2, '0') : '';
-      text = short(auto.message) || 'AUTO'; sub = auto.target === 'zen' ? 'ZEN' : 'DESK'; key = 'ESC'; ledClass = 'led on';
-    } else if (write.status === 'typing') {
-      text = 'WRITE ' + (write.typed || 0) + (write.total ? '/' + write.total : ''); sub = 'ZEN'; key = 'ESC'; ledClass = 'led on';
-    } else if (write.status === 'done') {
-      text = 'WRITE DONE'; ledClass = 'led on';
-      clearTimeout(idleTimer); idleTimer = setTimeout(() => paint({ ...last, write: {} }), 8000);
-    } else if (['drafting', 'humanising', 'detecting', 'armed'].includes(write.status) && write.stage) {
-      text = 'WRITE · ' + String(write.status).toUpperCase(); key = 'OPEN'; ledClass = 'led on';
-    } else if (['paused', 'error', 'skipped'].includes(auto.status) && auto.message) {
-      text = short(auto.message); key = 'OPEN'; ledClass = 'led need';
-    } else if (auto.status === 'done' && auto.message) {
-      text = 'DONE · ' + short(auto.message); ledClass = 'led on';
-      clearTimeout(idleTimer); idleTimer = setTimeout(() => paint({ ...last, auto: {} }), 8000);
-    } else if (state.listening) {
-      if (!listenSince) listenSince = Date.now();
-      text = 'LISTEN ' + clock(); ledClass = 'led listen';
-      listenTimer = setInterval(() => { $('text').textContent = 'LISTEN ' + clock(); }, 1000);
-    }
+    if (state.listening && !listenSince) listenSince = Date.now();
     if (!state.listening) listenSince = 0;
-    $('step').textContent = step; $('text').textContent = text; $('sub').textContent = sub; $('key').textContent = key;
-    led.className = ledClass;
-    dock.title = (auto.active ? short(auto.message) + ' · ' : '') + 'Click to open Aether · swipe up to dismiss';
+    const line = window.AetherStatus.describe(state, clock);
+    if (line.expires) { clearTimeout(idleTimer); idleTimer = setTimeout(() => paint({ ...last, [line.clear]: {} }), line.expires); }
+    if (line.listening) listenTimer = setInterval(() => { $('text').textContent = 'LISTEN ' + clock(); }, 1000);
+    $('step').textContent = line.step; $('text').textContent = line.text; $('sub').textContent = line.sub; $('key').textContent = line.key;
+    $('led').className = line.led;
+    dock.title = (line.title ? line.title + ' · ' : '') + 'Click to open Aether · swipe up to dismiss';
   }
   api.onState(paint);
 

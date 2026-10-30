@@ -7,3 +7,6 @@ native/systemaudio
 .DS_Store
 wingman-data.json
 design/design-demos/preview/
+
+native/ydotool-win/target/
+tools/ydotool.exe
