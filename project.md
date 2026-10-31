@@ -1,5 +1,9 @@
 # Aether project state
 
+## Auto: bar-chart positions graded by order, not PE=0 at the bottom — 2026-10-30
+- User confirmed the pendulum answer A=KE3/PE2, B=KE4/PE1, C=KE2/PE3 is correct. Run `20261031-041443` failed because actor and checker both demanded B = KE5/PE0 (zero PE at the lowest point), which the site does not offer. My pixel-ratio rule (23a2574) was also wrong and is reverted.
+- Rule now in both prompts: rank locations by height; lower = more KE, less PE; total conserved; the lowest drawn point need not have PE 0.
+
 ## Auto: scanned options persist for actor and checker — 2026-10-30
 - Run `20261031-041443`: Q1 (coaster) correct in ~2 min. Q2 (pendulum): actor and checker both insisted B = KE5/PE0, which no B option shows; the actor lost its text readings after the checker's feedback and single-stepped B ~10 times, then the lap guard fired and it looped on maps.
 - Fix: the engine keeps every cycle scan for the current question (`scans`, max 4, replaced on rescan, cleared on navigate/submit) and attaches them each turn as one row per control under the live screenshot (`choiceSheet` accepts a list). The checker gets the same sheet and must name an offered option, picking the best survivor of the governing-rule filter. Prompt no longer asks the actor to copy readings into `form.answer`. 325 tests pass; sheet layout checked with real run screenshots in Electron.
