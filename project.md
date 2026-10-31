@@ -1,5 +1,11 @@
 # Aether project state
 
+## Merged remote Windows notch work; PR open — 2026-10-31
+
+- Pulled 3 remote commits (Windows notch auto-hide, native input, live status/logo) and merged them with the 20 local Auto commits. Conflicts in `project.md` and `src/auto-mode.js` kept both sides: `verify`, `multiInput`, 160 steps / 20 min limits.
+- 347 tests pass, `npm run pack` builds, headless packed launch loads panel + dock with no errors. Pushed `codex/wingman-hardening`; opened PR #1 into `main` (https://github.com/AarnavBaddam/wingman/pull/1).
+- Next (user-side): live Auto rerun on the bar-chart form, live Google Doc run, Windows notch E2E + packaged Windows build. AppImage not rebuilt after the merge.
+
 ## Windows notch auto-hide — 2026-10-30
 
 - The fixed Windows notch now fully hides after an idle delay (8 seconds by default), while active Auto/Write, listening, typing, settings, and pinned sheets stay available.

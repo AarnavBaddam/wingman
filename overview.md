@@ -43,6 +43,8 @@ Cycling answer galleries use click intent `cycle`. Optional `steps` (1–12) plu
 | `src/research.js` | Fetches Tavily results when needed, builds dated source evidence, and validates/normalizes numeric citation groups against retrieved source IDs. Also opens links the user pasted (`openLinks`, which names every link it could not open and why) and checks quotations word-for-word against fetched text (`verifyQuotes`). |
 | `src/prompts.js` | Defines Assist, meeting, Ask, Research, and coding tasks. |
 | `scripts/build-library.js` | Refreshes the library from Wikipedia's API. |
+| `renderer/notch-state.js`, `renderer/notch.js`, `renderer/notch.css` | Windows only: the fixed top-of-screen notch (rest bar, live status, hover peek, sheet) replaces the dock and panel. One fixed window; only `#notch-shape` animates. Auto-hides after an idle delay (8 s default, 2–60 s in Settings). Linux and macOS keep the dock. |
+| `src/windows-control.js`, `src/chrome-control.js`, `src/windows-auto-stop.js` | Windows Auto input through `tools/ydotool.exe` (built from `native/ydotool-win`), Chrome tab control, and the Escape stop watcher. |
 | `electron-builder.cjs` | Linux, macOS, and Windows packaging settings. |
 | `docs/release-validation.md` | Current release evidence, remaining acceptance checks, and publishing prerequisites. |
 | `scripts/linux-runtime.Dockerfile` | Pinned Ubuntu base and native libraries for a headless AppImage runtime smoke test. |
