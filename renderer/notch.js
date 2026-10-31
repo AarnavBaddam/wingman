@@ -173,13 +173,15 @@
     if (data.listening && !listenSince) listenSince = Date.now();
     if (!data.listening) listenSince = 0;
     const line = Status.describe(data, clock);
-    if (line.expires) { clearTimeout(idle); idle = setTimeout(() => paintStatus({ ...last, [line.clear]: {} }), line.expires); }
-    if (line.listening) listenTick = setInterval(() => { $('n-text').textContent = 'LISTEN ' + clock(); }, 1000);
+    clearTimeout(idle); // a timer left from an older status must not clear this one
+    if (line.expires) idle = setTimeout(() => paintStatus({ ...last, [line.clear]: {} }), line.expires);
+    if (line.listening) listenTick = setInterval(() => { $('n-text').textContent = $('np-status').textContent = 'LISTEN ' + clock(); }, 1000);
     $('n-step').textContent = line.step; $('n-text').textContent = line.text; $('n-sub').textContent = line.sub;
     $('n-key').textContent = line.key === 'OPEN' || line.key === 'ESC' ? line.key : '';
     $('n-led').className = line.led; $('np-led').className = line.led;
     $('np-status').textContent = line.live ? line.text : '';
     $('np-listen').classList.toggle('on', !!data.listening);
+    shape.dataset.sweep = line.sweep ? '1' : '';
     // Measure the live pill from its text so it hugs the status, not a fixed box.
     liveWidth = Math.min(460, Math.max(180, $('notch-live').scrollWidth + 8));
     dispatch({ type: 'live', live: line.live, busy: line.busy });

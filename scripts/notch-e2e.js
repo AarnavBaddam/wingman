@@ -42,7 +42,9 @@ async function until(fn, ms = 3000, what = 'condition') {
   y('mousemove', '-a', '--instant', 1280, 900);
   const app = spawn(ELECTRON, ['.', '--remote-debugging-port=9333', '--inspect=9339'], { cwd: root, env: { ...process.env, AETHER_QA_CAPTURE: '1' }, stdio: 'ignore' });
   let passed = 0; const failures = [];
+  let settle = async () => {}; // becomes a wait for a still pointer once main is reachable
   const check = async (name, fn) => {
+    await settle();
     try { await fn(); passed++; console.log('  ok   ' + name); }
     catch (e) { failures.push(`${name}: ${e.message}`); console.log(`  FAIL ${name}: ${e.message}`); }
   };
@@ -52,6 +54,19 @@ async function until(fn, ms = 3000, what = 'condition') {
     const page = cdp(targets.find(t => t.type === 'page' && /index\.html/.test(t.url)).webSocketDebuggerUrl);
     const inspector = await until(async () => { try { return await (await fetch('http://127.0.0.1:9339/json')).json(); } catch { return null; } }, 8000, 'main debugger');
     const main = cdp(inspector[0].webSocketDebuggerUrl);
+    // Auto-hide would remove the window between checks. Sent to the renderer only, so the saved setting is untouched.
+    await main.eval(`process.mainModule.require('electron').BrowserWindow.getAllWindows()[0].webContents.send('notch:settings',{autoHide:false})`);
+    // A person using the machine trips interference detection, so each check waits for a still pointer.
+    settle = async () => {
+      const at = () => main.eval(`JSON.stringify(process.mainModule.require('electron').screen.getCursorScreenPoint())`);
+      let last = await at(), since = Date.now();
+      const end = Date.now() + 120000;
+      while (Date.now() - since < 2000 && Date.now() < end) {
+        await sleep(100);
+        const now = await at();
+        if (now !== last) { last = now; since = Date.now(); }
+      }
+    };
     const view = () => page.eval(`document.getElementById('notch-shape').dataset.view`);
     const size = () => page.eval(`(()=>{const r=document.getElementById('notch-shape').getBoundingClientRect();return [Math.round(r.width),Math.round(r.height)]})()`);
     const bounds = () => main.eval(`(()=>{const {BrowserWindow}=process.mainModule.require('electron');const b=BrowserWindow.getAllWindows()[0].getBounds();return b})()`);
@@ -190,6 +205,40 @@ async function until(fn, ms = 3000, what = 'condition') {
       assert.equal(await page.eval(`document.body.classList.contains('notch-busy')`), false);
       await emit({ auto: {}, listening: false, toggleLabel: 'Ctrl' });
       await until(async () => (await size())[1] === 8, 1500, 'bar');
+    });
+
+    const text = () => page.eval(`document.getElementById('n-text').textContent`);
+    await check('answer stages update the notch live, then ANSWERED, then back to the bar', async () => {
+      await home();
+      await until(async () => (await size())[1] === 8, 1500, 'bar');
+      await emit({ answer: { status: 'working', message: 'Thinking', at: Date.now() }, auto: {}, listening: false, toggleLabel: '' });
+      await until(async () => (await text()) === 'Thinking' && (await size())[1] === 34, 1500, 'Thinking');
+      assert.equal(await page.eval(`document.getElementById('notch-shape').dataset.sweep`), '1');
+      await emit({ answer: { status: 'working', message: 'Reading your screen…', at: Date.now() }, auto: {}, listening: false, toggleLabel: '' });
+      await until(async () => (await text()) === 'Reading your screen', 1000, 'phase');
+      await emit({ answer: { status: 'done', at: Date.now() - 9000 }, auto: {}, listening: false, toggleLabel: '' });
+      await until(async () => (await text()) === 'ANSWERED', 1000, 'ANSWERED');
+      assert.equal(await page.eval(`document.getElementById('notch-shape').dataset.sweep`), '');
+      await until(async () => (await size())[1] === 8, 2500, 'expired back to bar');
+    });
+
+    await check('a finished status does not come back on the next update', async () => {
+      await emit({ auto: { status: 'done', message: 'All set', at: Date.now() - 9000 }, answer: {}, listening: false, toggleLabel: '' });
+      await sleep(400);
+      assert.equal((await size())[1], 8);
+    });
+
+    await check('an event through main reaches the notch and re-shows an auto-hidden window', async () => {
+      const focused = fg();
+      const shown = () => main.eval("process.mainModule.require('electron').BrowserWindow.getAllWindows()[0].isVisible()");
+      await main.eval("process.mainModule.require('electron').BrowserWindow.getAllWindows()[0].hide()");
+      await until(async () => !(await shown()), 1000, 'hidden');
+      // An empty research question fails inside main before any provider is called.
+      await page.eval("wingman.ask({ mode: 'research', text: '' })");
+      await until(shown, 1500, 'window back');
+      await until(async () => (await text()) === 'Type a research question first', 1500, 'error status');
+      assert.equal(fg(), focused, 'must not take focus');
+      await emit({ answer: {}, auto: {}, listening: false, toggleLabel: '' });
     });
 
     await check('settings keeps the sheet open; closing it lets it tuck', async () => {

@@ -45,7 +45,7 @@ body.notch { --ink: #000; --line: rgba(255,255,255,.085); --line-2: rgba(255,255
 @keyframes notch-need { 50% { opacity: .35; } }
 /* Working sweep: a thin light travelling the lower edge, only while Aether is actually acting. */
 #n-sweep { position: absolute; left: 0; right: 0; bottom: 0; height: 1px; opacity: 0; overflow: hidden; }
-.notch #notch-shape[data-busy="1"] #n-sweep { opacity: 1; }
+.notch #notch-shape[data-sweep="1"] #n-sweep { opacity: 1; }
 #n-sweep::after { content: ''; position: absolute; inset: 0; width: 38%;
   background: linear-gradient(90deg, transparent, var(--orange), transparent); animation: notch-sweep 1.5s cubic-bezier(.45, 0, .55, 1) infinite; }
 @keyframes notch-sweep { from { transform: translateX(-100%); } to { transform: translateX(264%); } }

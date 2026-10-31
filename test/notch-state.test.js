@@ -97,6 +97,27 @@ test('corner radius scales with the shape; sheet sizes clamp', () => {
   assert.deepEqual(clampSheet({ w: 100, h: 5000 }, { w: 1000, h: 900 }), { w: SHEET.minW, h: 900 });
 });
 
+test('every stage of an answer shows; ANSWERED expires and old finished states cannot return', () => {
+  const clock = () => '00:00', now = 1000000;
+  const thinking = describe({ answer: { status: 'working', message: 'Reading your screen…', at: now } }, clock, now);
+  assert.deepEqual([thinking.text, thinking.live, thinking.sweep, thinking.busy], ['Reading your screen', true, true, false]);
+  const done = describe({ answer: { status: 'done', at: now } }, clock, now + 4000);
+  assert.deepEqual([done.text, done.key, done.expires, done.clear], ['ANSWERED', 'OPEN', 6000, 'answer']);
+  assert.equal(describe({ answer: { status: 'done', at: now } }, clock, now + 10001).live, false);
+  assert.equal(describe({ auto: { status: 'done', message: 'All set', at: now } }, clock, now + 8001).live, false, 'a stale DONE must not reappear on the next update');
+  assert.equal(describe({ auto: { status: 'error', message: 'Failed', at: now } }, clock, now + 20001).live, false);
+  assert.equal(describe({ auto: { status: 'paused', message: 'Need you', at: now } }, clock, now + 600000).live, true, 'paused waits for the user');
+  const failed = describe({ answer: { status: 'error', message: 'Error: no key', at: now } }, clock, now);
+  assert.deepEqual([failed.text, failed.led], ['Error: no key', 'led need']);
+});
+
+test('an answer outranks listening; a running Auto outranks an answer', () => {
+  const clock = () => '00:03', answer = { status: 'working', message: 'Answering' };
+  assert.equal(describe({ listening: true, answer }, clock).text, 'Answering');
+  assert.equal(describe({ auto: { active: true, message: 'Clicking' }, answer }, clock).text, 'Clicking');
+  assert.equal(describe({ listening: true, answer: { status: 'done', at: 1 } }, clock, 100000).text, 'LISTEN 00:03');
+});
+
 test('status line: idle is not live, Auto is live and busy, expiring states say when', () => {
   const clock = () => '00:03';
   assert.equal(describe({ toggleLabel: 'Ctrl' }, clock).live, false);

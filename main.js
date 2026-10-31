@@ -151,7 +151,7 @@ function getWriteSession() {
       send('write-mode:state', { stage: update.stage, status: update.status, message: update.message,
         aiScore: update.aiScore, pass: update.pass, detail: update.detail, text: update.text,
         index: update.index, total: update.total, typed: update.typed });
-      updateDock({ write: { stage: update.stage, status: update.status, typed: update.typed, total: update.total } });
+      updateDock({ write: { stage: update.stage, status: update.status, typed: update.typed, total: update.total, at: Date.now() } });
     },
     onEnd: () => { state.busy = false; },
   });
@@ -190,8 +190,12 @@ let linuxAudio = null;
 
 function send(channel, data) {
   if (win && !win.isDestroyed()) win.webContents.send(channel, data);
-  if (channel === 'auto-mode:state') updateDock({ auto: { ...data, target: autoSession?.target } });
+  if (channel === 'auto-mode:state') updateDock({ auto: { ...data, target: autoSession?.target, at: Date.now() } });
   if (channel === 'capture:state') updateDock({ listening: !!data.active });
+  // Every stage of an answer reaches the status line; tokens only mark the first change.
+  const answer = { 'llm:start': { status: 'working', message: 'Thinking' }, 'llm:phase': { status: 'working', message: data?.message },
+    'llm:token': { status: 'working', message: 'Answering', streaming: true }, 'llm:done': { status: 'done' }, 'llm:error': { status: 'error', message: data?.message } }[channel];
+  if (answer && !(answer.streaming && dockState.answer?.streaming)) updateDock({ answer: { ...answer, at: Date.now() } });
 }
 
 async function setPanelPinned(pinned) {
@@ -210,6 +214,8 @@ function toggleLabel() {
 }
 function updateDock(patch) {
   Object.assign(dockState, patch, { toggleLabel: toggleLabel() });
+  // Auto-hide removes the window, so a live status brings it back without taking focus. Hide for sharing stays hidden.
+  if (notchMode && win && !win.isDestroyed() && !win.isVisible() && !dockHiddenForSharing && require('./renderer/status-line').describe(dockState, () => '').live) win.showInactive();
   if (dock && !dock.isDestroyed()) dock.webContents.send('dock:state', dockState);
   if (notchMode && win && !win.isDestroyed()) win.webContents.send('notch:state', dockState);
 }
@@ -349,7 +355,7 @@ function toggleWindow() {
   log('toggleWindow fired. win=' + (win && !win.isDestroyed()) + ' visible=' + (win && win.isVisible()));
   if (!win || win.isDestroyed()) { createWindow(); return; }
   if (notchMode) {
-    if (!win.isVisible()) { assertOverlay(); win.showInactive(); return; } // back from Hide for sharing
+    if (!win.isVisible()) { dockHiddenForSharing = false; assertOverlay(); win.showInactive(); return; } // back from Hide for sharing
     if (notchOpen) { stopForegroundAuto('Auto stopped because Aether was hidden.'); stopWindowGesture(); setNotch(false); void returnFocus(); }
     else { assertOverlay(); void rememberForeground().finally(() => { win.focus(); setNotch(true, true); }); }
     return;
@@ -762,6 +768,7 @@ ipcMain.on('window:hide-for-sharing', async () => {
     if (notchMode) setNotch(false);
     win.hide();
     // Sharing hides everything Aether draws, the dock included.
+    if (notchMode) dockHiddenForSharing = true;
     if (dock && !dock.isDestroyed() && dock.isVisible()) { dockHiddenForSharing = true; dock.hide(); }
   }
 });
@@ -786,7 +793,9 @@ ipcMain.on('mic:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.you.pu
 ipcMain.on('system:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.them.push(Buffer.from(arrayBuffer)); });
 ipcMain.on('notch:opened', (event, open) => {
   if (!win || event.sender !== win.webContents) return;
-  notchOpen = open; updateDock({ panelVisible: open });
+  notchOpen = open;
+  // Opening the sheet reads the answer, so ANSWERED has nothing left to announce.
+  updateDock({ panelVisible: open, ...(open && dockState.answer?.status === 'done' ? { answer: {} } : {}) });
 });
 ipcMain.on('notch:focus', event => { if (win && event.sender === win.webContents) win.focus(); });
 ipcMain.on('notch:remember', event => { if (win && event.sender === win.webContents) void rememberForeground(); });

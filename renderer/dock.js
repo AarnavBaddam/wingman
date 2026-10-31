@@ -15,7 +15,8 @@
     if (state.listening && !listenSince) listenSince = Date.now();
     if (!state.listening) listenSince = 0;
     const line = window.AetherStatus.describe(state, clock);
-    if (line.expires) { clearTimeout(idleTimer); idleTimer = setTimeout(() => paint({ ...last, [line.clear]: {} }), line.expires); }
+    clearTimeout(idleTimer); // a timer left from an older status must not clear this one
+    if (line.expires) idleTimer = setTimeout(() => paint({ ...last, [line.clear]: {} }), line.expires);
     if (line.listening) listenTimer = setInterval(() => { $('text').textContent = 'LISTEN ' + clock(); }, 1000);
     $('step').textContent = line.step; $('text').textContent = line.text; $('sub').textContent = line.sub; $('key').textContent = line.key;
     $('led').className = line.led;
