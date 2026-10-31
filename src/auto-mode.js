@@ -23,7 +23,7 @@ Bar charts whose bars are set with arrow, stepper or tap buttons are NOT graphin
 To select a multiple-choice answer, click its radio circle or checkbox control itself, not the answer text. Mark a form answer-verified only when the screenshot shows that marker visibly filled.
 Native dropdowns in Zen: click the collapsed select control once with intent select. The engine returns its enabled option labels in feedback without opening a browser popup. Choose by returning a click at that SAME control with intent select and option = the exact supplied label, e.g. {"type":"click","x":20,"y":30,"label":"Sequence definition","intent":"select","option":"recursive"}. Never click guessed popup rows, double click, or cycle a native dropdown. Verify the collapsed selected value on the next screenshot. Custom in-page menus still use ordinary visible clicks. Exact-option selection is supported only in Zen tab mode.
 For controls that cycle through values, directions, symbols or answer states with each click, use intent cycle, not select or drag. Send one single click, inspect the fresh screenshot, then repeat on the same control only while its visible state is not the desired answer. Stop when the target state is visible; if the states wrap around, reassess the control and target rather than looping. Never use cycle for ordinary radios/checkboxes, navigation or submission. A cycling state is not an unsure confidence mark: do not double click it or mark it verified after only the first change.
-Fast cycling galleries (e.g. Physics Classroom "Choice 1 of 6"): avoid one model turn per option. Send a cycle click with steps = number of remaining unseen choices (1–12) and region = {x,y,width,height}, a tight rectangle around the diagram AND its choice number. The same control must stay at the same position throughout; never batch a moving control. The engine clicks and captures each choice locally, then shows a numbered contact sheet BELOW the current full screenshot. Tile 1 is the starting choice, followed by one tile per successful click; choices.count and choices.stepsTaken describe the scan. Compare them all in one turn. The CURRENT full screenshot at the top supplies action coordinates; gallery tiles are historical, never click their coordinates. Once you know the correct choice, use another bounded cycle with steps equal to the forward distance (wrapping if necessary), then verify the live diagram before Check Answer. Do not rescan choices already seen or submit during a scan. A no-change capture ends a scan early; reassess instead of assuming all steps ran. When several such controls each hide their own choices (e.g. Location A, B and C), you cannot know any of them before scanning it: scan every control once (steps = choice count - 1) before choosing for any, and never name an option you have not seen. The contact sheet is shown for ONE turn only, so the moment you see it, write each tile's reading into form.answer in compact form (e.g. "B: 1=KE1/PE4 2=KE3/PE2 ..."), and carry all readings forward in every later form.answer for that question. Read bar heights by counting the segments between the dashed lines, against the given chart's total. The right choice is always one of the scanned tiles: first discard every tile that breaks the governing rule (e.g. KE + PE not equal to the starting total on a friction-free track); often only one survives. If your worked answer (or the checker's fix) matches no tile, pick the surviving tile anyway; never cycle around hunting for a chart that was not in the scan.
+Fast cycling galleries (e.g. Physics Classroom "Choice 1 of 6"): avoid one model turn per option. Send a cycle click with steps = number of remaining unseen choices (1–12) and region = {x,y,width,height}, a tight rectangle around the diagram AND its choice number. The same control must stay at the same position throughout; never batch a moving control. The engine clicks and captures each choice locally, then shows a numbered contact sheet BELOW the current full screenshot. Tile 1 is the starting choice, followed by one tile per successful click; choices.count and choices.stepsTaken describe the scan. Compare them all in one turn. The CURRENT full screenshot at the top supplies action coordinates; gallery tiles are historical, never click their coordinates. Once you know the correct choice, use another bounded cycle with steps equal to the forward distance (wrapping if necessary), then verify the live diagram before Check Answer. Do not rescan choices already seen or submit during a scan. A no-change capture ends a scan early; reassess instead of assuming all steps ran. When several such controls each hide their own choices (e.g. Location A, B and C), you cannot know any of them before scanning it: scan every control once (steps = choice count - 1) before choosing for any, and never name an option you have not seen. Every control you scanned for the current question stays on the sheet, one row per control (choices.groups names them in order), until you move to another question, so never rescan a control already on the sheet. Read each tile's own option number from the tile itself, and name the chosen option numbers in form.answer (e.g. "A=Option 2 (KE1/PE4), B=Option 5 ..."). Read bar heights by counting the segments between the dashed lines, against the given chart's total. The right choice is always one of the scanned tiles: first discard every tile that breaks the governing rule (e.g. KE + PE not equal to the starting total on a friction-free track); often only one survives. If your worked answer (or the checker's fix) matches no tile, pick the surviving tile anyway; never cycle around hunting for a chart that was not in the scan.
 Physics Classroom Minds On missions: when the launch screen asks for a usage mode, always choose Sudden Death, never Marathon.
 Pages with nothing to answer (task or assignment lists, dashboards, start, intro or menu screens, and result pages after Check Answer such as "Correct!" or "Incorrect... Continue") get status no-question: click the link or button that leads toward the goal with intent navigate. Never map no-question while a question, answer choice or input field is visible.
 clicks is optional: 1 (default) or 2 for a double click, any intent except submit. When the user goal or the page asks for a double click (for example to mark an answer as sure/confident), send ONE click with clicks 2 on each such answer; never rely on two separate clicks. A half-filled or "unsure" mark after a single click means a double click was needed. Apply the double-click rule to every answer for the whole run.
@@ -283,7 +283,7 @@ function createAutoMode({ capture, decide, execute, research, locate, verify, on
       const vectors = new Map();
       // Keypad/palette points used this run, fed back so the model stops re-guessing them (latest wins).
       let knownButtons = {};
-      let choices = null, rejections = 0, pendingGrade = null, siteResults = [];
+      let choices = null, scans = [], rejections = 0, pendingGrade = null, siteResults = [];
       let cycleRun = { x: -99, y: -99, n: 0 };
       const userRules = goalRules(goal);
       // Plain-text surface word wins; otherwise 'unknown' makes the model classify first.
@@ -389,7 +389,7 @@ function createAutoMode({ capture, decide, execute, research, locate, verify, on
             }[kind] || 'Pick a different action, or use need_input if you are blocked.');
           }
           check(); update('deciding', 'Choosing the next step.');
-          const response = await operation(() => decide({ goal: goal.trim(), profile, userRules: userRules.rules, knownButtons: { ...knownButtons }, screen, choices, form: form && { ...form }, observation, allowSubmit: allowSubmit === true, history: [...history], sources: [...sources], siteResults: [...siteResults], signal }));
+          const response = await operation(() => decide({ goal: goal.trim(), profile, userRules: userRules.rules, knownButtons: { ...knownButtons }, screen, choices, scans: [...scans], form: form && { ...form }, observation, allowSubmit: allowSubmit === true, history: [...history], sources: [...sources], siteResults: [...siteResults], signal }));
           choices = null;
           check();
           let action;
@@ -525,7 +525,7 @@ function createAutoMode({ capture, decide, execute, research, locate, verify, on
             if (action.type === 'click' && action.intent === 'submit' && typeof verify === 'function' && rejections < 2) {
               update('deciding', 'Checking the answer before submitting.');
               let verdict = null;
-              try { verdict = parseVerdict(await operation(() => verify({ goal: goal.trim(), screen, siteResults: [...siteResults], signal }))); }
+              try { verdict = parseVerdict(await operation(() => verify({ goal: goal.trim(), screen, scans: [...scans], siteResults: [...siteResults], signal }))); }
               catch (error) { if (signal.aborted) throw error; }
               check();
               // ponytail: fails open (no verdict = submit), and two rejections let the third Submit through,
@@ -623,7 +623,7 @@ function createAutoMode({ capture, decide, execute, research, locate, verify, on
           } else {
             update('acting', action.type === 'adjust' ? 'Pressing the value arrows.' : action.type === 'fill' ? `Filling ${action.fields.length} field${action.fields.length > 1 ? 's' : ''}.` : action.type === 'type' ? 'Entering a draft field value.' : action.type === 'clear' ? 'Clearing the field.' : action.type === 'click' ? 'Selecting the next target.' : action.type === 'drag' ? 'Dragging an answer to its destination.' : 'Scrolling the screen.', { action });
             if (action.type === 'click' && action.intent === 'cycle' && action.steps) {
-              choices = { region: action.region, images: [screen.imageDataUrl], stepsTaken: 0 };
+              choices = { region: action.region, images: [screen.imageDataUrl], stepsTaken: 0, label: action.label };
               let currentScreen = screen;
               for (let n = 0; n < action.steps; n++) {
                 await input({ type: 'click', x: action.x, y: action.y, label: action.label, intent: 'cycle' });
@@ -636,6 +636,9 @@ function createAutoMode({ capture, decide, execute, research, locate, verify, on
                 choices.images.push(next.imageDataUrl);
                 currentScreen = next;
               }
+              // Every scanned control stays on the sheet until the question changes; a rescan replaces its row.
+              scans = [...scans.filter(scan => Math.abs(scan.x - action.x) > 40 || Math.abs(scan.y - action.y) > 40),
+                { ...choices, x: action.x, y: action.y, label: action.label }].slice(-4);
             } else if (action.type === 'adjust') {
               for (const tap of action.taps) for (let n = 0; n < tap.times; n++) {
                 await input({ type: 'click', x: tap.x, y: tap.y, label: tap.label, intent: 'insert' });
@@ -678,7 +681,7 @@ function createAutoMode({ capture, decide, execute, research, locate, verify, on
             if (action.type === 'click' && ['navigate', 'submit'].includes(action.intent)) {
               if (action.intent === 'submit') { submitted = true; pendingGrade = form?.answer ? { question: form.question, answer: form.answer } : null; }
               submitPending = action.intent === 'submit';
-              form = null; skipCurrent = false; rejections = 0;
+              form = null; skipCurrent = false; rejections = 0; scans = [];
             } else {
               if (action.type !== 'scroll') submitPending = false;
               if (form) form = { ...form, status: 'incomplete' };

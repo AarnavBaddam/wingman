@@ -1,5 +1,9 @@
 # Aether project state
 
+## Auto: scanned options persist for actor and checker — 2026-10-30
+- Run `20261031-041443`: Q1 (coaster) correct in ~2 min. Q2 (pendulum): actor and checker both insisted B = KE5/PE0, which no B option shows; the actor lost its text readings after the checker's feedback and single-stepped B ~10 times, then the lap guard fired and it looped on maps.
+- Fix: the engine keeps every cycle scan for the current question (`scans`, max 4, replaced on rescan, cleared on navigate/submit) and attaches them each turn as one row per control under the live screenshot (`choiceSheet` accepts a list). The checker gets the same sheet and must name an offered option, picking the best survivor of the governing-rule filter. Prompt no longer asks the actor to copy readings into `form.answer`. 325 tests pass; sheet layout checked with real run screenshots in Electron.
+
 ## Auto: stop single-step cycle hunts — 2026-10-30
 - Run `20261031-040734` (disk track, one question, ~4.5 min, 36 decisions): scans worked and the readings were right (only B option 5 = KE3/PE2 totals 5), but the actor chose B = KE0/PE5. The checker's first fix named KE2/PE3, a chart that isn't among the options, so the actor single-clicked B 18 times hunting for it (~2 min).
 - Fix: an engine guard stops a 6th consecutive single-step cycle on the same control and tells the model to choose from scanned tiles with one stepped click. The prompt says to discard tiles that break the governing rule (KE+PE ≠ total) and never hunt for an unscanned chart. 324 tests pass.

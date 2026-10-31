@@ -64,22 +64,23 @@ function createAutoSession({ getSettings, createLLM, getCodexHome, createDesktop
             // Zen reads keypad button positions from the page; desktop has no page to read.
             locate: desktop.findButtons ? (keys, innerSignal) => desktop.findButtons(target, keys, innerSignal) : undefined,
             research: (query, innerSignal) => research(query, settings, innerSignal),
-            decide: async ({ goal, profile, userRules, knownButtons, screen, choices, history, sources, siteResults, form, observation, allowSubmit, signal: innerSignal }) => {
-              const imageDataUrl = choices ? require('./choice-sheet').choiceSheet(screen, choices) : screen.imageDataUrl;
+            decide: async ({ goal, profile, userRules, knownButtons, screen, choices, scans, history, sources, siteResults, form, observation, allowSubmit, signal: innerSignal }) => {
+              const sheet = scans?.length ? scans : choices && [choices];
+              const imageDataUrl = sheet ? require('./choice-sheet').choiceSheet(screen, sheet) : screen.imageDataUrl;
               let image = null;
               try { image = session.log?.image(imageDataUrl); } catch {}
               const response = await llm.stream({
               system: buildAutoSystem(profile),
               turns: [{ role: 'user', text: JSON.stringify({ goal, userRules, screen: { width: screen.width, height: screen.height },
-                allowSubmit, form, observation, choices: choices ? { count: choices.images.length, stepsTaken: choices.stepsTaken, order: 'Historical tiles below the live screenshot, left to right, then top to bottom. Tile 1 is the starting choice.' } : undefined, knownButtons: Object.keys(knownButtons || {}).length ? knownButtons : undefined, history, siteResults: siteResults?.length ? siteResults : undefined, sources: sources.map(source => ({ ...source, content: String(source.content || '').slice(0, 4000) })) }) }],
+                allowSubmit, form, observation, choices: sheet ? { groups: sheet.map(scan => ({ control: scan.label, tiles: scan.images.length })), ...(choices && { justScanned: choices.label || 'latest', stepsTaken: choices.stepsTaken }), order: 'Historical tiles below the live screenshot: one row per scanned control in groups order, tiles left to right. Each tile shows its own option number.' } : undefined, knownButtons: Object.keys(knownButtons || {}).length ? knownButtons : undefined, history, siteResults: siteResults?.length ? siteResults : undefined, sources: sources.map(source => ({ ...source, content: String(source.content || '').slice(0, 4000) })) }) }],
               imageDataUrl, maxTokens: 1200, signal: innerSignal, onToken() {}
               });
               record({ kind: 'decide', image, observation, form, response });
               return response;
             },
-            verify: async ({ goal, screen, siteResults, signal: innerSignal }) => {
-              const response = await llm.stream({ system: VERIFY, turns: [{ role: 'user', text: JSON.stringify({ goal, siteResults: siteResults?.length ? siteResults : undefined }) }],
-                imageDataUrl: screen.imageDataUrl, maxTokens: 1200, effort: 'high', signal: innerSignal, onToken() {} });
+            verify: async ({ goal, screen, scans, siteResults, signal: innerSignal }) => {
+              const response = await llm.stream({ system: VERIFY, turns: [{ role: 'user', text: JSON.stringify({ goal, choices: scans?.length ? scans.map(scan => ({ control: scan.label, tiles: scan.images.length })) : undefined, siteResults: siteResults?.length ? siteResults : undefined }) }],
+                imageDataUrl: scans?.length ? require('./choice-sheet').choiceSheet(screen, scans) : screen.imageDataUrl, maxTokens: 1200, effort: 'high', signal: innerSignal, onToken() {} });
               record({ kind: 'verify', response });
               return response;
             },

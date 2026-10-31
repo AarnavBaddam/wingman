@@ -854,3 +854,23 @@ test('single-step cycling past a full lap is stopped with guidance', async () =>
   assert.equal(h.calls.filter(c => c === 'click').length, 6);
   assert.ok(h.updates.some(u => /full lap/.test(u.message)));
 });
+
+test('scans of several controls stay available until the question changes', async () => {
+  const region = { x: 10, y: 10, width: 100, height: 100 };
+  const scanA = { ...click, x: 50, y: 50, intent: 'cycle', label: 'Location A', steps: 2, region };
+  const scanB = { ...click, x: 300, y: 50, intent: 'cycle', label: 'Location B', steps: 2, region };
+  const next = { ...click, x: 500, y: 500, intent: 'navigate', label: 'Next' };
+  let frames = 0;
+  const contexts = [];
+  const actions = [scanA, scanB, { ...scanA, steps: 1 }, next, { type: 'done', message: 'Done' }];
+  const h = harness([], {
+    capture: async () => ({ ...bounds, imageDataUrl: 'frame' + ++frames }),
+    decide: async c => { contexts.push(c); return JSON.stringify(actions.shift()); }
+  });
+  await h.engine.run('Pick charts');
+  assert.deepEqual(contexts[2].scans.map(s => s.label), ['Location A', 'Location B']);
+  assert.equal(contexts[2].choices.label, 'Location B');
+  assert.deepEqual(contexts[3].scans.map(s => s.label), ['Location B', 'Location A']);
+  assert.equal(contexts[3].scans[1].images.length, 2);
+  assert.deepEqual(contexts[4].scans, []);
+});
