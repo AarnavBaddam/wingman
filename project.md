@@ -1,9 +1,5 @@
 # Aether project state
 
-## Auto: measure heights for energy bar charts — 2026-10-30
-- Pendulum question (start bob high left; A low left, B lowest, C mid right): Aether picked A = KE3/PE2, but A sits only ~20 px above the bottom of a ~120 px drop, so PE ≈ 1. Both models eyeball heights badly.
-- Fix: actor and checker prompts say to read pixel heights (start, each location, lowest point = pivot y + string length) and set PE = total × height ratio, rounded; KE = total − PE.
-
 ## Auto: scanned options persist for actor and checker — 2026-10-30
 - Run `20261031-041443`: Q1 (coaster) correct in ~2 min. Q2 (pendulum): actor and checker both insisted B = KE5/PE0, which no B option shows; the actor lost its text readings after the checker's feedback and single-stepped B ~10 times, then the lap guard fired and it looped on maps.
 - Fix: the engine keeps every cycle scan for the current question (`scans`, max 4, replaced on rescan, cleared on navigate/submit) and attaches them each turn as one row per control under the live screenshot (`choiceSheet` accepts a list). The checker gets the same sheet and must name an offered option, picking the best survivor of the governing-rule filter. Prompt no longer asks the actor to copy readings into `form.answer`. 325 tests pass; sheet layout checked with real run screenshots in Electron.
