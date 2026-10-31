@@ -833,3 +833,13 @@ test('adjust taps with times 0 are dropped instead of rejecting the whole action
   assert.deepEqual(action.taps.map(t => t.label), ['Ek up']);
   assert.throws(() => parseAutoAction(JSON.stringify({ type: 'adjust', taps: [{ x: 3, y: 2, label: 'Eg up', times: 0 }] }), bounds));
 });
+
+test('parse fixes a bare cycle type and a grade placed beside the form', () => {
+  const b = { width: 1000, height: 800 };
+  assert.deepEqual(parseAutoAction('{"type":"cycle","x":5,"y":5,"label":"Location B chart"}', b),
+    { type: 'click', x: 5, y: 5, label: 'Location B chart', intent: 'cycle' });
+  const form = { layout: 'single-page', question: 'Result: incorrect.', navigation: 'none', scroll: 'none', status: 'no-question' };
+  const action = parseAutoAction(JSON.stringify({ type: 'click', x: 5, y: 5, label: 'Continue', intent: 'navigate', form, result: 'incorrect' }), b);
+  assert.equal(action.form.result, 'incorrect');
+  assert.equal('result' in action, false);
+});
