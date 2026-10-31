@@ -34,6 +34,7 @@ module.exports = {
   // The humaniser + detector run as Python subprocesses, which cannot read files
   // inside app.asar — ship them on the real filesystem under resources/.
   extraResources: [
+    { from: "tools/ydotool.exe", to: "tools/ydotool.exe" },
     { from: "scripts/aether_detect.py", to: "scripts/aether_detect.py" },
     { from: "humanizer", to: "humanizer", filter: ["**/*.py"] },
   ],
@@ -62,6 +63,7 @@ module.exports = {
   },
   win: {
     target: [{ target: "nsis", arch: ["x64"] }],
+    icon: "build-resources/icon.ico",
   },
   linux: {
     target: [{ target: "AppImage", arch: ["x64"] }],

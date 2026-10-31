@@ -13,6 +13,36 @@ const { rms16 } = require('./src/wav');
 let win = null;
 let dock = null, dockDismissed = false, dockHiddenForSharing = false, startDocked = true;
 const dockState = { auto: {}, listening: false, panelVisible: false, toggleLabel: '' };
+// Windows: one fixed transparent window holds everything; the shape animates inside it, the window
+// never resizes. Other platforms keep the dock and panel (Linux cannot forward mouse moves when ignored).
+const notchMode = process.platform === 'win32' && !!app.commandLine && app.commandLine.getSwitchValue('ozone-platform') !== 'headless';
+const NOTCH_W = 1120, NOTCH_H = 940;
+let notchOpen = false;
+const panelShown = () => !!win && !win.isDestroyed() && win.isVisible() && (!notchMode || notchOpen);
+function notchBounds() {
+  const { bounds } = screen.getPrimaryDisplay();
+  return { x: Math.round(bounds.x + (bounds.width - NOTCH_W) / 2), y: bounds.y, width: NOTCH_W, height: Math.min(NOTCH_H, bounds.height) };
+}
+// win.blur() does not hand focus back on Windows, so note who had it before Aether took it.
+let notchReturnTo = 0;
+async function rememberForeground() {
+  try {
+    const { handle } = await require('./src/windows-control').foregroundWindow();
+    if (handle !== Number(win.getNativeWindowHandle().readBigUInt64LE())) notchReturnTo = handle;
+  } catch {} // nothing to go back to; tucking still works
+}
+async function returnFocus() {
+  const handle = notchReturnTo;
+  notchReturnTo = 0;
+  if (!win || win.isDestroyed() || !win.isFocused()) return;
+  win.blur();
+  if (handle) await require('./src/windows-control').activateWindow(handle).catch(() => {});
+}
+function setNotch(open, focus = false) {
+  notchOpen = open;
+  updateDock({ panelVisible: open });
+  if (win && !win.isDestroyed()) win.webContents.send('notch:set', { open, focus });
+}
 const registeredShortcuts = {};
 let hyprShortcut = null;
 let toggleBindingError = null;
@@ -24,10 +54,18 @@ let autoSession = null;
 let zenControl = null;
 let writeSession = null;
 
-function codexProfileDir() { return path.join(app.getPath('userData'), 'codex-profile'); }
+function codexProfileDir() {
+  const dir = path.join(app.getPath('userData'), 'codex-profile');
+  require('fs').mkdirSync(dir, { recursive: true }); // codex refuses a CODEX_HOME that doesn't exist
+  return dir;
+}
 
+// Chrome (DevTools Protocol) is the Windows browser backend; AETHER_BROWSER=zen overrides.
+function useChrome() { return process.env.AETHER_BROWSER ? process.env.AETHER_BROWSER === 'chrome' : process.platform === 'win32'; }
 function getZenControl() {
-  if (!zenControl) zenControl = require('./src/zen-control').createZenControl();
+  if (!zenControl) zenControl = useChrome()
+    ? require('./src/chrome-control').createChromeControl()
+    : require('./src/zen-control').createZenControl();
   return zenControl;
 }
 
@@ -47,15 +85,15 @@ function resolveInksplashDir() {
 // named python/python3[.N], so a tampered setting can't turn the humaniser or
 // detector subprocess into an arbitrary-executable sink.
 function validPython(p) {
-  if (!p || typeof p !== 'string' || !path.isAbsolute(p) || !/^python(3(\.\d+)?)?$/.test(path.basename(p))) return null;
+  if (!p || typeof p !== 'string' || !path.isAbsolute(p) || !/^python(3(\.\d+)?)?(\.exe)?$/i.test(path.basename(p))) return null;
   try { return require('fs').statSync(p).isFile() ? p : null; } catch { return null; }
 }
 function resolvePython(inksplashDir) {
   const fs = require('fs');
   const vp = validPython((store.getSettings().writeMode || {}).pythonPath);
   if (vp) return vp;
-  if (inksplashDir) { const venv = path.join(inksplashDir, '.venv', 'bin', 'python'); if (fs.existsSync(venv)) return venv; }
-  return 'python3';
+  if (inksplashDir) { const venv = process.platform === 'win32' ? path.join(inksplashDir, '.venv', 'Scripts', 'python.exe') : path.join(inksplashDir, '.venv', 'bin', 'python'); if (fs.existsSync(venv)) return venv; }
+  return process.platform === 'win32' ? 'python' : 'python3';
 }
 // Zen keystroke sink: connect, lock the tab, click to focus the editor once, then
 // stream keys. Keeps typing across desktop switches (browser-native, no OS cursor).
@@ -113,7 +151,7 @@ function getWriteSession() {
       send('write-mode:state', { stage: update.stage, status: update.status, message: update.message,
         aiScore: update.aiScore, pass: update.pass, detail: update.detail, text: update.text,
         index: update.index, total: update.total, typed: update.typed });
-      updateDock({ write: { stage: update.stage, status: update.status, typed: update.typed, total: update.total } });
+      updateDock({ write: { stage: update.stage, status: update.status, typed: update.typed, total: update.total, at: Date.now() } });
     },
     onEnd: () => { state.busy = false; },
   });
@@ -152,8 +190,12 @@ let linuxAudio = null;
 
 function send(channel, data) {
   if (win && !win.isDestroyed()) win.webContents.send(channel, data);
-  if (channel === 'auto-mode:state') updateDock({ auto: { ...data, target: autoSession?.target } });
+  if (channel === 'auto-mode:state') updateDock({ auto: { ...data, target: autoSession?.target, at: Date.now() } });
   if (channel === 'capture:state') updateDock({ listening: !!data.active });
+  // Every stage of an answer reaches the status line; tokens only mark the first change.
+  const answer = { 'llm:start': { status: 'working', message: 'Thinking' }, 'llm:phase': { status: 'working', message: data?.message },
+    'llm:token': { status: 'working', message: 'Answering', streaming: true }, 'llm:done': { status: 'done' }, 'llm:error': { status: 'error', message: data?.message } }[channel];
+  if (answer && !(answer.streaming && dockState.answer?.streaming)) updateDock({ answer: { ...answer, at: Date.now() } });
 }
 
 async function setPanelPinned(pinned) {
@@ -172,7 +214,10 @@ function toggleLabel() {
 }
 function updateDock(patch) {
   Object.assign(dockState, patch, { toggleLabel: toggleLabel() });
+  // Auto-hide removes the window, so a live status brings it back without taking focus. Hide for sharing stays hidden.
+  if (notchMode && win && !win.isDestroyed() && !win.isVisible() && !dockHiddenForSharing && require('./renderer/status-line').describe(dockState, () => '').live) win.showInactive();
   if (dock && !dock.isDestroyed()) dock.webContents.send('dock:state', dockState);
+  if (notchMode && win && !win.isDestroyed()) win.webContents.send('notch:state', dockState);
 }
 // Wayland clients cannot position themselves; on Hyprland ask the compositor once the window maps.
 async function placeOnHyprland(kind) {
@@ -183,7 +228,7 @@ async function placeOnHyprland(kind) {
   return false;
 }
 function createDock() {
-  if (dock && !dock.isDestroyed()) return;
+  if (notchMode || (dock && !dock.isDestroyed())) return;
   const { DOCK_W, DOCK_H } = require('./src/linux-overlay');
   const { workArea } = screen.getPrimaryDisplay();
   dock = new BrowserWindow({
@@ -207,6 +252,7 @@ function createDock() {
 }
 function showDock() {
   dockDismissed = false; dockHiddenForSharing = false;
+  if (notchMode) { if (win && !win.isDestroyed() && !win.isVisible()) { assertOverlay(); win.showInactive(); } return; }
   if (!dock || dock.isDestroyed()) { createDock(); return; }
   if (!dock.isVisible()) { dock.showInactive(); void placeOnHyprland('dock'); }
 }
@@ -237,16 +283,11 @@ function createWindow() {
   win = new BrowserWindow({
     title: 'Aether',
     show: false, // shown after load (or left docked)
-    width: W,
-    height: H,
-    minWidth: 520,
-    minHeight: 420,
-    x: Math.round(workArea.x + (workArea.width - W) / 2),
-    y: workArea.y + 6,
+    ...(notchMode ? { ...notchBounds(), movable: false, thickFrame: false } : { width: W, height: H, minWidth: 520, minHeight: 420, x: Math.round(workArea.x + (workArea.width - W) / 2), y: workArea.y + 6 }),
     frame: false,
     transparent: true,
     hasShadow: false,
-    resizable: true,
+    resizable: !notchMode,
     skipTaskbar: true,
     alwaysOnTop: true,
     fullscreenable: false,
@@ -256,6 +297,7 @@ function createWindow() {
     ...(isMac ? { type: 'panel' } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      additionalArguments: notchMode ? ['--aether-notch'] : [],
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false
@@ -263,7 +305,8 @@ function createWindow() {
   });
 
   // macOS and Windows can request capture exclusion; Linux has no equivalent here.
-  if (process.platform === 'darwin' || process.platform === 'win32') win.setContentProtection(true);
+  if ((process.platform === 'darwin' || process.platform === 'win32') && !process.env.AETHER_QA_CAPTURE) win.setContentProtection(true);
+  if (notchMode) win.setIgnoreMouseEvents(true, { forward: true });
   if (isMac) {
     win.setAlwaysOnTop(true, 'screen-saver', 1);
     // 'panel' window type (above) floats over fullscreen apps. This call makes
@@ -277,13 +320,15 @@ function createWindow() {
 
   win.webContents.on('did-start-loading', () => { autoSession?.stop('Auto stopped because Aether reloaded.'); writeSession?.stop('Write stopped because Aether reloaded.'); autoRefreshPaused = true; autoRefresh?.cancelPending(); stopWindowGesture(); setCapturing(false); });
   win.on('show', () => updateDock({ panelVisible: true }));
-  win.on('hide', () => updateDock({ panelVisible: false }));
+  win.on('hide', () => { if (notchMode) notchOpen = false; updateDock({ panelVisible: false }); });
   win.on('closed', () => { autoSession?.stop('Auto stopped because Aether closed.'); writeSession?.stop('Write stopped because Aether closed.'); stopWindowGesture(); setCapturing(false); });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
   win.webContents.on('did-finish-load', () => {
     if (overlayError) send('status', { message: overlayError });
     if (win.isVisible()) return;
+    // The notch window is always mapped; open and closed are renderer states.
+    if (notchMode) { win.showInactive(); assertOverlay(); updateDock({}); return; }
     // With the dock running, start as just the dock; the panel opens from it (Sentient-style).
     // Headless checks and setup errors still show the panel directly.
     if (startDocked && !overlayError && app.commandLine.getSwitchValue('ozone-platform') !== 'headless') { startDocked = false; return; }
@@ -309,6 +354,12 @@ function assertOverlay() {
 function toggleWindow() {
   log('toggleWindow fired. win=' + (win && !win.isDestroyed()) + ' visible=' + (win && win.isVisible()));
   if (!win || win.isDestroyed()) { createWindow(); return; }
+  if (notchMode) {
+    if (!win.isVisible()) { dockHiddenForSharing = false; assertOverlay(); win.showInactive(); return; } // back from Hide for sharing
+    if (notchOpen) { stopForegroundAuto('Auto stopped because Aether was hidden.'); stopWindowGesture(); setNotch(false); void returnFocus(); }
+    else { assertOverlay(); void rememberForeground().finally(() => { win.focus(); setNotch(true, true); }); }
+    return;
+  }
   if (win.isVisible()) {
     stopForegroundAuto('Auto stopped because Aether was hidden.');
     stopWindowGesture();
@@ -324,6 +375,11 @@ function toggleWindow() {
 function showWindow() {
   if (!win || win.isDestroyed()) { createWindow(); return; }
   assertOverlay();
+  if (notchMode) {
+    if (!win.isVisible()) win.showInactive();
+    void rememberForeground().finally(() => { if (win && !win.isDestroyed()) { win.focus(); setNotch(true, true); } });
+    return;
+  }
   win.show();
   win.focus();
 }
@@ -502,10 +558,16 @@ async function runFeature(mode, userText, capturePoint) {
 function autoRefreshSupported() {
   return process.platform === 'linux' && !!process.env.HYPRLAND_INSTANCE_SIGNATURE && app.commandLine.getSwitchValue('ozone-platform') !== 'headless';
 }
+function autoModeSupported() {
+  if (process.platform === 'win32') {
+    try { require('./src/windows-control').locateInputTool(); return true; } catch { return false; }
+  }
+  return autoRefreshSupported();
+}
 async function configureAutoRefresh(enabled) {
   if (!autoRefresh) autoRefresh = require('./src/auto-refresh').createAutoRefresh({
     run: point => runFeature('assist', '', point), isBusy: () => state.busy,
-    canObserve: () => !!win && !win.isDestroyed() && win.isVisible() && !autoRefreshPaused
+    canObserve: () => panelShown() && !autoRefreshPaused
   });
   if (!enabled) { autoRefresh.setEnabled(false); activityWatcher?.stop(); activityWatcher = null; publishAutoRefreshState(false); return; }
   if (!autoRefreshSupported()) throw new Error('Click/scroll auto refresh is currently available on Hyprland. Manual Assist remains available.');
@@ -531,16 +593,23 @@ function publishAutoRefreshState(active, error) {
 }
 
 async function startAutoMode(goal, options) {
-  if (!autoRefreshSupported()) throw new Error('Desktop Auto currently requires native Hyprland, grim and ydotool.');
+  const target = options?.target || 'desktop';
+  if (target === 'desktop' && !autoModeSupported()) throw new Error(process.platform === 'win32'
+    ? 'Windows Auto requires tools/ydotool.exe. Run npm run build:input or set YDOTOOL_PATH to its full path.'
+    : 'Desktop Auto currently requires native Hyprland, grim and ydotool.');
   if (state.busy) throw new Error('Wait for the current answer or stop Auto first.');
-  if (!win || win.isDestroyed() || !win.isVisible()) throw new Error('Show Aether before starting Auto.');
+  if (!panelShown()) throw new Error('Show Aether before starting Auto.');
   if (autoRefreshPaused) throw new Error('Close Settings/onboarding and expand Aether before starting Auto.');
   if (!autoSession) autoSession = require('./src/auto-session').createAutoSession({
     getSettings: () => store.getSettings(), createLLM,
     getCodexHome: settings => settings.codexSeparateAccount ? codexProfileDir() : undefined,
-    createDesktopControl: () => require('./src/desktop-control').createDesktopControl(),
+    createDesktopControl: () => process.platform === 'win32'
+      ? require('./src/windows-control').createWindowsControl()
+      : require('./src/desktop-control').createDesktopControl(),
     createBrowserControl: () => getZenControl(),
-    createStopWatcher: options => require('./src/hypr-auto-stop').createHyprAutoStop(options),
+    createStopWatcher: options => process.platform === 'win32'
+      ? require('./src/windows-auto-stop').createWindowsAutoStop(options)
+      : require('./src/hypr-auto-stop').createHyprAutoStop(options),
     createRunLog: () => require('./src/run-log').createRunLog(path.join(app.getPath('userData'), 'auto-runs')),
     research: (query, settings) => getEvidence(query, settings.apiKeys.tavily),
     onUpdate: update => {
@@ -553,13 +622,13 @@ async function startAutoMode(goal, options) {
   });
   state.busy = true; autoRefresh?.cancelPending();
   // Desktop Auto works on this workspace: keep the panel here until the run ends.
-  if ((options?.target || 'desktop') === 'desktop') await setPanelPinned(false);
-  try { return autoSession.start(goal, { allowSubmit: options?.allowSubmit === true, target: options?.target || 'desktop', tabId: options?.tabId }); }
+  if (target === 'desktop') await setPanelPinned(false);
+  try { return autoSession.start(goal, { allowSubmit: options?.allowSubmit === true, target, tabId: options?.tabId }); }
   catch (error) { state.busy = false; throw error; }
 }
 
 // -------- IPC --------
-ipcMain.handle('auto-mode:status', () => ({ supported: autoRefreshSupported(), ...(autoSession?.status || { active: false, status: 'idle', message: '' }) }));
+ipcMain.handle('auto-mode:status', () => ({ supported: autoModeSupported(), ...(autoSession?.status || { active: false, status: 'idle', message: '' }) }));
 ipcMain.handle('auto-mode:start', (_event, goal, options) => startAutoMode(goal, options));
 ipcMain.on('auto-mode:stop', () => autoSession?.stop());
 ipcMain.handle('auto-mode:zen-tabs', async () => {
@@ -610,7 +679,7 @@ ipcMain.handle('write-mode:zen-tabs', async (event) => {
 ipcMain.handle('write-mode:python-status', async (event) => {
   fromPanel(event);
   const dir = resolveInksplashDir();
-  const candidates = [validPython(store.getSettings().writeMode?.pythonPath), dir && path.join(dir, '.venv', 'bin', 'python'), 'python3'].filter(Boolean);
+  const candidates = [validPython(store.getSettings().writeMode?.pythonPath), dir && path.join(dir, '.venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python'), process.platform === 'win32' ? 'python' : 'python3'].filter(Boolean);
   const env = require('./src/python-env').createPythonEnv({ candidates });
   const status = await env.detect();
   return { ...status, inksplashDir: dir };
@@ -635,14 +704,23 @@ ipcMain.handle('codex:login', async () => {
   return true;
 });
 ipcMain.handle('auto-refresh:status', () => ({ supported: autoRefreshSupported(), active: autoRefreshActive }));
-ipcMain.handle('settings:set', (_e, patch) => {
+ipcMain.handle('settings:set', (event, patch) => {
   const apply = async () => {
     if (patch.smart !== undefined && ![false, true, 'deep'].includes(patch.smart)) throw new Error('Invalid response depth');
     if (patch.codexSeparateAccount !== undefined && typeof patch.codexSeparateAccount !== 'boolean') throw new Error('Invalid Codex account setting');
     if (patch.autoRefresh !== undefined && typeof patch.autoRefresh !== 'boolean') throw new Error('Invalid auto refresh setting');
+    if (patch.notchAutoHide !== undefined && typeof patch.notchAutoHide !== 'boolean') throw new Error('Invalid notch auto-hide setting');
+    if (patch.notchHideDelay !== undefined && (!Number.isInteger(patch.notchHideDelay) || patch.notchHideDelay < 2 || patch.notchHideDelay > 60)) throw new Error('Notch hide delay must be between 2 and 60 seconds');
     const previous = !!store.getSettings().autoRefresh;
     if (patch.autoRefresh !== undefined) await configureAutoRefresh(patch.autoRefresh);
-    try { sttDisabled = false; return store.setSettings(patch); }
+    try {
+      sttDisabled = false;
+      const result = store.setSettings(patch);
+      if (notchMode && win && !win.isDestroyed() && event.sender === win.webContents && (patch.notchAutoHide !== undefined || patch.notchHideDelay !== undefined)) {
+        win.webContents.send('notch:settings', { autoHide: result.notchAutoHide, delay: result.notchHideDelay });
+      }
+      return result;
+    }
     catch (error) { if (patch.autoRefresh !== undefined) await configureAutoRefresh(previous); throw error; }
   };
   const result = autoRefreshChange.then(apply);
@@ -686,8 +764,11 @@ ipcMain.on('ask', (_e, payload) => runFeature(payload.mode, payload.text));
 ipcMain.on('window:hide-for-sharing', async () => {
   await toggleBindingReady;
   if (registeredShortcuts.toggle && !toggleBindingError && win && !win.isDestroyed()) {
-    stopForegroundAuto('Auto stopped because Aether was hidden.'); stopWindowGesture(); win.hide();
+    stopForegroundAuto('Auto stopped because Aether was hidden.'); stopWindowGesture();
+    if (notchMode) setNotch(false);
+    win.hide();
     // Sharing hides everything Aether draws, the dock included.
+    if (notchMode) dockHiddenForSharing = true;
     if (dock && !dock.isDestroyed() && dock.isVisible()) { dockHiddenForSharing = true; dock.hide(); }
   }
 });
@@ -703,11 +784,36 @@ ipcMain.on('dock:dismiss', event => {
 ipcMain.on('dock:show', event => { if (win && event.sender === win.webContents) showDock(); });
 ipcMain.on('panel:hide', event => {
   if (!win || event.sender !== win.webContents) return;
-  stopForegroundAuto('Auto stopped because Aether was hidden.'); stopWindowGesture(); win.hide();
+  stopForegroundAuto('Auto stopped because Aether was hidden.'); stopWindowGesture();
+  if (notchMode) { setNotch(false); void returnFocus(); return; }
+  win.hide();
   if (dockDismissed) showDock();
 });
 ipcMain.on('mic:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.you.push(Buffer.from(arrayBuffer)); });
 ipcMain.on('system:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.them.push(Buffer.from(arrayBuffer)); });
+ipcMain.on('notch:opened', (event, open) => {
+  if (!win || event.sender !== win.webContents) return;
+  notchOpen = open;
+  // Opening the sheet reads the answer, so ANSWERED has nothing left to announce.
+  updateDock({ panelVisible: open, ...(open && dockState.answer?.status === 'done' ? { answer: {} } : {}) });
+});
+ipcMain.on('notch:focus', event => { if (win && event.sender === win.webContents) win.focus(); });
+ipcMain.on('notch:remember', event => { if (win && event.sender === win.webContents) void rememberForeground(); });
+ipcMain.on('notch:blur', event => { if (win && event.sender === win.webContents) void returnFocus(); });
+ipcMain.on('notch:hide', event => {
+  if (!notchMode || !win || event.sender !== win.webContents || win.isDestroyed()) return;
+  stopForegroundAuto('Auto stopped because Aether was hidden.');
+  stopWindowGesture();
+  setNotch(false);
+  win.hide();
+  void returnFocus();
+});
+// Forwarded mouse moves stop at the window edge, so leaving is confirmed from the real cursor.
+ipcMain.handle('notch:cursor', event => {
+  if (!win || win.isDestroyed() || event.sender !== win.webContents) return null;
+  const p = screen.getCursorScreenPoint(), b = win.getBounds();
+  return { x: p.x - b.x, y: p.y - b.y };
+});
 ipcMain.on('mouse:ignore', (_e, v) => { if (win) win.setIgnoreMouseEvents(!!v, { forward: true }); });
 let nativeGesture = null;
 let finalizingGesture = null;
@@ -882,7 +988,9 @@ function handleRemoteAuto(argv) {
   void remoteAuto.runRemoteAuto(request, {
     getZen: () => getZenControl(),
     // Hands the URL to the running Zen; detached so a cold Zen start never blocks Aether.
-    openInZen: async url => { const { LD_LIBRARY_PATH, ...env } = process.env; require('child_process').spawn('/opt/zen-browser-bin/zen-bin', ['--marionette', '--new-tab', url], { detached: true, stdio: 'ignore', env }).unref(); },
+    openInZen: async url => {
+      if (useChrome()) { const chrome = getZenControl(); await chrome.connect(); return chrome.openUrl(url); }
+      const { LD_LIBRARY_PATH, ...env } = process.env; require('child_process').spawn('/opt/zen-browser-bin/zen-bin', ['--marionette', '--new-tab', url], { detached: true, stdio: 'ignore', env }).unref(); },
     showPanel: () => showWindow(),
     startAutoMode,
     waitForEnd: async () => { await autoSession?.completion; return autoSession?.status; },
@@ -918,6 +1026,7 @@ app.whenReady().then(() => {
 
   createWindow();
   createDock();
+  if (notchMode) screen.on('display-metrics-changed', () => { if (win && !win.isDestroyed()) win.setBounds(notchBounds()); });
   // Headless checks must not register keys or alter the signed-in desktop's bindings.
   if (app.commandLine.getSwitchValue('ozone-platform') !== 'headless') {
     registerShortcuts();

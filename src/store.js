@@ -11,6 +11,8 @@ const DEFAULTS = {
   smart: false,
   codexSeparateAccount: false,
   autoRefresh: false,
+  notchAutoHide: true,
+  notchHideDelay: 8,
   resumeContext: '',
   shortcuts: { assist: 'CommandOrControl+Return', toggle: 'CommandOrControl+Shift+Space' },
   apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '', nvidia: '', groq: '', tavily: '' },

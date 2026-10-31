@@ -1,5 +1,11 @@
 # Aether project state
 
+## Windows notch auto-hide — 2026-10-30
+
+- The fixed Windows notch now fully hides after an idle delay (8 seconds by default), while active Auto/Write, listening, typing, settings, and pinned sheets stay available.
+- Settings exposes the auto-hide toggle and a bounded 2–60 second delay. The full sheet also has a direct **Hide notch** control; the existing Show / hide shortcut restores the fixed window.
+- Unit coverage covers the idle/pinned/live state predicate. Native Windows notch E2E and packaged Windows validation remain required before claiming the desktop flow is verified.
+
 ## Auto: bar-chart positions graded by order, not PE=0 at the bottom — 2026-10-30
 - User confirmed the pendulum answer A=KE3/PE2, B=KE4/PE1, C=KE2/PE3 is correct. Run `20261031-041443` failed because actor and checker both demanded B = KE5/PE0 (zero PE at the lowest point), which the site does not offer. My pixel-ratio rule (23a2574) was also wrong and is reverted.
 - Rule now in both prompts: rank locations by height; lower = more KE, less PE; total conserved; the lowest drawn point need not have PE 0.

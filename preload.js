@@ -1,6 +1,13 @@
 const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 contextBridge.exposeInMainWorld('wingman', {
+  notchMode: process.argv.includes('--aether-notch'),
+  notchOpened: (open) => ipcRenderer.send('notch:opened', !!open),
+  notchRemember: () => ipcRenderer.send('notch:remember'),
+  notchFocus: () => ipcRenderer.send('notch:focus'),
+  notchBlur: () => ipcRenderer.send('notch:blur'),
+  notchHide: () => ipcRenderer.send('notch:hide'),
+  notchCursor: () => ipcRenderer.invoke('notch:cursor'),
   setZoomLevel: (level) => webFrame.setZoomLevel(level),
   getZoomLevel: () => webFrame.getZoomLevel(),
   platform: process.platform,
@@ -46,7 +53,7 @@ contextBridge.exposeInMainWorld('wingman', {
   openPane: (url) => ipcRenderer.send('open-pane', url),
   log: (msg) => ipcRenderer.send('log', msg),
   on: (channel, cb) => {
-    const allowed = ['capture:state', 'capture:system-ended', 'llm:start', 'llm:phase', 'llm:token', 'llm:done', 'llm:error', 'llm:sources', 'auto-refresh:state', 'auto-mode:state', 'write-mode:state', 'status', 'transcript'];
+    const allowed = ['notch:set', 'notch:state', 'notch:settings', 'capture:state', 'capture:system-ended', 'llm:start', 'llm:phase', 'llm:token', 'llm:done', 'llm:error', 'llm:sources', 'auto-refresh:state', 'auto-mode:state', 'write-mode:state', 'status', 'transcript'];
     if (!allowed.includes(channel)) return;
     ipcRenderer.on(channel, (_e, data) => cb(data));
   }

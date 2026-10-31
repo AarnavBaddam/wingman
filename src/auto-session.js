@@ -55,6 +55,7 @@ function createAutoSession({ getSettings, createLLM, getCodexHome, createDesktop
           try { session.log = createRunLog?.(); } catch {}
           record({ kind: 'start', goal, target: targetType, allowSubmit: allowSubmit === true });
           session.engine = createAutoMode({
+            multiInput: desktop.multiInput === true,
             capture: innerSignal => desktop.capture(target, innerSignal),
             execute: (action, innerSignal) => {
               record({ kind: 'execute', action });
