@@ -1,5 +1,9 @@
 # Aether project state
 
+## Auto: stop single-step cycle hunts — 2026-10-30
+- Run `20261031-040734` (disk track, one question, ~4.5 min, 36 decisions): scans worked and the readings were right (only B option 5 = KE3/PE2 totals 5), but the actor chose B = KE0/PE5. The checker's first fix named KE2/PE3, a chart that isn't among the options, so the actor single-clicked B 18 times hunting for it (~2 min).
+- Fix: an engine guard stops a 6th consecutive single-step cycle on the same control and tells the model to choose from scanned tiles with one stepped click. The prompt says to discard tiles that break the governing rule (KE+PE ≠ total) and never hunt for an unscanned chart. 324 tests pass.
+
 ## Auto: scan every hidden-choice control first — 2026-10-30
 - Runs `20261031-032835` / `033249` ("Match That Bar Chart", 6 chart options per location A/B/C): the model scanned only A's options. The contact sheet shows for one turn, so it forgot them and picked B/C options it had never seen; answers flip-flopped (total 4 vs 5) and four repeated maps tripped the stall pause.
 - Fix (`be5f751`): prompt requires scanning every cycle control before choosing and copying each tile's reading into `form.answer` (carried every turn as text memory). Parser accepts `type: "cycle"` as a cycle click and moves a top-level `result` into `form`. 323 tests pass; AppImage rebuilt and relaunched.

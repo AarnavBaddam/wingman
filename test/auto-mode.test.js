@@ -843,3 +843,14 @@ test('parse fixes a bare cycle type and a grade placed beside the form', () => {
   assert.equal(action.form.result, 'incorrect');
   assert.equal('result' in action, false);
 });
+
+test('single-step cycling past a full lap is stopped with guidance', async () => {
+  const cycle = { ...click, intent: 'cycle', label: 'Location B chart' };
+  let frames = 0;
+  const h = harness([...Array(7).fill(cycle), { type: 'done', message: 'Stopped' }], {
+    capture: async () => ({ ...bounds, imageDataUrl: 'frame' + (++frames) })
+  });
+  await h.engine.run('Pick the chart');
+  assert.equal(h.calls.filter(c => c === 'click').length, 6);
+  assert.ok(h.updates.some(u => /full lap/.test(u.message)));
+});
