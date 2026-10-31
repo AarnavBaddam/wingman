@@ -1,5 +1,11 @@
 # Aether project state
 
+## Auto: scan every hidden-choice control first — 2026-10-30
+- Runs `20261031-032835` / `033249` ("Match That Bar Chart", 6 chart options per location A/B/C): the model scanned only A's options. The contact sheet shows for one turn, so it forgot them and picked B/C options it had never seen; answers flip-flopped (total 4 vs 5) and four repeated maps tripped the stall pause.
+- Fix (`be5f751`): prompt requires scanning every cycle control before choosing and copying each tile's reading into `form.answer` (carried every turn as text memory). Parser accepts `type: "cycle"` as a cycle click and moves a top-level `result` into `form`. 323 tests pass; AppImage rebuilt and relaunched.
+- Next: rerun the form and check that all three locations get scanned and their readings appear in `form.answer`. Risk: small charts can still be miscounted by one segment.
+- Relaunch note: start the AppImage with `--password-store=gnome-libsecret` and the Hyprland session env, or settings fail with "OS credential storage is unavailable".
+
 ## Auto: grades read from result text; Help banned — 2026-10-30
 
 - Run `20261030-031437`: the model never set `result` on result pages (wrote "marked incorrect" in the question text instead), so `siteResults` stayed empty and nothing was learned. Then it clicked Help Me! repeatedly: the button turns red but its content opens outside the captured tab, and the repeat guard paused the run at 226 s.
