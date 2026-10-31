@@ -3,58 +3,151 @@
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; font-src 'self' data:" />
-  <title>wingman</title>
+  <title>Aether</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="katex.min.css" />
+  <link rel="stylesheet" href="notch.css" />
   <style>
     .katex { font-size: 1.15em; }
     .katex-display { margin: 0.6em 0; overflow-x: auto; overflow-y: hidden; }
   </style>
 </head>
 <body>
-  <div id="app">
-    <!-- Top-center floating pill toolbar (drag handle) -->
-    <div id="toolbar">
-      <button class="tb-logo" id="logo-btn" title="wingman"></button>
-      <div class="tb-divider"></div>
-      <button class="tb-hide" id="hide-btn"><span class="chev"></span><span>Hide</span></button>
-      <div class="tb-divider"></div>
-      <button class="tb-stop" id="stop-btn" title="Start / stop listening"></button>
+  <div id="notch-root">
+  <div id="notch-hit" aria-hidden="true"></div>
+  <div id="notch-shape">
+  <i class="notch-ear left" aria-hidden="true"></i><i class="notch-ear right" aria-hidden="true"></i>
+  <div id="notch-clip">
+  <div id="notch-live" role="status" aria-live="polite">
+    <span id="n-led" class="led" aria-hidden="true"></span>
+    <span id="n-step"></span><span id="n-text"></span><span id="n-sub"></span>
+    <span id="n-key"></span><span id="n-sweep" aria-hidden="true"></span>
+  </div>
+  <div id="notch-peek" aria-label="Aether quick controls">
+    <div class="np-row np-top">
+      <span class="np-mark" data-s="0"><span id="np-led" class="led" aria-hidden="true"></span>AETHER</span>
+      <span id="np-status" data-s="0"></span>
+      <button class="np-round" data-s="1" data-proxy="#stop-btn" data-stay type="button" title="Start or stop listening"><span id="np-listen" class="np-dot"></span>LISTEN</button>
+      <button class="np-icon" data-s="1" data-open="#more-btn" type="button" title="Settings" aria-label="Settings"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 5h7M13 5h1M2 11h1M7 11h7"/><circle cx="11" cy="5" r="2"/><circle cx="5" cy="11" r="2"/></svg></button>
     </div>
+    <button id="np-ask" data-s="2" type="button"><span>Ask anything</span><kbd>↵</kbd></button>
+    <div class="np-keys" role="group" aria-label="Modes">
+      <button data-s="3" data-open="[data-mode=assist]" type="button"><b>F1</b>Assist</button>
+      <button data-s="3" data-open="[data-mode=say]" type="button"><b>F2</b>Say</button>
+      <button data-s="3" data-open="[data-mode=followup]" type="button"><b>F3</b>Follow-up</button>
+      <button data-s="3" data-open="[data-mode=recap]" type="button"><b>F4</b>Recap</button>
+      <button data-s="3" data-open="[data-mode=research]" type="button"><b>F5</b>Research</button>
+      <button class="np-act" data-s="3" data-ask type="button"><b>AUTO</b>Run</button>
+      <button class="np-act" data-s="3" data-open="#write-mode-btn" type="button"><b>WRITE</b>Draft</button>
+    </div>
+  </div>
+  <div id="notch-sheet">
+  <div id="app">
+    <section id="plate" aria-label="Aether">
+      <!-- Header doubles as the drag handle -->
+      <div id="toolbar">
+        <button class="tb-logo" id="logo-btn" type="button" title="Open the guide">AETHER</button>
+        <div id="drag-handle" title="Drag to move Aether"><svg width="22" height="10" viewBox="0 0 22 10" fill="currentColor" aria-hidden="true"><circle cx="3" cy="2" r="1.2"/><circle cx="9" cy="2" r="1.2"/><circle cx="15" cy="2" r="1.2"/><circle cx="21" cy="2" r="1.2"/><circle cx="3" cy="8" r="1.2"/><circle cx="9" cy="8" r="1.2"/><circle cx="15" cy="8" r="1.2"/><circle cx="21" cy="8" r="1.2"/></svg></div>
+        <span id="auto-refresh-indicator" hidden title="Assist refreshes after clicks or scrolling">REFRESH</span>
+        <span id="readout" aria-live="polite">AUTO · DESK · ARM OFF</span>
+        <button class="tb-stop" id="stop-btn" type="button" title="Start / stop listening to a meeting"><span id="live-dot" class="off" aria-hidden="true"></span><span>LISTEN</span></button>
+        <button id="notch-pin" class="notch-tool" type="button" aria-pressed="false" title="Keep open when the pointer leaves" aria-label="Keep open"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h4l-.6 4.2L12 9H4l2.6-2.8zM8 9v5"/></svg></button>
+        <button id="notch-collapse" class="notch-tool" type="button" title="Tuck away (Esc)" aria-label="Tuck away"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 10 8 5.5l4.5 4.5"/></svg></button>
+        <button id="notch-hide" class="notch-tool" type="button" title="Hide notch until the Show / hide shortcut is pressed" aria-label="Hide notch"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3l10 10M13 3 3 13"/></svg></button>
+      </div>
 
-    <!-- Main assistant panel -->
-    <div id="panel-wrap">
-      <span id="live-dot" class="off"></span>
-      <div id="panel" class="glass no-drag">
-        <div id="messages"></div>
-
-        <div id="action-row">
-          <button class="act" data-mode="assist"><span class="ic"></span><span>Assist</span></button>
-          <span class="sep">•</span>
-          <button class="act" data-mode="say"><span class="ic"></span><span>What should I say?</span></button>
-          <span class="sep">•</span>
-          <button class="act" data-mode="followup"><span class="ic"></span><span>Follow-up questions</span></button>
-          <span class="sep">•</span>
-          <button class="act" data-mode="recap"><span class="ic"></span><span>Recap</span></button>
-        </div>
-
-        <div id="composer">
-          <div id="input-area">
-            <div id="placeholder">Ask about your screen or conversation, or <span class="keycap">⌘</span><span class="keycap">⏎</span> for Assist</div>
-            <textarea id="input" rows="1" spellcheck="false"></textarea>
+      <div id="panel-wrap">
+        <div id="panel" class="no-drag">
+          <div class="screen" id="answer-screen">
+            <div class="screen-hdr"><span>ANSWER</span><span id="depth-readout">DEPTH: WORK</span></div>
+            <div id="messages"></div>
           </div>
-          <div id="composer-bottom">
-            <button id="smart-toggle" class="smart-pill"><span class="ic"></span><span>Smart</span></button>
-            <button id="more-btn" class="more-btn" title="Settings"></button>
-            <button id="zoom-out-btn" class="more-btn" title="Zoom Out" style="font-size: 18px; font-family: monospace; line-height: 1;">-</button>
-            <button id="zoom-in-btn" class="more-btn" title="Zoom In" style="font-size: 16px; font-family: monospace; line-height: 1;">+</button>
-            <div class="spacer"></div>
-            <button id="send-btn" title="Send"></button>
+          <div id="auto-mode-status" class="status-line hidden" role="status" aria-live="polite"></div>
+
+          <div id="composer">
+            <div id="input-area">
+              <div id="placeholder">Ask anything</div>
+              <textarea id="input" rows="1" spellcheck="false" aria-label="Ask Aether or describe an Auto task"></textarea>
+            </div>
+            <button id="send-btn" type="button" title="Ask (Enter)">↵</button>
+          </div>
+
+          <div id="action-row" role="group" aria-label="Modes">
+            <button class="act" data-mode="assist" type="button"><span class="f">F1</span><span class="n">Assist</span></button>
+            <button class="act wide" data-mode="say" type="button"><span class="f">F2</span><span class="n">What should I say?</span></button>
+            <button class="act" data-mode="followup" type="button"><span class="f">F3</span><span class="n">Follow-ups</span></button>
+            <button class="act dark" data-mode="recap" type="button"><span class="f">F4</span><span class="n">Recap</span></button>
+            <button class="act blue" data-mode="research" type="button"><span class="f">F5</span><span class="n">Research</span></button>
+            <button id="auto-mode-btn" class="act run" type="button" title="Type a task, then Run Auto. Escape stops."><span class="f">AUTO</span><span class="n">Run Auto</span></button>
+            <button id="write-mode-btn" class="act run" type="button" title="Draft, humanise, and type into a Zen tab"><span class="f">WRITE</span><span class="n">Write</span></button>
+          </div>
+
+          <div class="ctrls">
+            <div class="ctl"><span class="ctl-l" id="depth-l">Depth</span>
+              <div id="smart-toggle" class="slide three" role="radiogroup" aria-labelledby="depth-l">
+                <button type="button" role="radio" data-depth="answer">Ans</button>
+                <button type="button" role="radio" data-depth="work">Work</button>
+                <button type="button" role="radio" data-depth="deep">Deep</button>
+              </div></div>
+            <fieldset id="auto-target" class="ctl"><legend class="ctl-l">Target</legend>
+              <div class="slide two">
+                <label><input type="radio" name="auto-target" value="desktop" checked><span>Desk</span></label>
+                <label><input type="radio" name="auto-target" value="zen"><span>Zen</span></label>
+              </div></fieldset>
+            <label class="ctl arm" title="Applies only to the next Auto run; resets when it starts."><span class="ctl-l">Arm submit</span>
+              <span class="arm-row"><input id="auto-submit" type="checkbox" role="switch"><small>this run only</small></span></label>
+          </div>
+
+          <div id="zen-row" class="zen-row hidden">
+            <button id="auto-zen-connect" class="cap-btn" type="button">Connect Zen</button>
+            <fieldset id="auto-zen-tab" aria-label="Zen target tab">Connect to list tabs</fieldset>
+          </div>
+
+          <!-- Write mode: draft -> humanise -> approve -> type into a Zen tab -->
+          <div id="write-view" class="hidden">
+            <div class="screen">
+              <div class="screen-hdr"><span>WRITE</span><span id="write-stage">PROMPT</span></div>
+              <div id="write-display">
+                <textarea id="write-input" rows="4" spellcheck="false" placeholder="Prompt to draft from — or paste your own text to review, humanise, and type."></textarea>
+                <label class="s-check" id="write-paste-row"><input id="write-paste-mode" type="checkbox" />Paste mode: use my own text, don't draft</label>
+                <textarea id="write-review" class="hidden" rows="6" spellcheck="false" aria-label="Approve the final text"></textarea>
+                <div id="write-detector" class="status-line hidden"></div>
+                <div id="write-notes" class="status-line hidden" role="alert" style="white-space: pre-line"></div>
+              </div>
+            </div>
+            <div id="write-status" class="status-line hidden" role="status" aria-live="polite"></div>
+            <div class="write-actions" role="group" aria-label="Write steps">
+              <button id="write-prepare" class="act run" type="button"><span class="f">PREP</span><span class="n">Draft + humanise</span></button>
+              <button id="write-rerun" class="act hidden" type="button"><span class="f">↻</span><span class="n">Re-run</span></button>
+              <button id="write-humanize" class="act run hidden" type="button" title="Rewrite in rounds until the detector reads under 20%, keeping quotes, thesis, and purpose"><span class="f">HUM</span><span class="n">Humanize</span></button>
+              <button id="write-approve" class="act blue hidden" type="button"><span class="f">OK</span><span class="n">Approve</span></button>
+              <button id="write-type" class="act run hidden" type="button"><span class="f">TYPE</span><span class="n">Type it</span></button>
+              <button id="write-stop" class="act dark hidden" type="button"><span class="f">ESC</span><span class="n">Stop</span></button>
+            </div>
+            <div id="write-zen-row" class="zen-row hidden">
+              <button id="write-zen-connect" class="cap-btn" type="button">Connect Zen</button>
+              <fieldset id="write-zen-tab" aria-label="Zen target tab">Connect to list tabs</fieldset>
+            </div>
+            <div class="foot">
+              <button id="write-back" class="tb-hide" type="button" title="Back to Ask">Back</button>
+              <button id="write-settings" class="tb-hide" type="button" title="Write mode settings">Write settings</button>
+            </div>
+          </div>
+
+          <div class="foot" id="main-foot">
+            <button class="tb-hide" id="hide-btn" type="button" title="Hide the panel; the dock stays">Hide</button>
+            <button class="tb-hide" id="share-hide-btn" type="button">Hide for sharing</button>
+            <button id="dock-btn" class="tb-hide" type="button" title="Bring the dock back">Dock</button>
+            <span class="zoom" role="group" aria-label="Text size"><button id="zoom-out-btn" type="button" title="Smaller text">A−</button><button id="zoom-in-btn" type="button" title="Larger text">A+</button></span>
+            <button id="more-btn" type="button" title="Settings (Ctrl+,)">Settings</button>
           </div>
         </div>
       </div>
-    </div>
+    </section>
   </div>
+
+  <div class="resize-corner" data-resize="bottom-left" title="Drag to resize" aria-hidden="true"></div>
+  <div class="resize-corner" data-resize="bottom-right" title="Drag to resize" aria-hidden="true"></div>
 
   <!-- Settings -->
   <div id="settings-scrim" class="hidden">
@@ -71,23 +164,69 @@
           <button data-provider="gemini">Gemini</button>
           <button data-provider="nvidia">Nvidia</button>
           <button data-provider="groq">Groq</button>
+          <button data-provider="ollama">Ollama</button>
+          <button data-provider="claude-cli">Claude CLI</button>
+          <button data-provider="codex-cli">Codex CLI</button>
         </div>
 
-        <label class="s-label">API keys <span class="s-hint">stored locally in wingman-data.json</span></label>
+        <label class="s-label">API keys <span class="s-hint">stored securely on this device</span></label>
         <div class="s-field"><span>OpenAI</span><input id="key-openai" type="password" placeholder="sk-..." autocomplete="off" /></div>
         <div class="s-field"><span>Anthropic</span><input id="key-anthropic" type="password" placeholder="sk-ant-..." autocomplete="off" /></div>
         <div class="s-field"><span>Gemini</span><input id="key-gemini" type="password" placeholder="AIza..." autocomplete="off" /></div>
         <div class="s-field"><span>Nvidia</span><input id="key-nvidia" type="password" placeholder="nvapi-..." autocomplete="off" /></div>
         <div class="s-field"><span>Groq</span><input id="key-groq" type="password" placeholder="gsk_..." autocomplete="off" /></div>
+        <div class="s-field"><span>Tavily search</span><input id="key-tavily" type="password" placeholder="tvly-..." autocomplete="off" /></div>
+        <div class="s-hint">Questions search the bundled library first. Current questions and library misses use Tavily web search.</div>
+
+        <label class="s-label">Meeting transcription</label>
+        <div class="s-seg" id="stt-seg">
+          <button data-stt="cloud">Cloud key</button>
+          <button data-stt="local">Local Whisper</button>
+        </div>
+        <div class="s-field"><span>Whisper model</span><input id="whisper-model-path" type="text" placeholder="/absolute/path/to/ggml-model.bin" autocomplete="off" /></div>
+        <div class="s-hint">Local transcription needs whisper-cli on PATH. Ollama always uses local transcription.</div>
 
         <label class="s-label" for="resume-context">Résumé / professional background <span class="s-hint">stored locally; sent to your selected provider with each request</span></label>
-        <textarea id="resume-context" class="s-textarea" maxlength="12000" placeholder="Paste your résumé or professional background here. wingman will use it as the factual source for career-related answers."></textarea>
+        <textarea id="resume-context" class="s-textarea" maxlength="12000" placeholder="Paste your résumé or professional background here. Aether will use it as the factual source for career-related answers."></textarea>
         <div class="s-resume-actions"><span class="s-hint">Maximum 12,000 characters</span><button id="clear-resume" type="button">Clear résumé</button></div>
 
-        <label class="s-label">Models <span class="s-hint">fast = Smart off · smart = Smart on</span></label>
+        <label class="s-label">Models <span class="s-hint">Fast = answer only · Smart = work or deep explanation</span></label>
         <div class="s-field"><span>Fast</span><input id="model-fast" type="text" autocomplete="off" /></div>
         <div class="s-field"><span>Smart</span><input id="model-smart" type="text" autocomplete="off" /></div>
         <div class="s-hint" id="model-hint"></div>
+        <label class="s-check hidden" id="codex-account-row"><input type="checkbox" id="codex-separate-account" />Use a separate Aether ChatGPT login</label>
+        <div class="s-hint hidden" id="codex-account-hint">Uses Aether’s own Codex profile. Your development login stays separate.</div>
+        <div class="s-resume-actions hidden" id="codex-login-row"><span class="s-hint" id="codex-login-state" aria-live="polite"></span><button id="codex-login" type="button">Sign in to Codex</button></div>
+
+        <label class="s-check"><input id="auto-refresh" type="checkbox" />Auto refresh Assist after clicks or scrolling</label>
+        <div class="s-hint" id="auto-refresh-hint">Off by default. After interaction pauses, a screenshot goes to your selected provider and uses its allowance.</div>
+
+        <label class="s-check"><input id="notch-auto-hide" type="checkbox" />Automatically hide the notch after inactivity</label>
+        <div class="s-field"><span>Hide after (seconds)</span><input id="notch-hide-delay" type="number" min="2" max="60" step="1" autocomplete="off" /></div>
+        <div class="s-hint">The notch stays visible while listening, running Auto/Write, typing, or pinned. Use the Show / hide shortcut to bring it back.</div>
+
+        <label class="s-label">Write mode <span class="s-hint">human-paced typing into a Zen tab</span></label>
+        <div class="s-hint">Humaniser used by the Humanize button</div>
+        <div class="s-seg" id="wm-humanizer-seg">
+          <button data-humanizer="sentences">Codex, sentence by sentence</button>
+          <button data-humanizer="model">Codex, whole text</button>
+          <button data-humanizer="local">Local Config C</button>
+        </div>
+        <div class="s-seg" id="wm-detector-seg">
+          <button data-detector="local">Local detector</button>
+          <button data-detector="local+zerogpt">Local + ZeroGPT</button>
+        </div>
+        <div class="s-field"><span>Speed (WPM)</span><input id="wm-wpm" type="number" min="10" max="200" step="1" autocomplete="off" /></div>
+        <div class="s-field"><span>Corrected typos</span><input id="wm-typo" type="number" min="0" max="1" step="0.01" autocomplete="off" /></div>
+        <div class="s-field"><span>Left-in typos</span><input id="wm-untypo" type="number" min="0" max="1" step="0.001" autocomplete="off" /></div>
+        <div class="s-field"><span>Stutter rate</span><input id="wm-stutter" type="number" min="0" max="1" step="0.01" autocomplete="off" /></div>
+        <div class="s-field"><span>Long-gap chance</span><input id="wm-gap" type="number" min="0" max="1" step="0.01" autocomplete="off" /></div>
+        <div class="s-hint">Rates are 0–1 per keystroke. Defaults model a slower, less-skilled typist. Gaps span 20s–10min, weighted small.</div>
+        <div class="s-field"><span>Humaniser candidates</span><input id="wm-candidates" type="number" min="1" max="30" step="1" autocomplete="off" /></div>
+        <div class="s-field"><span>Refine passes</span><input id="wm-refine" type="number" min="0" max="30" step="1" autocomplete="off" /></div>
+        <div class="s-field"><span>Python path</span><input id="wm-python" type="text" placeholder="auto-detect" autocomplete="off" /></div>
+        <div class="s-field"><span>Humaniser folder</span><input id="wm-inksplash" type="text" placeholder="auto (InkSplash checkout)" autocomplete="off" /></div>
+        <div class="s-hint" id="wm-python-status">Checking Python…</div>
 
         <label class="s-label">Keyboard shortcuts</label>
         <div class="s-shortcut">
@@ -96,7 +235,12 @@
           <button id="shortcut-reset" class="shortcut-reset" type="button">Reset</button>
         </div>
         <div class="shortcut-hint" id="shortcut-hint">Click the shortcut, then press a new key combination.</div>
-        <div class="shortcut-hint">Show / hide wingman: <b>⌘ ⌥ ⇧ 9</b> (works even when the window is hidden)</div>
+        <div class="s-shortcut">
+          <span>Show / hide</span>
+          <button id="shortcut-toggle" class="shortcut-record" type="button" aria-label="Change Show / hide shortcut"></button>
+          <button id="shortcut-toggle-reset" class="shortcut-reset" type="button">Reset</button>
+        </div>
+        <div class="shortcut-hint">On Wayland, your desktop may also require a global shortcut binding. Test restoring before sharing.</div>
 
         <div class="s-status" id="s-status"></div>
       </div>
@@ -120,8 +264,20 @@
     </div>
   </div>
 
+  </div><!-- notch-sheet -->
+  </div><!-- notch-clip -->
+  <div class="notch-edge" data-edge="w"></div><div class="notch-edge" data-edge="e"></div><div class="notch-edge" data-edge="s"></div><div class="notch-edge" data-edge="sw"></div><div class="notch-edge" data-edge="se"></div>
+  </div><!-- notch-shape -->
+  </div><!-- notch-root -->
+
   <script src="icons.js"></script>
   <script src="katex.min.js"></script>
+  <script src="../node_modules/marked/lib/marked.umd.js"></script>
+  <script src="../node_modules/dompurify/dist/purify.min.js"></script>
+  <script src="answer-format.js"></script>
   <script src="renderer.js"></script>
+  <script src="notch-state.js"></script>
+  <script src="status-line.js"></script>
+  <script src="notch.js"></script>
 </body>
 </html>

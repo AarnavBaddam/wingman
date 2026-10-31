@@ -27,11 +27,17 @@ const canNotarize =
 
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
-  appId: "com.aarnavbaddam.wingman",
-  productName: "wingman",
-  asar: false,
+  appId: "dev.prahladv.aether",
+  productName: "Aether",
   publish: null,
-  files: ["main.js", "preload.js", "src/**/*", "renderer/**/*"],
+  files: ["main.js", "preload.js", "dock-preload.js", "src/**/*", "renderer/**/*", "data/**/*", "LICENSE"],
+  // The humaniser + detector run as Python subprocesses, which cannot read files
+  // inside app.asar — ship them on the real filesystem under resources/.
+  extraResources: [
+    { from: "tools/ydotool.exe", to: "tools/ydotool.exe" },
+    { from: "scripts/aether_detect.py", to: "scripts/aether_detect.py" },
+    { from: "humanizer", to: "humanizer", filter: ["**/*.py"] },
+  ],
   directories: { buildResources: "build-resources" },
   mac: {
     target: [{ target: "zip", arch: ["arm64"] }],
@@ -57,5 +63,11 @@ module.exports = {
   },
   win: {
     target: [{ target: "nsis", arch: ["x64"] }],
+    icon: "build-resources/icon.ico",
+  },
+  linux: {
+    target: [{ target: "AppImage", arch: ["x64"] }],
+    category: "Utility",
+    syncDesktopName: true,
   },
 };

@@ -1,5 +1,5 @@
 const DEBUG = false; // Set to false to disable debug logging
-// LLM factory — OpenAI / Anthropic / Gemini behind one streaming interface.
+// LLM factory — API, local Ollama, and subscribed CLI providers behind one streaming interface.
 // stream({ system, turns:[{role,text}], imageDataUrl, maxTokens, onToken }) -> Promise<fullText>
 
 function stripDataUrl(dataUrl) {
@@ -7,10 +7,12 @@ function stripDataUrl(dataUrl) {
   return m ? { mime: m[1], b64: m[2] } : null;
 }
 
-async function streamOpenAI({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken, baseURL }) {
+async function streamOpenAI({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken, baseURL, signal }) {
   if (DEBUG) console.log('[DEBUG LLM] streamOpenAI called', { model, baseURL, hasImage: !!imageDataUrl, maxTokens });
   const OpenAI = require('openai');
   const client = new OpenAI({ apiKey, baseURL });
+  const localSignal = baseURL === 'http://127.0.0.1:11434/v1' ? AbortSignal.timeout(120000) : undefined;
+  const requestSignal = signal && localSignal ? AbortSignal.any([signal, localSignal]) : signal || localSignal;
   const messages = [{ role: 'system', content: system }];
   turns.forEach((t, i) => {
     const last = i === turns.length - 1;
@@ -25,7 +27,7 @@ async function streamOpenAI({ apiKey, model, system, turns, imageDataUrl, maxTok
   });
   if (DEBUG) console.log('[DEBUG LLM] streamOpenAI sending request to OpenAI SDK with messages count:', messages.length);
   try {
-    const stream = await client.chat.completions.create({ model, messages, stream: true, max_tokens: maxTokens });
+    const stream = await client.chat.completions.create({ model, messages, stream: true, max_tokens: maxTokens }, requestSignal ? { signal: requestSignal } : undefined);
     let full = '';
     for await (const part of stream) {
       const d = part.choices && part.choices[0] && part.choices[0].delta && part.choices[0].delta.content;
@@ -34,12 +36,13 @@ async function streamOpenAI({ apiKey, model, system, turns, imageDataUrl, maxTok
     if (DEBUG) console.log('[DEBUG LLM] streamOpenAI finished successfully, total length:', full.length);
     return full;
   } catch (err) {
+    if (localSignal?.aborted) throw new Error('Ollama timed out after two minutes');
     if (DEBUG) console.error('[DEBUG LLM] streamOpenAI error:', err);
     throw err;
   }
 }
 
-async function streamAnthropic({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken }) {
+async function streamAnthropic({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken, signal }) {
   if (DEBUG) console.log('[DEBUG LLM] streamAnthropic called', { model, hasImage: !!imageDataUrl, maxTokens });
   const Anthropic = require('@anthropic-ai/sdk');
   const client = new Anthropic({ apiKey });
@@ -56,7 +59,7 @@ async function streamAnthropic({ apiKey, model, system, turns, imageDataUrl, max
   });
   if (DEBUG) console.log('[DEBUG LLM] streamAnthropic sending request to Anthropic SDK with messages count:', messages.length);
   try {
-    const stream = await client.messages.create({ model, max_tokens: maxTokens, system, messages, stream: true });
+    const stream = await client.messages.create({ model, max_tokens: maxTokens, system, messages, stream: true }, signal ? { signal } : undefined);
     let full = '';
     for await (const ev of stream) {
       if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') { full += ev.delta.text; onToken(ev.delta.text); }
@@ -69,7 +72,7 @@ async function streamAnthropic({ apiKey, model, system, turns, imageDataUrl, max
   }
 }
 
-async function streamGemini({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken }) {
+async function streamGemini({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken, signal }) {
   if (DEBUG) console.log('[DEBUG LLM] streamGemini called', { model, hasImage: !!imageDataUrl, maxTokens });
   const { GoogleGenAI } = require('@google/genai');
   const ai = new GoogleGenAI({ apiKey });
@@ -85,7 +88,7 @@ async function streamGemini({ apiKey, model, system, turns, imageDataUrl, maxTok
   if (DEBUG) console.log('[DEBUG LLM] streamGemini sending request to Google SDK with contents count:', contents.length);
   try {
     const stream = await ai.models.generateContentStream({
-      model, contents, config: { systemInstruction: system }
+      model, contents, config: { systemInstruction: system, ...(signal ? { abortSignal: signal } : {}) }
     });
     let full = '';
     let lastFinishReason = 'UNKNOWN';
@@ -110,6 +113,8 @@ function createLLM(settings) {
   const apiKey = keys[provider];
   const tier = settings.smart ? 'smart' : 'fast';
   const model = (settings.models[provider] || {})[tier];
+  const isCLI = provider === 'claude-cli' || provider === 'codex-cli';
+  const isOllama = provider === 'ollama';
   
   // Set to 4096 (effectively unlimited for a single response) 
   // since some SDKs like Anthropic require a maxTokens value.
@@ -119,10 +124,12 @@ function createLLM(settings) {
 
 return {
     provider, model, apiKey,
-    ready: !!apiKey && !!model,
+    ready: isCLI || (isOllama ? !!model : !!apiKey && !!model),
     async stream(params) {
       if (DEBUG) console.log('[DEBUG LLM] stream() invoked for provider:', provider);
       const args = { apiKey, model, maxTokens, ...params };
+      if (isCLI) return require('./cli-provider').streamCLI(provider, { ...args, codexHome: settings.codexHome });
+      if (isOllama) return streamOpenAI({ ...args, apiKey: 'ollama', baseURL: 'http://127.0.0.1:11434/v1' });
       if (provider === 'openai') return streamOpenAI(args);
       if (provider === 'nvidia') return streamOpenAI({ ...args, baseURL: 'https://integrate.api.nvidia.com/v1' });
       if (provider === 'groq') return streamOpenAI({ ...args, baseURL: 'https://api.groq.com/openai/v1' });

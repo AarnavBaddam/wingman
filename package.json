@@ -1,7 +1,9 @@
 {
-  "name": "wingman",
+  "name": "aether",
   "version": "0.1.0",
-  "description": "A desktop AI overlay copilot — sees your screen, hears your meetings, stays hidden from screen shares. Bring your own AI key.",
+  "description": "A desktop AI copilot with screen and meeting context, local models, and optional provider accounts.",
+  "productName": "Aether",
+  "desktopName": "dev.prahladv.aether.desktop",
   "license": "GPL-3.0-or-later",
   "author": "",
   "main": "main.js",
@@ -10,9 +12,13 @@
     "test": "node --test",
     "pack": "electron-builder --dir",
     "dist": "electron-builder --mac zip",
-    "dist:win": "electron-builder --win",
-    "build": "electron-builder --dir && codesign --force --sign \"Apple Development: cherrybaddam1981@gmail.com (M5H8PKHJ7X)\" --entitlements build-resources/entitlements.mac.plist --deep dist/mac-arm64/wingman.app",
-    "install-app": "npm run build && osascript -e 'tell application \"wingman\" to quit' 2>/dev/null; sleep 1; rm -rf /Applications/wingman.app && cp -R dist/mac-arm64/wingman.app /Applications/ && grep -c \"Option+Shift+9\" /Applications/wingman.app/Contents/Resources/app/main.js && echo 'Installed to /Applications/wingman.app' && open /Applications/wingman.app"
+    "build:input": "cd native/ydotool-win && cargo build --release && cd ../.. && node -e \"require('fs').mkdirSync('tools',{recursive:true});require('fs').copyFileSync('native/ydotool-win/target/release/ydotool.exe','tools/ydotool.exe')\"",
+    "test:notch-e2e": "node scripts/notch-e2e.js",
+    "test:input-e2e": "electron native/ydotool-win/e2e/aether.e2e.js",
+    "dist:win": "npm run build:input && electron-builder --win",
+    "check:windows": "node --check main.js && node --check src/windows-control.js && node --check src/windows-auto-stop.js",
+    "dist:linux": "electron-builder --linux AppImage",
+    "build": "electron-builder --dir"
   },
   "keywords": [
     "electron",
@@ -23,17 +29,16 @@
     "macos"
   ],
   "devDependencies": {
-    "electron": "^43.2.0",
-    "electron-builder": "^24.13.3"
+    "electron": "^44.9.0",
+    "electron-builder": "^26.15.3"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
-    "@google/genai": "^0.3.0",
-    "katex": "^0.18.1",
+    "@google/genai": "^1.52.0",
+    "dompurify": "^3.4.17",
+    "katex": "^0.18.2",
     "lucide-static": "^0.468.0",
+    "marked": "^18.1.1",
     "openai": "^4.73.0"
-  },
-  "allowScripts": {
-    "electron@33.2.1": true
   }
 }

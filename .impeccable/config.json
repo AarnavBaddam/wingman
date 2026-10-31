@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "renderer/styles.css"
+        ],
+        "createdAt": "2026-10-21T23:25:41.054Z",
+        "reason": "assistant triage: remaining matches are bottom inset keycap bevels (.act.blue/.act.run, direction 3 hardware keys), not side accents; the real side-tab on #wingman-status was fixed"
+      }
+    ]
+  }
+}

@@ -1,0 +1,119 @@
+const { createAutoMode } = require('./auto-mode');
+const { buildAutoSystem, VERIFY } = require('./auto-profiles');
+
+function wait(ms, signal) {
+  return new Promise((resolve, reject) => {
+    const abort = () => { clearTimeout(timer); signal.removeEventListener('abort', abort); reject(new Error('Auto stopped.')); };
+    const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve(); }, ms);
+    signal.addEventListener('abort', abort, { once: true });
+    if (signal.aborted) abort();
+  });
+}
+
+function createAutoSession({ getSettings, createLLM, getCodexHome, createDesktopControl, createBrowserControl, createStopWatcher,
+  createRunLog, research, onUpdate = () => {}, onEnd = () => {}, countdownMs = 3000 }) {
+  let current = null, completion = Promise.resolve();
+  let last = { active: false, status: 'idle', message: '' };
+  const manager = {
+    get active() { return current !== null; },
+    get target() { return current?.targetType || null; },
+    get completion() { return completion; },
+    get status() { return last; },
+    stop(reason = 'Auto stopped.') {
+      if (!current) return;
+      current.reason = reason; current.controller.abort(); current.engine?.stop();
+    },
+    start(goal, { allowSubmit = false, target: targetType = 'desktop', tabId } = {}) {
+      if (current) throw new Error('Auto is already running.');
+      if (typeof goal !== 'string' || !goal.trim() || goal.length > 4000) throw new Error('Type an Auto task first (maximum 4,000 characters).');
+      if (!['desktop', 'zen'].includes(targetType)) throw new Error('Invalid Auto target.');
+      if (targetType === 'zen' && (typeof tabId !== 'string' || !tabId.trim() || tabId.length > 200)) throw new Error('Connect Zen and select a target tab first.');
+      const session = { controller: new AbortController(), reason: 'Auto stopped.', targetType };
+      current = session;
+      const signal = session.controller.signal;
+      const record = event => { try { session.log?.write(event); } catch {} };
+      const publish = update => { last = { ...update, active: true }; onUpdate(last); };
+      completion = (async () => {
+        let terminal = { status: 'stopped', message: 'Auto stopped.' }, skippedNote = '';
+        try {
+          const settings = getSettings();
+          const llm = createLLM({ ...settings, codexHome: getCodexHome(settings) });
+          if (!llm.ready) throw new Error('Configure a vision-capable answer provider in Settings before Auto.');
+          const desktop = targetType === 'zen' ? createBrowserControl?.() : createDesktopControl();
+          if (!desktop) throw new Error('Zen tab control is unavailable. Connect Zen first.');
+          session.watcher = createStopWatcher({ onStop: reason => manager.stop(reason) });
+          publish({ status: 'starting', message: 'Preparing Auto. Escape stops it.' });
+          await session.watcher.start(); signal.throwIfAborted();
+          if (targetType === 'desktop') {
+            publish({ status: 'countdown', message: 'Focus the target app within 3 seconds. Escape stops Auto.' });
+            await wait(countdownMs, signal);
+          } else publish({ status: 'starting', message: 'Locking the selected Zen tab. You can work elsewhere; Escape stops Auto.' });
+          const target = targetType === 'zen' ? await desktop.lockTarget(tabId, signal) : await desktop.lockTarget(signal);
+          signal.throwIfAborted();
+          session.release = () => desktop.release?.(target);
+          // A broken log (full disk, bad permissions) must never stop a run.
+          try { session.log = createRunLog?.(); } catch {}
+          record({ kind: 'start', goal, target: targetType, allowSubmit: allowSubmit === true });
+          session.engine = createAutoMode({
+            multiInput: desktop.multiInput === true,
+            capture: innerSignal => desktop.capture(target, innerSignal),
+            execute: (action, innerSignal) => {
+              record({ kind: 'execute', action });
+              session.pendingInput = desktop.execute(target, action, innerSignal);
+              return session.pendingInput;
+            },
+            // Zen reads keypad button positions from the page; desktop has no page to read.
+            locate: desktop.findButtons ? (keys, innerSignal) => desktop.findButtons(target, keys, innerSignal) : undefined,
+            research: (query, innerSignal) => research(query, settings, innerSignal),
+            decide: async ({ goal, profile, userRules, knownButtons, screen, choices, scans, history, sources, siteResults, form, observation, allowSubmit, signal: innerSignal }) => {
+              const sheet = scans?.length ? scans : choices && [choices];
+              const imageDataUrl = sheet ? require('./choice-sheet').choiceSheet(screen, sheet) : screen.imageDataUrl;
+              let image = null;
+              try { image = session.log?.image(imageDataUrl); } catch {}
+              const response = await llm.stream({
+              system: buildAutoSystem(profile),
+              turns: [{ role: 'user', text: JSON.stringify({ goal, userRules, screen: { width: screen.width, height: screen.height },
+                allowSubmit, form, observation, choices: sheet ? { groups: sheet.map(scan => ({ control: scan.label, tiles: scan.images.length })), ...(choices && { justScanned: choices.label || 'latest', stepsTaken: choices.stepsTaken }), order: 'Historical tiles below the live screenshot: one row per scanned control in groups order, tiles left to right. Each tile shows its own option number.' } : undefined, knownButtons: Object.keys(knownButtons || {}).length ? knownButtons : undefined, history, siteResults: siteResults?.length ? siteResults : undefined, sources: sources.map(source => ({ ...source, content: String(source.content || '').slice(0, 4000) })) }) }],
+              imageDataUrl, maxTokens: 1200, signal: innerSignal, onToken() {}
+              });
+              record({ kind: 'decide', image, observation, form, response });
+              return response;
+            },
+            verify: async ({ goal, screen, scans, siteResults, signal: innerSignal }) => {
+              const response = await llm.stream({ system: VERIFY, turns: [{ role: 'user', text: JSON.stringify({ goal, choices: scans?.length ? scans.map(scan => ({ control: scan.label, tiles: scan.images.length })) : undefined, siteResults: siteResults?.length ? siteResults : undefined }) }],
+                imageDataUrl: scans?.length ? require('./choice-sheet').choiceSheet(screen, scans) : screen.imageDataUrl, maxTokens: 1200, effort: 'high', signal: innerSignal, onToken() {} });
+              record({ kind: 'verify', response });
+              return response;
+            },
+            onUpdate(update) {
+              record({ kind: 'update', status: update.status, step: update.step, message: update.message });
+              if (['done', 'paused', 'stopped', 'error'].includes(update.status)) terminal = update;
+              if (update.skipped) skippedNote = update.message.slice(update.message.indexOf('\nSkipped for you'));
+              publish(update);
+            }
+          });
+          await session.engine.run(goal, { signal, allowSubmit: allowSubmit === true });
+        } catch (error) {
+          terminal = signal.aborted ? { status: 'stopped', message: session.reason } :
+            { status: 'error', message: error?.message || 'Auto could not continue. Review the screen.' };
+        } finally {
+          if (signal.aborted) terminal = { status: 'stopped', message: session.reason };
+          // Input teardown must finish before releasing the busy lock for another task.
+          try { await session.pendingInput; }
+          catch (error) { if (error?.code === 'INPUT_CLEANUP') terminal = { status: 'error', message: error.message }; }
+          try { await session.release?.(); } catch {}
+          try { session.watcher?.stop(); } catch { terminal = { status: 'error', message: 'Auto stopped; restart Aether to clear its Escape binding.' }; }
+          if (current === session) current = null;
+          // Escape/errors replace the message; never lose skipped-question instructions.
+          if (skippedNote && !terminal.message.includes(skippedNote)) terminal = { ...terminal, message: terminal.message + skippedNote };
+          record({ kind: 'end', status: terminal.status, message: terminal.message });
+          if (session.log && ['paused', 'error'].includes(terminal.status)) terminal = { ...terminal, message: `${terminal.message}\nRun log: ${session.log.dir}` };
+          last = { ...terminal, active: false, ...(session.log && { logDir: session.log.dir }) }; onUpdate(last); onEnd();
+        }
+      })();
+      return { started: true };
+    }
+  };
+  return manager;
+}
+module.exports = { createAutoSession };

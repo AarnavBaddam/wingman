@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Aether · Direction 3 · Teenage Engineering thinking</title>
+<!-- Logic: best-fit designer. Teenage Engineering (OP-1, TX-6): tools as instruments, every control physical,
+     labelled, and one colour per function. Fits a keyboard-heavy Linux user whose bar is already rows of pills.
+     Form seed: Auto is an action you ARM, like a record button; the dock is the instrument's little display. -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500;75..100,700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --plate:oklch(0.27 0.004 80); --plate-hi:oklch(0.33 0.004 80); --plate-lo:oklch(0.21 0.004 80);
+  --oled:oklch(0.13 0 0); --oled-fg:oklch(0.94 0 0); --oled-dim:oklch(0.62 0 0);
+  --label:oklch(0.80 0.005 80); --label-2:oklch(0.64 0.005 80);
+  --orange:oklch(0.68 0.18 42); --cap:oklch(0.90 0.005 85); --cap-ink:oklch(0.25 0.005 80);
+  --blue:oklch(0.62 0.09 245); --green:oklch(0.78 0.16 145);
+  --mono:'IBM Plex Mono',ui-monospace,monospace; --disp:'Archivo',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0}
+body{width:1440px;height:900px;overflow:hidden;background:#121110;font:14px var(--mono);color:var(--label)}
+.bar{position:absolute;inset:0 0 auto 0;height:45px;background:url({{TOPBAR}}) 0 0/1440px 45px}
+.browser{position:absolute;left:28px;top:62px;width:900px;height:820px;border-radius:12px;overflow:hidden;background:#fff;box-shadow:0 20px 50px rgba(0,0,0,.45)}
+.chrome{height:40px;background:#26262a;display:flex;align-items:center;padding:0 14px;color:#cfcfd4;font:13px sans-serif}
+.chrome .tab{background:#3a3a40;border-radius:8px;padding:6px 12px}
+.page{padding:28px 34px;font:15px/1.5 sans-serif;color:#333}
+.q{border:1px solid #d8d8d8;border-radius:4px;padding:18px 22px;width:520px}.q p{margin-bottom:14px}
+.math{font:17px 'Times New Roman',serif;margin:6px 0 16px}
+.zrow{display:flex;align-items:center;gap:10px;font:16px serif}
+.zbox{width:240px;height:38px;border:1.5px solid #888;border-radius:3px;padding:8px 10px;font:15px 'Times New Roman',serif}
+.palette{margin-top:10px;display:flex;gap:6px}.palette span{border:1px solid #bbb;border-radius:3px;padding:3px 10px;font:15px serif;background:#f6f6f6}
+.cursor2{position:absolute;pointer-events:none}
+.cursor2 .tag{position:absolute;left:18px;top:21px;background:var(--orange);color:#111;font:500 11px var(--mono);padding:1px 6px;white-space:nowrap;letter-spacing:.04em;text-transform:uppercase}
+.ripple{position:absolute;left:-13px;top:-13px;width:26px;height:26px;border:1.5px solid var(--orange);opacity:.6}
+
+/* dock: the instrument's display strip */
+.dock{position:absolute;left:50%;top:50px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;height:32px;padding:0 4px 0 10px;background:var(--plate);border-radius:6px;box-shadow:0 0 0 1px var(--plate-lo),inset 0 1px 0 var(--plate-hi),0 8px 20px rgba(0,0,0,.45);z-index:5}
+.led{width:8px;height:8px;border-radius:50%;background:var(--orange);box-shadow:inset 0 0 0 1px rgba(0,0,0,.35),inset 1px 1px 0 rgba(255,255,255,.4)}
+.dock .oled{background:var(--oled);border-radius:3px;height:24px;display:flex;align-items:center;gap:12px;padding:0 10px;font:500 12px var(--mono);color:var(--oled-fg);letter-spacing:.06em;text-transform:uppercase}
+.dock .oled .d{color:var(--oled-dim)}
+.dock .key{background:var(--cap);color:var(--cap-ink);font:500 11px var(--mono);height:24px;display:grid;place-items:center;padding:0 8px;border-radius:3px;box-shadow:inset 0 -2px 0 oklch(0.78 0.005 85)}
+
+.panel{position:absolute;left:50%;top:96px;transform:translateX(-50%);width:560px;background:var(--plate);border-radius:10px;padding:16px;box-shadow:0 0 0 1px var(--plate-lo),inset 0 1px 0 var(--plate-hi),0 30px 70px rgba(0,0,0,.55);z-index:4}
+.brand{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+.brand b{font:700 15px var(--disp);font-stretch:80%;letter-spacing:.14em;color:var(--label)}
+.brand span{font:12px var(--mono);color:var(--label-2);letter-spacing:.06em}
+.screen{background:var(--oled);border-radius:5px;padding:14px 16px 12px;color:var(--oled-fg);box-shadow:inset 0 0 0 1px oklch(0.2 0 0)}
+.screen .hdr{display:flex;justify-content:space-between;font:500 12px var(--mono);color:var(--oled-dim);letter-spacing:.06em;text-transform:uppercase}
+.screen .ans{font:500 25px/1.25 var(--disp);font-stretch:85%;margin:10px 0 8px;letter-spacing:-.005em}
+.screen .ans em{font-style:normal;color:var(--orange)}
+.screen .w{font:13px/1.6 var(--mono);color:var(--oled-dim)}
+.screen .w b{color:var(--oled-fg);font-weight:500}
+.tape{margin-top:12px;display:flex;align-items:center;gap:10px;background:var(--plate-lo);border-radius:5px;padding:10px 12px;box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}
+.tape .in{flex:1;font:15px var(--mono);color:var(--oled-fg)}
+.tape small{font:12px var(--mono);color:var(--label-2)}
+.keys{margin-top:14px;display:grid;grid-template-columns:1fr 1.45fr 1fr 1fr 1fr 1.3fr;gap:8px}
+.k{height:64px;border-radius:6px;background:var(--cap);color:var(--cap-ink);display:flex;flex-direction:column;justify-content:space-between;padding:8px 9px;box-shadow:inset 0 -3px 0 oklch(0.76 0.005 85),0 1px 0 rgba(0,0,0,.5)}
+.k .f{font:500 11px var(--mono);color:oklch(0.48 0.005 80)}
+.k .n{font:500 13px/1.15 var(--disp);font-stretch:85%}
+.k.dark{background:oklch(0.40 0.004 80);color:var(--oled-fg);box-shadow:inset 0 -3px 0 oklch(0.33 0.004 80),0 1px 0 rgba(0,0,0,.5)}.k.dark .f{color:var(--label-2)}
+.k.blue{background:var(--blue);color:#fff;box-shadow:inset 0 -3px 0 oklch(0.52 0.09 245)}.k.blue .f{color:oklch(0.88 0.03 245)}
+.k.run{background:var(--orange);color:#161210;box-shadow:inset 0 -3px 0 oklch(0.56 0.17 40)}.k.run .f{color:oklch(0.32 0.06 40)}
+.k.run .n{font-size:16px;font-weight:700}
+.ctrls{margin-top:14px;display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:12px}
+.ctl{display:flex;flex-direction:column;gap:7px}
+.ctl > span{font:500 12px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--label-2)}
+.slide{position:relative;height:30px;background:var(--plate-lo);border-radius:5px;display:grid;grid-template-columns:repeat(3,1fr);box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}
+.slide.two{grid-template-columns:repeat(2,1fr)}
+.slide em{font:500 12px var(--mono);font-style:normal;display:grid;place-items:center;color:var(--label-2);z-index:1}
+.slide em.on{color:var(--cap-ink)}
+.slide .thumb{position:absolute;top:3px;bottom:3px;border-radius:3px;background:var(--cap);box-shadow:inset 0 -2px 0 oklch(0.76 0.005 85)}
+.arm{display:flex;align-items:center;gap:10px;height:30px}
+.arm .sw{width:46px;height:24px;border-radius:4px;background:var(--plate-lo);position:relative;box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}
+.arm .sw::after{content:"";position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:3px;background:oklch(0.55 0.004 80)}
+.arm small{font:12px var(--mono);color:var(--label-2);line-height:1.3}
+.foot{margin-top:14px;display:flex;gap:16px;font:12px var(--mono);color:var(--label-2);letter-spacing:.04em;border-top:1px solid var(--plate-lo);padding-top:10px}
+.foot span:last-child{margin-left:auto}
+.states{position:absolute;right:26px;top:110px;width:290px;display:flex;flex-direction:column;gap:14px}
+.states h2{font:500 12px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--label-2)}
+.st label{display:block;font:12px var(--mono);color:var(--label-2);margin-bottom:6px}
+.mini{display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 4px 0 9px;background:var(--plate);border-radius:6px;box-shadow:0 0 0 1px var(--plate-lo),inset 0 1px 0 var(--plate-hi)}
+.mini .oled{background:var(--oled);border-radius:3px;height:22px;display:flex;align-items:center;gap:8px;padding:0 9px;font:500 12px var(--mono);color:var(--oled-fg);letter-spacing:.06em;text-transform:uppercase}
+.led.off{background:oklch(0.45 0 0);box-shadow:none}.led.g{background:var(--green)}
+.led.blink{background:var(--orange)}
+</style></head>
+<body>
+<div class="bar" role="img" aria-label="User's Quickshell top bar"></div>
+<div class="browser" aria-hidden="true">
+  <div class="chrome"><span class="tab">MyLab Math · Q3 of 10</span></div>
+  <div class="page"><div class="q">
+    <p>Perform the operation and leave the result in trigonometric form.</p>
+    <div class="math">[ <sup>5</sup>⁄<sub>2</sub> ( cos(π/6) + i sin(π/6) ) ] [ 6 ( cos(π/4) + i sin(π/4) ) ]</div>
+    <div class="zrow">z = <div class="zbox">15(cos(5π/12)+i sin(5π</div></div>
+    <div class="palette"><span>π</span><span>√</span><span>xⁿ</span><span>θ</span></div>
+  </div></div>
+  <div class="cursor2" style="left:262px;top:200px"><div class="ripple"></div>
+    <svg width="22" height="26" viewBox="0 0 22 26"><path d="M2 2 L2 21 L7.5 16 L11 24 L14.5 22.5 L11 14.8 L18.5 14.8 Z" fill="oklch(0.68 0.18 42)" stroke="#111" stroke-width="1.6" stroke-linejoin="round"/></svg>
+    <span class="tag">Aether</span></div>
+</div>
+
+<div class="dock" role="status" aria-label="Aether dock, Auto running">
+  <span class="led"></span>
+  <span class="oled"><span>04/12</span><span>Type answer</span><span class="d">Zen · MyLab</span></span>
+  <span class="key">Esc</span>
+</div>
+
+<section class="panel" aria-label="Aether panel">
+  <div class="brand"><b>AETHER</b><span>AUTO · ZEN · ARMED OFF</span></div>
+  <div class="screen">
+    <div class="hdr"><span>Answer</span><span>Depth: Work</span></div>
+    <div class="ans">z = 15(cos <em>5π/12</em> + i sin <em>5π/12</em>)</div>
+    <div class="w"><b>01</b> moduli 5/2 × 6 = 15<br><b>02</b> args π/6 + π/4 = 5π/12</div>
+  </div>
+  <div class="tape"><span class="in">Answer this question and submit it</span><small>Ctrl ↵ send</small></div>
+  <div class="keys" role="group" aria-label="Modes">
+    <div class="k"><span class="f">F1</span><span class="n">Assist</span></div>
+    <div class="k"><span class="f">F2</span><span class="n">What should I say?</span></div>
+    <div class="k"><span class="f">F3</span><span class="n">Follow-ups</span></div>
+    <div class="k dark"><span class="f">F4</span><span class="n">Recap</span></div>
+    <div class="k blue"><span class="f">F5</span><span class="n">Research</span></div>
+    <div class="k run"><span class="f">CTRL ↵</span><span class="n">Run Auto</span></div>
+  </div>
+  <div class="ctrls">
+    <div class="ctl"><span>Depth</span><div class="slide" role="radiogroup" aria-label="Depth"><span class="thumb" style="left:calc(33.3% + 2px);width:calc(33.3% - 4px)"></span><em>Ans</em><em class="on">Work</em><em>Deep</em></div></div>
+    <div class="ctl"><span>Target</span><div class="slide two" role="radiogroup" aria-label="Auto target"><span class="thumb" style="left:calc(50% + 2px);width:calc(50% - 4px)"></span><em>Desk</em><em class="on">Zen</em></div></div>
+    <div class="ctl"><span>Arm submit</span><label class="arm"><span class="sw"></span><small>Off<br>this run only</small></label></div>
+  </div>
+  <div class="foot"><span>HIDE ⌃⇧SPC</span><span>HIDE FOR SHARING</span><span>SETTINGS</span></div>
+</section>
+
+<aside class="states" aria-label="Dock states">
+  <h2>Dock states</h2>
+  <div class="st"><label>Idle</label><span class="mini"><span class="led off"></span><span class="oled">Aether · Ready</span></span></div>
+  <div class="st"><label>Listening to a meeting</label><span class="mini"><span class="led g"></span><span class="oled">Listen 12:41 ▁▃▅▂▆</span></span></div>
+  <div class="st"><label>Auto running</label><span class="mini"><span class="led"></span><span class="oled">04/12 Type answer</span></span></div>
+  <div class="st"><label>Needs you</label><span class="mini"><span class="led blink"></span><span class="oled">Hand: 1 graph Q</span></span></div>
+</aside>
+</body></html>
