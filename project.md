@@ -6,6 +6,17 @@
 - Settings exposes the auto-hide toggle and a bounded 2–60 second delay. The full sheet also has a direct **Hide notch** control; the existing Show / hide shortcut restores the fixed window.
 - Unit coverage covers the idle/pinned/live state predicate. Native Windows notch E2E and packaged Windows validation remain required before claiming the desktop flow is verified.
 
+## Auto behaviour profiles — surface-aware, plain-text steerable — 2026-10-28
+
+- User problem: Auto's one prompt (`AUTO_SYSTEM`) was written for graded quiz forms, so every other surface (a Google Doc, an app) was forced through form logic and broke. Endless per-site edge-case patching. Goal: make behaviour modular and steerable in plain text, and let the model classify the surface and pick its own method.
+- Approach A (prompt composition), chosen over a full strategy-agent: one engine, swap the system prompt per surface. New `src/auto-profiles.js` — `buildAutoSystem(profile)`; `form` = the original prompt returned byte-for-byte (no regression risk), `document`/`generic` = new compact packs, `unknown` = classify-first pack.
+- `src/auto-mode.js`: `profileFromText(goal)` (a surface word in the goal — "google doc", "quiz form" — overrides classification), `surfaceToProfile()`, a `surface` field on the `map` action (classification rides the first map), `profile` threaded into `decide`. Form-only Submit/Next gating now runs for every surface **except** `document`/`generic`, so an unclassified surface keeps legacy form safety while a doc is freed from it. Divergence from `form` is announced once ("Surface looks like a document…"); ordinary form runs stay silent.
+- `src/auto-session.js`: `system: buildAutoSystem(profile)` replaces the fixed `AUTO_SYSTEM`.
+- Tests: `test/auto-profiles.test.js` (6) + full suite **313 pass / 0 fail**. Verified by unit tests only — prompt composition, plain-text override, surface-map parse/reject, and two end-to-end engine runs (forced-document, classify-then-switch) reaching `done` without the form gate blocking.
+- **Not run (owed live check):** the packaged app driving a real Google Doc with a live vision provider — needs a provider in Settings + ydotool daemon up on Hyprland. Feature is logic-complete, launch-unverified.
+- Known limits left honest: typing is still append-only ASCII (replacing existing doc text needs the `clear` path, which assumes a focused field, not arbitrary doc ranges); `spreadsheet`/`app`/`webpage` classify but share the `generic` pack until dedicated packs are wanted.
+- Next: run the live Google-Doc check; optionally add a `spreadsheet` pack; consider a dedicated mid-run re-plan nudge beyond the current "change method / need_input" feedback.
+
 ## Native dropdowns in Zen — 2026-10-26
 
 - User reported the in-page cursor going underneath webpage dropdowns. Run `20261025-233014` repeatedly clicked a native sequence-definition select, then paused with its placeholder unchanged.
