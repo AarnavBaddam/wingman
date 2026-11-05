@@ -14,6 +14,7 @@ Cycling answer galleries use click intent `cycle`. Optional `steps` (1–12) plu
 |---|---|
 | `main.js` | Creates the overlay, registers shortcuts, captures screenshots, manages audio buffers, and sends requests/results over IPC. |
 | `preload.js` | Lists the methods and events the renderer may use. |
+| Relaunch | Aether is single-instance; closing only hides the panel. A second launch (`second-instance` in `main.js`) sends `panel:reset` so the panel reopens empty unless an answer or Auto run is in progress. |
 | `renderer/` | HTML/CSS/JS UI, settings, Markdown display, mic and system audio capture. |
 | `renderer/answer-format.js` | Shared streamed/final Markdown, sanitized HTML and KaTeX rendering; preserves code and token spacing. |
 | `src/store.js` | Reads and atomically saves settings; encrypts API keys with Electron `safeStorage`. |

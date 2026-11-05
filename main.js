@@ -1003,7 +1003,7 @@ function handleRemoteAuto(argv) {
 if (typeof app.requestSingleInstanceLock === 'function') {
   if (!app.requestSingleInstanceLock()) app.quit();
   else app.on('second-instance', (_event, argv) => {
-    if (!handleRemoteAuto(argv)) { showDock(); showWindow(); }
+    if (!handleRemoteAuto(argv)) { send('panel:reset'); showDock(); showWindow(); }
   });
 }
 

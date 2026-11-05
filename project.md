@@ -1,5 +1,11 @@
 # Aether project state
 
+## Relaunch clears the panel — 2026-11-04
+
+- User reported that after closing and relaunching Aether, the old answer was still in the panel, a large block of text covering the buttons. Cause: Aether runs as a single instance and closing only hides the window. A relaunch fires `second-instance`, which re-showed the same hidden window with its old messages.
+- Fix: `second-instance` now sends `panel:reset` before showing the panel. The renderer restores the "Ready" line and hides any status toast. It skips the reset while an answer or Auto run is busy. The relaunch test was updated; 349 pass.
+- Not run live: the running AppImage predates this change. Hiding with the close button and reopening from the dock still keeps the last answer (on purpose).
+
 ## Auto on Mastering multi-part pages: stale banners, per-part Submit, gate deadlock — 2026-11-04
 
 - Run `20261105-012304` (Pilobolus, Parts A–F, each with its own Submit). Three faults:

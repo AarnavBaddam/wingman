@@ -609,6 +609,13 @@
     clearTimeout(statusTimer);
     if (!persistent) statusTimer = setTimeout(() => el.classList.remove('show'), 11000);
   }
+  // A relaunch re-shows the hidden window, so start it fresh; a live answer or Auto run is left alone.
+  wingman.on('panel:reset', () => {
+    if (busy) return;
+    showExample();
+    clearTimeout(statusTimer);
+    document.getElementById('wingman-status')?.classList.remove('show');
+  });
   wingman.on('status', ({ message }) => { wingman.log('[status] ' + message); showStatus(message); });
 
   // ---- settings ----------------------------------------------------------

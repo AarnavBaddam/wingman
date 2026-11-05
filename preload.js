@@ -53,7 +53,7 @@ contextBridge.exposeInMainWorld('wingman', {
   openPane: (url) => ipcRenderer.send('open-pane', url),
   log: (msg) => ipcRenderer.send('log', msg),
   on: (channel, cb) => {
-    const allowed = ['notch:set', 'notch:state', 'notch:settings', 'capture:state', 'capture:system-ended', 'llm:start', 'llm:phase', 'llm:token', 'llm:done', 'llm:error', 'llm:sources', 'auto-refresh:state', 'auto-mode:state', 'write-mode:state', 'status', 'transcript'];
+    const allowed = ['notch:set', 'notch:state', 'notch:settings', 'capture:state', 'capture:system-ended', 'llm:start', 'llm:phase', 'llm:token', 'llm:done', 'llm:error', 'llm:sources', 'auto-refresh:state', 'auto-mode:state', 'write-mode:state', 'status', 'transcript', 'panel:reset'];
     if (!allowed.includes(channel)) return;
     ipcRenderer.on(channel, (_e, data) => cb(data));
   }
