@@ -1,5 +1,13 @@
 # Aether project state
 
+## Auto on Mastering multi-part pages: stale banners, per-part Submit, gate deadlock — 2026-11-04
+
+- Run `20261105-012304` (Pilobolus, Parts A–F, each with its own Submit). Three faults:
+  1. Part A already showed "Incorrect; Try Again" from an earlier 3.1 m submit. Auto selected 0.31 m (correct), read the old banner as a verdict on it and switched to 0.10 m (wrong). Prompt rule added: a feedback banner grades the last submitted answer, never the current selection.
+  2. Auto answered A, B and C before submitting anything, then submitted only B. Part A was never submitted. Prompt rule added: answer and submit one part at a time from the top; form.scroll is none once that part is fully visible.
+  3. Submit for Part C was refused twice because form.scroll was 'down'. The model corrected it to 'none', but the repeat guard saw a third identical click on an unchanged screen and paused the run. Fix: the repeat signature now includes form status/scroll/navigation, so a corrected form is not a repeat. Regression test added; 349 pass.
+- Not run live: needs an Auto run in Aether on a fresh Mastering question. AppImage not rebuilt for this yet.
+
 ## Zen scroll escapes exhausted iframes — 2026-11-04
 
 - User reported Auto could not scroll Mastering's split pages (left passage, right questions). A live probe showed why: the questions live in an iframe taller than the window (1337 px in a 1008 px viewport). The scroll script stepped into the iframe, found its inner pane already at the bottom, and gave up. It never tried the outer page, which still had 608 px to scroll. Run `20261105-005733` shows 5 scrolls in a row that changed nothing.

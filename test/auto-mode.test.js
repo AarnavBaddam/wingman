@@ -874,3 +874,15 @@ test('scans of several controls stay available until the question changes', asyn
   assert.equal(contexts[3].scans[1].images.length, 2);
   assert.deepEqual(contexts[4].scans, []);
 });
+test('a submit refused by the form gate is not a repeat once the corrected form would pass it', async () => {
+  // Live run 20261105-012304: two Submit clicks refused for scroll 'down', then the corrected one (scroll 'none')
+  // was blocked as a third identical click on an unchanged screen, and the run paused.
+  const ready = { layout: 'multi-step', question: 'Part C', navigation: 'submit-answer', scroll: 'none', status: 'answer-verified' };
+  const submit = form => ({ type: 'click', x: 20, y: 30, label: 'Submit Part C', intent: 'submit', form });
+  const actions = [submit({ ...ready, scroll: 'down' }), submit({ ...ready, scroll: 'down' }), submit(ready),
+    { type: 'done', message: 'Submitted', form: { ...ready, navigation: 'none', status: 'complete' } }];
+  const executed = [];
+  const h = harness([], { decide: async () => JSON.stringify(actions.shift()), execute: async a => executed.push(a.intent) });
+  await h.engine.run('Complete the form', { allowSubmit: true });
+  assert.deepEqual(executed, ['submit']);
+});
