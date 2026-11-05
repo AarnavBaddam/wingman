@@ -203,7 +203,7 @@ test('types printable text using paired keys and scrolls at bounded CSS coordina
   const actions = commands.filter(c => c.name === 'WebDriver:PerformActions').map(c => c.params.actions[0]);
   assert.deepEqual(actions[0].actions.map(a => a.type), ['keyDown', 'keyUp', 'keyDown', 'keyUp', 'keyDown', 'keyUp']);
   const scroll = commands.find(c => c.name === 'WebDriver:ExecuteScript' && c.params.args.length);
-  assert.deepEqual(scroll.params.args, [50, 50, -240]);
+  assert.deepEqual(scroll.params.args, [50, 50, -240, false]);
   assert.equal(commands.filter(c => c.name === 'WebDriver:ReleaseActions').length, 1);
   assert.deepEqual(commands.at(-1), { name: 'WebDriver:SwitchToFrame', params: { id: null } });
 });
@@ -280,7 +280,18 @@ test('scroll traverses iframe references and always restores top frame', async t
   const target = await control.lockTarget('tab-a'); await control.capture(target);
   await control.execute(target, { type: 'scroll', x: 100, y: 100, amount: 2 });
   assert.deepEqual(commands.filter(c => c.name === 'WebDriver:SwitchToFrame').map(c => c.params), [{ element: frame }, { id: null }]);
-  assert.deepEqual(commands.filter(c => c.name === 'WebDriver:ExecuteScript' && c.params.args.length).map(c => c.params.args), [[50, 50, 240], [20, 30, 240]]);
+  assert.deepEqual(commands.filter(c => c.name === 'WebDriver:ExecuteScript' && c.params.args.length).map(c => c.params.args), [[50, 50, 240, false], [20, 30, 240, false]]);
+});
+test('scroll falls back to the parent document when the frame under the point cannot scroll', async t => {
+  let call = 0;
+  const frame = { 'element-6066-11e4-a52e-4f735466cecf': 'frame-a' };
+  const { control, commands } = await fixture(t, (name, params) => {
+    if (name === 'WebDriver:ExecuteScript' && params.args.length) return [{ frame, x: 20, y: 30 }, { scrolled: false }, { scrolled: true }][call++];
+  });
+  const target = await control.lockTarget('tab-a'); await control.capture(target);
+  await control.execute(target, { type: 'scroll', x: 100, y: 100, amount: 2 });
+  assert.deepEqual(commands.filter(c => /SwitchTo(Parent)?Frame/.test(c.name)).map(c => [c.name, c.params]), [['WebDriver:SwitchToFrame', { element: frame }], ['WebDriver:SwitchToParentFrame', {}], ['WebDriver:SwitchToFrame', { id: null }]]);
+  assert.deepEqual(commands.filter(c => c.name === 'WebDriver:ExecuteScript' && c.params.args.length).map(c => c.params.args), [[50, 50, 240, false], [20, 30, 240, false], [50, 50, 240, true]]);
 });
 test('excessive iframe depth fails with top context restored and consumed image', async t => {
   const { control, commands } = await fixture(t, (name, params) => name === 'WebDriver:ExecuteScript' && params.args.length ? { frame: { 'element-6066-11e4-a52e-4f735466cecf': 'frame' }, x: 1, y: 1 } : undefined);

@@ -1,5 +1,18 @@
 # Aether project state
 
+## Zen scroll escapes exhausted iframes — 2026-11-04
+
+- User reported Auto could not scroll Mastering's split pages (left passage, right questions). A live probe showed why: the questions live in an iframe taller than the window (1337 px in a 1008 px viewport). The scroll script stepped into the iframe, found its inner pane already at the bottom, and gave up. It never tried the outer page, which still had 608 px to scroll. Run `20261105-005733` shows 5 scrolls in a row that changed nothing.
+- Fix (`src/zen-control.js` `scroll`): when the frame under the point cannot scroll, switch to the parent frame and rerun the script with `outer=true`, so the walk starts at the iframe element and climbs its ancestors. This matches how a native wheel chains scrolls. Test added; 348 pass. Verified live in Zen: the inner pane scrolled to its end (860), the outer page then went from 131.5 to 608, and Part F, Next and the footer came into view.
+- The zoomed-out "blanking" in run `20261105-010502` was not a hang. The model spent 3 map turns (about 53 s) working the physics before its first click. Zooming during a run also stops it with "Zen viewport changed".
+
+## Auto: review pages are read-only for confidence marks — 2026-11-02
+
+- User reported Auto ignoring "double click answers to mark answers as sure". Run `20261103-021239` (Pearson Amplifire) shows the double click did work: every answer was sent with `clicks: 2` and showed "I am sure".
+- The real failure came after that. Amplifire's "Learning" review page listed 2 answers marked unsure by the earlier run `20261103-021115`, which had no double-click goal. The model tried to "fix" those read-only badges for about 15 steps until the user stopped it. It reworded the label on each try, so the repeat guard (which compares whole actions) never fired.
+- Fix (prompt only, `src/auto-mode.js` line 29): confidence is set only while answering, before Submit. Result and review pages are read-only history, so Auto moves on with Next, Continue or the arrow. 347 tests pass.
+- Not run: a live rerun through a review page; the AppImage has not been rebuilt. If it still loops, add an engine guard keyed on click position instead of label.
+
 ## Merged remote Windows notch work; PR open — 2026-10-31
 
 - Pulled 3 remote commits (Windows notch auto-hide, native input, live status/logo) and merged them with the 20 local Auto commits. Conflicts in `project.md` and `src/auto-mode.js` kept both sides: `verify`, `multiInput`, 160 steps / 20 min limits.

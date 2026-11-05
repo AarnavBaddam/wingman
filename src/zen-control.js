@@ -22,14 +22,16 @@ if(matches.length!==1)throw Error('Dropdown option missing, disabled or ambiguou
 return {option:matches[0]};`;
 // Gecko's native wheel default action does not scroll hidden tabs. Only this
 // fixed, bounded hit-test script scrolls; click and keyboard input remain native.
+// outer=true reruns in a parent document after the frame under the point could
+// not scroll, so the walk starts at that frame element instead of entering it.
 const SCROLL_SCRIPT = `
-const [x, y, delta] = arguments;
+const [x, y, delta, outer] = arguments;
 if (![x,y,delta].every(Number.isFinite) || x<0 || y<0 || x>=innerWidth || y>=innerHeight || Math.abs(delta)>600) throw Error('Invalid scroll coordinates');
 let el = document.elementFromPoint(x,y);
 while (el?.shadowRoot?.elementFromPoint) {
   const child = el.shadowRoot.elementFromPoint(x,y); if (!child || child===el) break; el=child;
 }
-if (el?.localName==='iframe' || el?.localName==='frame') {
+if (!outer && (el?.localName==='iframe' || el?.localName==='frame')) {
   const rect=el.getBoundingClientRect(), scaleX=rect.width/el.offsetWidth, scaleY=rect.height/el.offsetHeight;
   return {frame:el,x:(x-rect.left)/scaleX-el.clientLeft,y:(y-rect.top)/scaleY-el.clientTop};
 }
@@ -309,16 +311,28 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
   }
   async function scroll(target, action, state, signal) {
     let x = action.x / state.scale, y = action.y / state.scale;
+    const run = outer => command('WebDriver:ExecuteScript', { script: SCROLL_SCRIPT, args: [x, y, action.amount * 120, outer], newSandbox: true, sandbox: 'aether-scroll' }, signal);
+    const points = [];
     try {
       for (let depth = 0; depth < 5; depth++) {
         cancelled(signal);
-        const result = await command('WebDriver:ExecuteScript', { script: SCROLL_SCRIPT, args: [x, y, action.amount * 120], newSandbox: true, sandbox: 'aether-scroll' }, signal);
+        const result = await run(false);
         if (result?.frame) {
           if (depth === 4 || ![result.x, result.y].every(Number.isFinite)) throw new Error('Zen scroll frame depth or coordinates unsupported.');
           await command('WebDriver:SwitchToFrame', { element: result.frame }, signal);
-          x = result.x; y = result.y;
+          points.push([x, y]); x = result.x; y = result.y;
         } else {
           if (typeof result?.scrolled !== 'boolean') throw new Error('Zen scroll target unavailable.');
+          // A frame whose own scrollers are exhausted (e.g. Mastering's content iframe taller than
+          // the window) hands the scroll to the documents around it, like a native wheel would.
+          for (let scrolled = result.scrolled; !scrolled && points.length;) {
+            cancelled(signal);
+            await command('WebDriver:SwitchToParentFrame', {}, signal);
+            [x, y] = points.pop();
+            const outer = await run(true);
+            if (typeof outer?.scrolled !== 'boolean') throw new Error('Zen scroll target unavailable.');
+            scrolled = outer.scrolled;
+          }
           return;
         }
       }
