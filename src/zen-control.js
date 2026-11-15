@@ -5,7 +5,8 @@ const MATH_INPUT_SCRIPT = `
 let el=document.activeElement;
 while(el?.shadowRoot?.activeElement) el=el.shadowRoot.activeElement;
 if(el?.localName==='iframe'||el?.localName==='frame') return {frame:el};
-return {math:!!el?.closest('.mq-editable-field')};`;
+const wiris=!!el?.closest('.wrs_editor');
+return {math:wiris||!!el?.closest('.mq-editable-field'),wiris};`;
 
 const MAX_FRAME = 40 * 1024 * 1024;
 const VIEWPORT_SCRIPT = 'return {width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio};';
@@ -435,13 +436,18 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
           { type: 'keyDown', value: '\uE003' }, { type: 'keyUp', value: '\uE003' }] }] }, signal);
         return;
       }
-      let text = action.text;
-      if (action.type === 'type' && text.includes('^')) {
+      let text = action.text, mathDelay = 0;
+      if (action.type === 'type') {
         await validate(target, signal);
         try {
           for (let depth = 0; depth < 5; depth++) {
             const result = await command('WebDriver:ExecuteScript', { script: MATH_INPUT_SCRIPT, args: [], newSandbox: true, sandbox: 'aether-math-input' }, signal);
-            if (!result?.frame) { if (result?.math === true) text = mathKeys(text); break; }
+            if (!result?.frame) {
+              if (result?.math === true) text = mathKeys(text);
+              // MathType processes edits asynchronously; native key bursts can lose characters.
+              if (result?.wiris === true) mathDelay = 25;
+              break;
+            }
             if (depth === 4) throw new Error('Math input frame depth unsupported.');
             await command('WebDriver:SwitchToFrame', { element: result.frame }, signal);
           }
@@ -451,7 +457,7 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
       for (const chunk of chunks) {
         await validate(target, signal);
         let source;
-        if (chunk !== null) source = { type: 'key', id: 'aether-keys', actions: [...chunk].flatMap(value => [{ type: 'keyDown', value }, { type: 'keyUp', value }]) };
+        if (chunk !== null) source = { type: 'key', id: 'aether-keys', actions: [...chunk].flatMap(value => [{ type: 'keyDown', value }, { type: 'keyUp', value }, ...(mathDelay ? [{ type: 'pause', duration: mathDelay }] : [])]) };
         else {
           const x = Math.min(state.view.width - 1, Math.floor(action.x / state.scale));
           const y = Math.min(state.view.height - 1, Math.floor(action.y / state.scale));

@@ -1,4 +1,4 @@
-// WebDriver Right Arrow leaves a MathQuill superscript without adding text.
+// WebDriver Right Arrow leaves a MathQuill/MathType superscript without adding text.
 const RIGHT = '\uE014';
 function mathKeys(text) {
   let keys = '';

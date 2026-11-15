@@ -241,8 +241,26 @@ test('math field detection follows the active iframe and restores top context', 
   assert.equal(reads, 2);
   assert.deepEqual(commands.filter(c => c.name === 'WebDriver:SwitchToFrame').map(c => c.params), [{ element: frame }, { id: null }]);
   const script = commands.find(c => c.params.sandbox === 'aether-math-input').params.script;
-  const el = { closest: selector => selector === '.mq-editable-field' };
-  assert.deepEqual(JSON.parse(JSON.stringify(vm.runInNewContext(`(function(){${script}})()`, { document: { activeElement: el } }))), { math: true });
+  const el = { closest: selector => selector.split(',').some(s => s.trim() === '.mq-editable-field') };
+  assert.deepEqual(JSON.parse(JSON.stringify(vm.runInNewContext(`(function(){${script}})()`, { document: { activeElement: el } }))), { math: true, wiris: false });
+});
+
+test('WebAssign MathType focus input is recognized as a structured math editor', async t => {
+  const { control, commands } = await fixture(t, (name, params) => {
+    if (params.sandbox === 'aether-math-input') {
+      const el = { closest: selector => selector.split(',').some(s => s.trim() === '.wrs_editor') };
+      return vm.runInNewContext(`(function(){${params.script}})()`, { document: { activeElement: el } });
+    }
+  });
+  const target = await control.lockTarget('tab-a'); await control.capture(target);
+  await control.execute(target, { type: 'type', text: '243x^5-405x^4y' });
+  const keys = commands.filter(c => c.name === 'WebDriver:PerformActions')
+    .flatMap(c => c.params.actions[0].actions).filter(a => a.type === 'keyDown').map(a => a.value);
+  assert.equal(keys.join(''), '243x^5\uE014-405x^4\uE014y');
+  const pauses = commands.filter(c => c.name === 'WebDriver:PerformActions')
+    .flatMap(c => c.params.actions[0].actions).filter(a => a.type === 'pause');
+  assert.equal(pauses.length, keys.length);
+  assert(pauses.every(a => a.duration === 25));
 });
 test('HTML drag uses bounded fixed script through frames and resets context without duplicate native input', async t => {
   let depth = 0;
