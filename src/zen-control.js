@@ -1,4 +1,11 @@
 const net = require('node:net');
+const { mathKeys } = require('./math-input');
+
+const MATH_INPUT_SCRIPT = `
+let el=document.activeElement;
+while(el?.shadowRoot?.activeElement) el=el.shadowRoot.activeElement;
+if(el?.localName==='iframe'||el?.localName==='frame') return {frame:el};
+return {math:!!el?.closest('.mq-editable-field')};`;
 
 const MAX_FRAME = 40 * 1024 * 1024;
 const VIEWPORT_SCRIPT = 'return {width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio};';
@@ -428,7 +435,19 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
           { type: 'keyDown', value: '\uE003' }, { type: 'keyUp', value: '\uE003' }] }] }, signal);
         return;
       }
-      const chunks = action.type === 'type' ? action.text.match(/.{1,8}/g) : [null];
+      let text = action.text;
+      if (action.type === 'type' && text.includes('^')) {
+        await validate(target, signal);
+        try {
+          for (let depth = 0; depth < 5; depth++) {
+            const result = await command('WebDriver:ExecuteScript', { script: MATH_INPUT_SCRIPT, args: [], newSandbox: true, sandbox: 'aether-math-input' }, signal);
+            if (!result?.frame) { if (result?.math === true) text = mathKeys(text); break; }
+            if (depth === 4) throw new Error('Math input frame depth unsupported.');
+            await command('WebDriver:SwitchToFrame', { element: result.frame }, signal);
+          }
+        } finally { if (socket) await command('WebDriver:SwitchToFrame', { id: null }); }
+      }
+      const chunks = action.type === 'type' ? text.match(/.{1,8}/g) : [null];
       for (const chunk of chunks) {
         await validate(target, signal);
         let source;

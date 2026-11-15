@@ -207,6 +207,43 @@ test('types printable text using paired keys and scrolls at bounded CSS coordina
   assert.equal(commands.filter(c => c.name === 'WebDriver:ReleaseActions').length, 1);
   assert.deepEqual(commands.at(-1), { name: 'WebDriver:SwitchToFrame', params: { id: null } });
 });
+
+test('MathQuill powers exit superscript before the next polynomial term', async t => {
+  const { control, commands } = await fixture(t, (name, params) => {
+    if (params.sandbox === 'aether-math-input') return { math: true };
+  });
+  const target = await control.lockTarget('tab-a'); await control.capture(target);
+  await control.execute(target, { type: 'type', text: 'a^4+24a^3+216a^2+864a+1296' });
+  const keys = commands.filter(c => c.name === 'WebDriver:PerformActions')
+    .flatMap(c => c.params.actions[0].actions).filter(a => a.type === 'keyDown').map(a => a.value);
+  assert.equal(keys.join(''), 'a^4\uE014+24a^3\uE014+216a^2\uE014+864a+1296');
+});
+
+test('ordinary fields keep literal exponent syntax', async t => {
+  const { control, commands } = await fixture(t, (name, params) => {
+    if (params.sandbox === 'aether-math-input') return { math: false };
+  });
+  const target = await control.lockTarget('tab-a'); await control.capture(target);
+  await control.execute(target, { type: 'type', text: 'a^4+24a^3' });
+  const keys = commands.filter(c => c.name === 'WebDriver:PerformActions')
+    .flatMap(c => c.params.actions[0].actions).filter(a => a.type === 'keyDown').map(a => a.value);
+  assert.equal(keys.join(''), 'a^4+24a^3');
+});
+
+test('math field detection follows the active iframe and restores top context', async t => {
+  let reads = 0;
+  const frame = { 'element-6066-11e4-a52e-4f735466cecf': 'math-frame' };
+  const { control, commands } = await fixture(t, (name, params) => {
+    if (params.sandbox === 'aether-math-input') return reads++ === 0 ? { frame } : { math: true };
+  });
+  const target = await control.lockTarget('tab-a'); await control.capture(target);
+  await control.execute(target, { type: 'type', text: 'x^2+1' });
+  assert.equal(reads, 2);
+  assert.deepEqual(commands.filter(c => c.name === 'WebDriver:SwitchToFrame').map(c => c.params), [{ element: frame }, { id: null }]);
+  const script = commands.find(c => c.params.sandbox === 'aether-math-input').params.script;
+  const el = { closest: selector => selector === '.mq-editable-field' };
+  assert.deepEqual(JSON.parse(JSON.stringify(vm.runInNewContext(`(function(){${script}})()`, { document: { activeElement: el } }))), { math: true });
+});
 test('HTML drag uses bounded fixed script through frames and resets context without duplicate native input', async t => {
   let depth = 0;
   const frame = { 'element-6066-11e4-a52e-4f735466cecf': 'frame-a' };
