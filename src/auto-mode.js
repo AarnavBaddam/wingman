@@ -656,36 +656,45 @@ function createAutoMode({ capture, decide, execute, research, locate, verify, on
                 await input({ type: 'click', x: tap.x, y: tap.y, label: tap.label, intent: 'insert' });
                 await settleDelay(Math.min(delay, 150));
               }
-            } else for (const [index, field] of (action.type === 'fill' ? action.fields : [action]).entries()) {
-              let value = field;
-              if (action.type === 'fill') {
-                // A keypad field the previous step just focused already has its keypad open; a second
-                // click toggles it shut (Physics Classroom), and the button presses then hit nothing.
-                // The model reads keypadOpen off the screenshot, which also catches a keypad that closed on its own.
-                const alreadyOpen = field.keypad && (field.keypadOpen === true || (field.keypadOpen === undefined && index === 0 && fieldLabel === normalizeLabel(field.label)));
-                if (!alreadyOpen) {
-                  await input({ type: 'click', x: field.x, y: field.y, label: field.label, intent: 'focus' });
+            } else try {
+              for (const [index, field] of (action.type === 'fill' ? action.fields : [action]).entries()) {
+                let value = field;
+                if (action.type === 'fill') {
+                  // A keypad field the previous step just focused already has its keypad open; a second
+                  // click toggles it shut (Physics Classroom), and the button presses then hit nothing.
+                  // The model reads keypadOpen off the screenshot, which also catches a keypad that closed on its own.
+                  const alreadyOpen = field.keypad && (field.keypadOpen === true || (field.keypadOpen === undefined && index === 0 && fieldLabel === normalizeLabel(field.label)));
+                  if (!alreadyOpen) {
+                    await input({ type: 'click', x: field.x, y: field.y, label: field.label, intent: 'focus' });
+                    await settleDelay(Math.min(delay, multiInput ? 40 : 150));
+                  }
+                  value = { type: 'type', text: field.text, label: field.label, origin: field.origin };
+                }
+                if (field.clearButton) {
+                  await input({ type: 'click', ...field.clearButton, label: `Clear ${field.label}`.slice(0, 120), intent: 'insert' });
                   await settleDelay(Math.min(delay, multiInput ? 40 : 150));
                 }
-                value = { type: 'type', text: field.text, label: field.label, origin: field.origin };
+                if (!field.symbols) { await input(value); continue; }
+                // Type each run of other characters and click each symbol/keypad button, strictly in text order.
+                // Repeated buttons (the zeros in 3000) are clicked here, outside the duplicate-click guard.
+                const parts = [];
+                for (const c of field.text) {
+                  if (field.symbols[c] || !parts.length || field.symbols[parts.at(-1)]) parts.push(c); else parts[parts.length - 1] += c;
+                }
+                for (const part of parts) {
+                  const symbol = field.symbols[part];
+                  await input(symbol ? { type: 'click', ...symbol, label: `${part} palette symbol`, intent: 'insert' } : { type: 'type', text: part, label: field.label, origin: field.origin });
+                  // Back-to-back clicks on one button can read as a double click; let each press register.
+                  if (symbol) await settleDelay(Math.min(delay, multiInput ? 40 : 150));
+                }
               }
-              if (field.clearButton) {
-                await input({ type: 'click', ...field.clearButton, label: `Clear ${field.label}`.slice(0, 120), intent: 'insert' });
-                await settleDelay(Math.min(delay, multiInput ? 40 : 150));
-              }
-              if (!field.symbols) { await input(value); continue; }
-              // Type each run of other characters and click each symbol/keypad button, strictly in text order.
-              // Repeated buttons (the zeros in 3000) are clicked here, outside the duplicate-click guard.
-              const parts = [];
-              for (const c of field.text) {
-                if (field.symbols[c] || !parts.length || field.symbols[parts.at(-1)]) parts.push(c); else parts[parts.length - 1] += c;
-              }
-              for (const part of parts) {
-                const symbol = field.symbols[part];
-                await input(symbol ? { type: 'click', ...symbol, label: `${part} palette symbol`, intent: 'insert' } : { type: 'type', text: part, label: field.label, origin: field.origin });
-                // Back-to-back clicks on one button can read as a double click; let each press register.
-                if (symbol) await settleDelay(Math.min(delay, multiInput ? 40 : 150));
-              }
+            } catch (error) {
+              if (error?.code !== 'INPUT_FOCUS') throw error;
+              fieldLabel = focusedLabel = null;
+              previousImage = previousAction = null;
+              if (form) form = { ...form, status: 'incomplete' };
+              feedback(error.message);
+              continue;
             }
             check();
             previousImage = screen.imageDataUrl; previousAction = action;

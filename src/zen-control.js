@@ -6,7 +6,8 @@ let el=document.activeElement;
 while(el?.shadowRoot?.activeElement) el=el.shadowRoot.activeElement;
 if(el?.localName==='iframe'||el?.localName==='frame') return {frame:el};
 const wiris=!!el?.closest('.wrs_editor');
-return {math:wiris||!!el?.closest('.mq-editable-field'),wiris};`;
+const textControl=el?.localName==='textarea'||(el?.localName==='input'&&['text','search','email','url','tel','password','number'].includes(el.type));
+return {math:wiris||!!el?.closest('.mq-editable-field'),wiris,editable:!!(el?.isContentEditable||(textControl&&!el.disabled&&!el.readOnly))};`;
 
 const MAX_FRAME = 40 * 1024 * 1024;
 const VIEWPORT_SCRIPT = 'return {width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio};';
@@ -254,6 +255,22 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
     if (!view || ![view.width, view.height].every(n => Number.isSafeInteger(n) && n > 0 && n <= 32768) || !Number.isFinite(view.dpr) || view.dpr < 0.25 || view.dpr > 8) throw new Error('Zen viewport unavailable.');
     return view;
   }
+  async function inspectInput(signal) {
+    try {
+      for (let depth = 0; depth < 5; depth++) {
+        const result = await command('WebDriver:ExecuteScript', { script: MATH_INPUT_SCRIPT, args: [], newSandbox: true, sandbox: 'aether-math-input' }, signal);
+        if (!result?.frame) {
+          if (result?.editable !== true) {
+            const error = new Error('The answer field is not focused. Inspect any partial entry, then click the actual editable area before typing; open Calc Pad and focus its expression editor if needed.');
+            error.code = 'INPUT_FOCUS'; throw error;
+          }
+          return result;
+        }
+        if (depth === 4) throw new Error('Math input frame depth unsupported.');
+        await command('WebDriver:SwitchToFrame', { element: result.frame }, signal);
+      }
+    } finally { if (socket) await command('WebDriver:SwitchToFrame', { id: null }); }
+  }
   async function validate(target, signal, refreshView = false) {
     cancelled(signal);
     const state = targets.get(target);
@@ -439,23 +456,15 @@ function createZenControl({ host = '127.0.0.1', port = 2828, timeoutMs = 10000, 
       let text = action.text, mathDelay = 0;
       if (action.type === 'type') {
         await validate(target, signal);
-        try {
-          for (let depth = 0; depth < 5; depth++) {
-            const result = await command('WebDriver:ExecuteScript', { script: MATH_INPUT_SCRIPT, args: [], newSandbox: true, sandbox: 'aether-math-input' }, signal);
-            if (!result?.frame) {
-              if (result?.math === true) text = mathKeys(text);
-              // MathType processes edits asynchronously; native key bursts can lose characters.
-              if (result?.wiris === true) mathDelay = 25;
-              break;
-            }
-            if (depth === 4) throw new Error('Math input frame depth unsupported.');
-            await command('WebDriver:SwitchToFrame', { element: result.frame }, signal);
-          }
-        } finally { if (socket) await command('WebDriver:SwitchToFrame', { id: null }); }
+        const result = await inspectInput(signal);
+        if (result.math) text = mathKeys(text);
+        // MathType processes edits asynchronously; native key bursts can lose characters.
+        if (result.wiris) mathDelay = 25;
       }
       const chunks = action.type === 'type' ? text.match(/.{1,8}/g) : [null];
       for (const chunk of chunks) {
         await validate(target, signal);
+        if (chunk !== null) await inspectInput(signal);
         let source;
         if (chunk !== null) source = { type: 'key', id: 'aether-keys', actions: [...chunk].flatMap(value => [{ type: 'keyDown', value }, { type: 'keyUp', value }, ...(mathDelay ? [{ type: 'pause', duration: mathDelay }] : [])]) };
         else {

@@ -37,6 +37,20 @@ function harness(actions, overrides = {}) {
   });
   return { engine, calls, updates };
 }
+
+test('lost field focus requests a fresh focus click instead of ending the run or retrying text blindly', async () => {
+  const text = { type: 'type', text: '1024/x^5', label: click.label, origin: 'user' };
+  let attempts = 0;
+  const h = harness([click, text, text, click, text, { type: 'done', message: 'Review the draft' }], {
+    execute: async action => {
+      if (action.type === 'type' && ++attempts === 1) throw Object.assign(new Error('The answer field did not gain focus.'), { code: 'INPUT_FOCUS' });
+    }
+  });
+  await h.engine.run('Enter the fraction');
+  assert.equal(attempts, 2);
+  assert(h.updates.some(u => /focus/i.test(u.message)));
+  assert.equal(h.updates.at(-1).status, 'done');
+});
 test('drag invalidates verified answers and requires fresh verification before submit', async () => {
   const verified = { layout: 'single-page', question: 'Sort forces', navigation: 'submit-form', scroll: 'none', status: 'answer-verified' };
   const seen = [], executed = [];

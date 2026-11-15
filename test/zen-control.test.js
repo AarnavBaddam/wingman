@@ -121,7 +121,7 @@ async function fixture(t, override = () => undefined, options = {}) {
           else if (name === 'WebDriver:GetWindowHandle') result = current;
           else if (name === 'WebDriver:GetTitle') result = 'Form café';
           else if (name === 'WebDriver:GetCurrentURL') result = 'https://example.com/form';
-          else if (name === 'WebDriver:ExecuteScript') result = params.sandbox === 'aether-select' ? null : params.sandbox === 'aether-drag' ? { handled: false } : params.sandbox === 'aether-drag-hover' ? { hovered: true } : params.args.length ? { scrolled: true } : { width: 400, height: 300, dpr: 2 };
+          else if (name === 'WebDriver:ExecuteScript') result = params.sandbox === 'aether-math-input' ? { editable: true, math: false, wiris: false } : params.sandbox === 'aether-select' ? null : params.sandbox === 'aether-drag' ? { handled: false } : params.sandbox === 'aether-drag-hover' ? { hovered: true } : params.args.length ? { scrolled: true } : { width: 400, height: 300, dpr: 2 };
           else if (name === 'WebDriver:TakeScreenshot') result = png();
           else result = {};
         }
@@ -210,7 +210,7 @@ test('types printable text using paired keys and scrolls at bounded CSS coordina
 
 test('MathQuill powers exit superscript before the next polynomial term', async t => {
   const { control, commands } = await fixture(t, (name, params) => {
-    if (params.sandbox === 'aether-math-input') return { math: true };
+    if (params.sandbox === 'aether-math-input') return { math: true, editable: true };
   });
   const target = await control.lockTarget('tab-a'); await control.capture(target);
   await control.execute(target, { type: 'type', text: 'a^4+24a^3+216a^2+864a+1296' });
@@ -221,7 +221,7 @@ test('MathQuill powers exit superscript before the next polynomial term', async 
 
 test('ordinary fields keep literal exponent syntax', async t => {
   const { control, commands } = await fixture(t, (name, params) => {
-    if (params.sandbox === 'aether-math-input') return { math: false };
+    if (params.sandbox === 'aether-math-input') return { math: false, editable: true };
   });
   const target = await control.lockTarget('tab-a'); await control.capture(target);
   await control.execute(target, { type: 'type', text: 'a^4+24a^3' });
@@ -230,25 +230,47 @@ test('ordinary fields keep literal exponent syntax', async t => {
   assert.equal(keys.join(''), 'a^4+24a^3');
 });
 
+test('unfocused fraction text is blocked before slash can open browser Quick Find', async t => {
+  const { control, commands } = await fixture(t, (name, params) => {
+    if (params.sandbox === 'aether-math-input') return { editable: false, math: false, wiris: false };
+  });
+  const target = await control.lockTarget('tab-a'); await control.capture(target);
+  await assert.rejects(control.execute(target, { type: 'type', text: '1024/x^5-3840y/x^4' }), { code: 'INPUT_FOCUS' });
+  assert(!commands.some(c => c.name === 'WebDriver:PerformActions'));
+});
+
+test('focus lost between text chunks prevents later keys and releases input', async t => {
+  let reads = 0;
+  const { control, commands } = await fixture(t, (name, params) => {
+    if (params.sandbox === 'aether-math-input') return { editable: ++reads <= 2, math: false, wiris: false };
+  });
+  const target = await control.lockTarget('tab-a'); await control.capture(target);
+  await assert.rejects(control.execute(target, { type: 'type', text: '12345678/x^5+abc' }), { code: 'INPUT_FOCUS' });
+  const inputs = commands.filter(c => c.name === 'WebDriver:PerformActions');
+  assert.equal(inputs.length, 1);
+  assert.equal(inputs[0].params.actions[0].actions.filter(a => a.type === 'keyDown').map(a => a.value).join(''), '12345678');
+  assert(commands.some(c => c.name === 'WebDriver:ReleaseActions'));
+});
+
 test('math field detection follows the active iframe and restores top context', async t => {
   let reads = 0;
   const frame = { 'element-6066-11e4-a52e-4f735466cecf': 'math-frame' };
   const { control, commands } = await fixture(t, (name, params) => {
-    if (params.sandbox === 'aether-math-input') return reads++ === 0 ? { frame } : { math: true };
+    if (params.sandbox === 'aether-math-input') return reads++ === 0 ? { frame } : { math: true, editable: true };
   });
   const target = await control.lockTarget('tab-a'); await control.capture(target);
   await control.execute(target, { type: 'type', text: 'x^2+1' });
-  assert.equal(reads, 2);
-  assert.deepEqual(commands.filter(c => c.name === 'WebDriver:SwitchToFrame').map(c => c.params), [{ element: frame }, { id: null }]);
+  assert.equal(reads, 3);
+  assert.deepEqual(commands.filter(c => c.name === 'WebDriver:SwitchToFrame').map(c => c.params), [{ element: frame }, { id: null }, { id: null }]);
   const script = commands.find(c => c.params.sandbox === 'aether-math-input').params.script;
-  const el = { closest: selector => selector.split(',').some(s => s.trim() === '.mq-editable-field') };
-  assert.deepEqual(JSON.parse(JSON.stringify(vm.runInNewContext(`(function(){${script}})()`, { document: { activeElement: el } }))), { math: true, wiris: false });
+  const el = { localName: 'textarea', closest: selector => selector === '.mq-editable-field' };
+  assert.deepEqual(JSON.parse(JSON.stringify(vm.runInNewContext(`(function(){${script}})()`, { document: { activeElement: el } }))), { math: true, wiris: false, editable: true });
 });
 
 test('WebAssign MathType focus input is recognized as a structured math editor', async t => {
   const { control, commands } = await fixture(t, (name, params) => {
     if (params.sandbox === 'aether-math-input') {
-      const el = { closest: selector => selector.split(',').some(s => s.trim() === '.wrs_editor') };
+      const el = { localName: 'input', type: 'text', closest: selector => selector === '.wrs_editor' };
       return vm.runInNewContext(`(function(){${params.script}})()`, { document: { activeElement: el } });
     }
   });
@@ -415,8 +437,8 @@ test('clear sends only the fixed Ctrl+A, Backspace key sequence and releases', a
   assert.ok(commands.some(c => c.name === 'WebDriver:ReleaseActions'));
 });
 test('second cursor hides for screenshots, follows clicks and drags, and is removed on release', async t => {
-  const { control, commands, cursorCalls } = await fixture(t, name => {
-    if (name === 'WebDriver:ExecuteScript') return { width: 800, height: 600, dpr: 1 };
+  const { control, commands, cursorCalls } = await fixture(t, (name, params) => {
+    if (params.sandbox === 'aether-viewport') return { width: 800, height: 600, dpr: 1 };
     if (name === 'WebDriver:TakeScreenshot') return png(800, 600);
   });
   const target = await control.lockTarget('tab-a'); await control.capture(target);
