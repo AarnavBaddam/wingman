@@ -40,7 +40,12 @@ const http = require('node:http');
     await page.keyboard.type('+7');
     assert.equal(await page.evaluate(() => field.latex()), text + '+7');
     await page.screenshot({ path: '/tmp/aether-exponents-after.png' });
-    for (const [input, expected] of [['x^12+x^-2', 'x^{12}+x^{-2}'], ['x^(n+1)+x^{2^3}', 'x^{n+1}+x^{2^3}']]) {
+    for (const [input, expected] of [
+      ['x^12+x^-2', 'x^{12}+x^{-2}'], ['x^(n+1)+x^{2^3}', 'x^{n+1}+x^{2^3}'],
+      ['8t^(3/2)-60t+150sqrt(t)-125', String.raw`8t^{\frac{3}{2}}-60t+150\left(\left(t\right)^{\frac{1}{2}}\right)-125`],
+      ['1024/x^5-3840y/x^4', String.raw`\frac{1024}{x^5}-\frac{3840y}{x^4}`],
+      ['1/(x+1)+2', String.raw`\frac{1}{x+1}+2`]
+    ]) {
       await page.evaluate(() => field.latex('').focus());
       await type(mathKeys(input));
       assert.equal(await page.evaluate(() => field.latex()), expected);

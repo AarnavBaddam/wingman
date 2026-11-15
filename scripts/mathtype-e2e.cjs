@@ -46,7 +46,30 @@ const assert = require('node:assert/strict');
     await type('+7');
     assert.equal((await read()).text, '243x5-405x4y+270x3y2-90x2y3+15xy4-y5+7');
     await page.screenshot({ path: '/tmp/aether-wiris-exponents-after.png' });
+    const cases = [
+      ['8t^(3/2)-60t+150sqrt(t)-125', '8t32-60t+150t12-125', [['3', '2'], ['1', '2']], ['-', '+', '-']],
+      ['8*t*sqrt(t)-60*t+150*sqrt(t)-125', '8·t·t12-60·t+150·t12-125', [['1', '2'], ['1', '2']], ['-', '+', '-']],
+      ['1024/x^5-3840y/x^4', '1024x5-3840yx4', [['1024', 'x5'], ['3840y', 'x4']], ['-']]
+    ];
+    for (const [input, text, fractions, signs] of cases) {
+      await reset(); await type(mathKeys(input));
+      const structure = await page.evaluate(() => {
+        const doc = new DOMParser().parseFromString(editor.getMathML(), 'text/xml');
+        return {
+          text: doc.documentElement.textContent,
+          fractions: [...doc.querySelectorAll('mfrac')].map(el => [...el.children].map(child => child.textContent)),
+          signs: [...doc.documentElement.children].filter(el => el.localName === 'mo' && /^[+-]$/.test(el.textContent)).map(el => el.textContent),
+          trappedTerms: !!doc.querySelector('mfrac mo, msup mo'),
+          literalSqrt: [...doc.querySelectorAll('mi')].map(el => el.textContent).join('').includes('sqrt')
+        };
+      });
+      assert.deepEqual(structure, { text, fractions, signs, trappedTerms: false, literalSqrt: false });
+      await type('+7');
+      assert.equal((await read()).text, text + '+7');
+      if (input === cases[0][0]) await page.screenshot({ path: '/tmp/aether-wiris-roots-fractions-after.png' });
+    }
     console.log('PASS: real MathType reproduced nesting; paced corrected answer has all coefficients, eight separate powers, no nesting, and baseline final caret');
+    console.log('PASS: fractional exponents, equivalent square roots, powered denominators, baseline sum terms and final caret');
   } finally {
     await browser?.close();
     await new Promise(resolve => server.close(resolve));

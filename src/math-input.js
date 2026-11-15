@@ -1,11 +1,15 @@
-// WebDriver Right Arrow leaves a MathQuill/MathType superscript without adding text.
+// WebDriver Right Arrow leaves one MathQuill/MathType structure without adding text.
 const RIGHT = '\uE014';
 function mathKeys(text) {
-  let keys = '';
-  for (let i = 0; i < text.length; i++) {
-    keys += text[i];
-    if (text[i] !== '^') continue;
-    const start = i + 1, open = text[start];
+  function root(start) {
+    const argument = slot(start + 4);
+    return { keys: `((${argument.keys})^1/2${RIGHT}${RIGHT})`, end: argument.end };
+  }
+  function slot(start, denominator = false) {
+    let prefix = '';
+    if (text[start] === '+' || text[start] === '-') prefix = text[start++];
+    const open = text[start];
+    let result;
     if (open === '{' || open === '(') {
       const close = open === '{' ? '}' : ')';
       let depth = 1, end = start + 1;
@@ -13,15 +17,30 @@ function mathKeys(text) {
         if (text[end] === open) depth++;
         if (text[end] === close) depth--;
       }
-      if (depth || end === start + 2) throw new Error('Use a complete, nonempty exponent before typing a math answer.');
-      keys += mathKeys(text.slice(start + 1, end - 1)) + RIGHT;
-      i = end - 1;
+      if (depth || end === start + 2) throw new Error('Use a complete, nonempty exponent or denominator before typing a math answer.');
+      result = { keys: mathKeys(text.slice(start + 1, end - 1)), end };
+    } else if (text.startsWith('sqrt(', start)) {
+      result = root(start);
     } else {
-      const exponent = text.slice(start).match(/^[+-]?(?:\d+(?:\.\d+)?|[a-zA-Z])/);
-      if (!exponent) throw new Error('Use a complete exponent before typing a math answer.');
-      keys += exponent[0] + RIGHT;
-      i += exponent[0].length;
+      const value = text.slice(start).match(/^(?:\d+(?:\.\d+)?|[a-zA-Z])/);
+      if (!value) throw new Error('Use a complete exponent or denominator before typing a math answer.');
+      result = { keys: value[0], end: start + value[0].length };
     }
+    result.keys = prefix + result.keys;
+    if (denominator && text[result.end] === '^') {
+      const power = slot(result.end + 1);
+      result = { keys: result.keys + '^' + power.keys + RIGHT, end: power.end };
+    }
+    return result;
+  }
+  let keys = '';
+  for (let i = 0; i < text.length; i++) {
+    if (text.startsWith('sqrt(', i) && !/[a-zA-Z]/.test(text[i - 1] || '')) {
+      const value = root(i); keys += value.keys; i = value.end - 1;
+    } else if (text[i] === '^' || text[i] === '/') {
+      const value = slot(i + 1, text[i] === '/');
+      keys += text[i] + value.keys + RIGHT; i = value.end - 1;
+    } else keys += text[i];
   }
   return keys;
 }
