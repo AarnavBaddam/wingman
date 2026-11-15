@@ -1,7 +1,12 @@
 node_modules/
 dist/
+graphify-out/
 out/
 native/systemaudio
 *.log
 .DS_Store
 wingman-data.json
+design/design-demos/preview/
+
+native/ydotool-win/target/
+tools/ydotool.exe

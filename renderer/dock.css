@@ -1,0 +1,33 @@
+@font-face { font-family: 'IBM Plex Mono'; src: url('fonts/IBMPlexMono-500.woff2') format('woff2'); font-weight: 500; }
+:root {
+  --plate: oklch(0.27 0.004 80); --plate-hi: oklch(0.34 0.004 80); --plate-lo: oklch(0.2 0.004 80);
+  --oled: oklch(0.13 0 0); --fg: oklch(0.94 0 0); --dim: oklch(0.62 0 0);
+  --cap: oklch(0.9 0.005 85); --cap-ink: oklch(0.25 0.005 80);
+  --orange: oklch(0.68 0.18 42); --green: oklch(0.78 0.16 145);
+}
+* { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; background: transparent; overflow: hidden; user-select: none; -webkit-user-select: none; }
+body { display: grid; place-items: center; font: 500 12px 'IBM Plex Mono', ui-monospace, monospace; }
+#dock {
+  all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 9px;
+  height: 34px; max-width: 452px; padding: 0 4px 0 11px; border-radius: 7px; cursor: pointer;
+  background: var(--plate); box-shadow: 0 0 0 1px var(--plate-lo), inset 0 1px 0 var(--plate-hi);
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease;
+  touch-action: none;
+}
+#dock:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+#dock:active { transform: translateY(1px); }
+#dock.gone { transform: translateY(-46px); opacity: 0; }
+.led { flex: none; width: 8px; height: 8px; border-radius: 50%; background: oklch(0.45 0 0);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.35), inset 1px 1px 0 rgba(255,255,255,.35); }
+.led.on { background: var(--orange); } .led.listen { background: var(--green); }
+.led.need { background: var(--orange); animation: pulse 1.2s steps(2) infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+.oled { display: inline-flex; align-items: center; gap: 10px; min-width: 0; height: 26px; padding: 0 10px; border-radius: 4px;
+  background: var(--oled); color: var(--fg); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+#step:empty, #sub:empty, .key:empty { display: none; }
+#text { overflow: hidden; text-overflow: ellipsis; max-width: 250px; }
+#sub { color: var(--dim); overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
+.key { flex: none; height: 26px; display: grid; place-items: center; padding: 0 8px; border-radius: 4px;
+  background: var(--cap); color: var(--cap-ink); font-size: 11px; box-shadow: inset 0 -2px 0 oklch(0.78 0.005 85); }
+@media (prefers-reduced-motion: reduce) { #dock { transition: none; } .led.need { animation: none; } }
